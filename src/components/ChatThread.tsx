@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DiffPanel } from "./DiffPanel";
+import MemoryPanel from "./memory/MemoryPanel";
+import RecallView from "./memory/RecallView";
 import "./ChatThread.css";
 
 type QuickContext = {
@@ -114,7 +116,8 @@ type Route =
   | { kind: "project"; project_id: string }
   | { kind: "topic"; thread_id: string }
   | { kind: "apps" }
-  | { kind: "app"; app_id: string };
+  | { kind: "app"; app_id: string }
+  | { kind: "memory"; project_id?: string };
 
 function routeKey(r: Route): string {
   switch (r.kind) {
@@ -128,6 +131,8 @@ function routeKey(r: Route): string {
       return `topic:${r.thread_id}`;
     case "app":
       return `app:${r.app_id}`;
+    case "memory":
+      return r.project_id ? `memory:${r.project_id}` : "memory";
   }
 }
 
@@ -143,6 +148,8 @@ function tabIcon(r: Route): string {
       return "💬";
     case "app":
       return "🪟";
+    case "memory":
+      return "M";
   }
 }
 
@@ -166,6 +173,11 @@ function tabLabel(
     }
     case "app":
       return r.app_id;
+    case "memory": {
+      if (!r.project_id) return "Memory";
+      const p = projects.find((x) => x.id === r.project_id);
+      return `Memory · ${p?.name ?? r.project_id}`;
+    }
   }
 }
 
@@ -760,7 +772,13 @@ export default function ChatThread() {
           />
         );
       case "topic":
-        return <TopicScreen thread_id={r.thread_id} threads={threads} />;
+        return (
+          <TopicScreen
+            thread_id={r.thread_id}
+            threads={threads}
+            projects={projects}
+          />
+        );
       case "apps":
         return (
           <AppsScreen
@@ -778,6 +796,18 @@ export default function ChatThread() {
             onApplyRevise={(instr) => applyAppRevise(r.app_id, instr)}
           />
         );
+      case "memory": {
+        const project = r.project_id
+          ? projects.find((p) => p.id === r.project_id)
+          : null;
+        return (
+          <MemoryPanel
+            projectRoot={project?.root ?? null}
+            threadId={null}
+            initialScope={project ? "project" : "global"}
+          />
+        );
+      }
     }
   };
 
@@ -871,6 +901,15 @@ function Header({
   } else if (route.kind === "app") {
     crumbs.push({ label: "Apps", route: { kind: "apps" } });
     crumbs.push({ label: route.app_id, route: null });
+  } else if (route.kind === "memory") {
+    if (route.project_id) {
+      const p = projects.find((x) => x.id === route.project_id);
+      crumbs.push({
+        label: p?.name ?? route.project_id,
+        route: { kind: "project", project_id: route.project_id },
+      });
+    }
+    crumbs.push({ label: "Memory", route: null });
   }
 
   return (
@@ -912,6 +951,23 @@ function Header({
           onClick={() => onNavigate({ kind: "apps" })}
         >
           Apps
+        </button>
+        <button
+          className={`header-tab ${route.kind === "memory" ? "active" : ""}`}
+          onClick={() => {
+            const projectId =
+              route.kind === "project"
+                ? route.project_id
+                : route.kind === "topic"
+                  ? threads.find((t) => t.id === route.thread_id)?.project_id
+                  : route.kind === "memory"
+                    ? route.project_id
+                    : undefined;
+            onNavigate({ kind: "memory", project_id: projectId });
+          }}
+          title="Memory"
+        >
+          Memory
         </button>
         <span className="chat-subtitle">
           {threads.length} thread{threads.length === 1 ? "" : "s"} ·{" "}
@@ -2251,7 +2307,11 @@ function AppViewer({
             </nav>
             <div className="nested-body">
               {activeNested ? (
-                <TopicScreen thread_id={activeNested} threads={threads} />
+                <TopicScreen
+                  thread_id={activeNested}
+                  threads={threads}
+                  projects={[]}
+                />
               ) : (
                 <div className="chat-empty">
                   <p>Выбери тред слева.</p>
@@ -2856,9 +2916,18 @@ function StatusDot({ done, ok }: { done: boolean; ok: boolean }) {
   return <span className="status-dot status-dot-fail" />;
 }
 
-function TopicScreen({ thread_id, threads }: { thread_id: string; threads: Thread[] }) {
+function TopicScreen({
+  thread_id,
+  threads,
+  projects,
+}: {
+  thread_id: string;
+  threads: Thread[];
+  projects: Project[];
+}) {
   const thread = threads.find((t) => t.id === thread_id);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [showRecall, setShowRecall] = useState(false);
 
   // Scroll to bottom on initial mount / when switching to this thread.
   useEffect(() => {
@@ -2875,12 +2944,48 @@ function TopicScreen({ thread_id, threads }: { thread_id: string; threads: Threa
       </div>
     );
   }
+
+  const project = projects.find((p) => p.id === thread.project_id);
+  const projectRoot = project?.root ?? thread.cwd ?? "";
+  const recallQuery = mostRecentTopicPrompt(thread);
+
   return (
     <ol className="chat-list">
+      <li className="chat-item-controls">
+        <button
+          type="button"
+          className="header-tab"
+          onClick={() => setShowRecall((v) => !v)}
+          title="Toggle memory recall for this topic"
+        >
+          {showRecall ? "Hide recall" : "Recall"}
+        </button>
+      </li>
+      {showRecall && projectRoot && (
+        <li className="chat-recall-wrap">
+          <RecallView
+            projectRoot={projectRoot}
+            threadId={thread.id}
+            query={recallQuery}
+          />
+        </li>
+      )}
       <ThreadCard thread={thread} />
       <div ref={bottomRef} />
     </ol>
   );
+}
+
+function mostRecentTopicPrompt(thread: Thread): string {
+  // Prefer the most recent user-stream event text; fall back to the original prompt.
+  for (let i = thread.events.length - 1; i >= 0; i--) {
+    const ev = thread.events[i];
+    if (ev.stream === "user") {
+      const text = (ev.raw ?? "").trim();
+      if (text) return text;
+    }
+  }
+  return thread.prompt ?? "";
 }
 
 function ThreadCard({ thread }: { thread: Thread }) {
