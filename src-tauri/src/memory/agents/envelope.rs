@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 pub mod intents {
     pub const RECALL_REQUEST: &str = "memory.recall.request";
@@ -42,19 +43,19 @@ pub struct Envelope {
 
 impl Envelope {
     pub fn new(from: &str, to: &str, intent: &str, payload: Value) -> Self {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
         Self {
-            id: format!("env_{now}_{}", rand_suffix()),
+            id: format!("env_{}", Uuid::new_v4().simple()),
             from: from.into(),
             to: to.into(),
             intent: intent.into(),
             payload,
             correlation_id: None,
-            created_at_ms: now,
+            created_at_ms: now_ms(),
         }
+    }
+
+    pub fn custom(from: &str, to: &str, intent: &str, payload: Value) -> Self {
+        Self::new(from, to, intent, payload)
     }
 
     pub fn reply(&self, from: &str, intent: &str, payload: Value) -> Self {
@@ -64,11 +65,9 @@ impl Envelope {
     }
 }
 
-fn rand_suffix() -> String {
-    use std::time::SystemTime;
-    let n = SystemTime::now()
+pub fn now_ms() -> u128 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0);
-    format!("{:08x}", n)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
 }
