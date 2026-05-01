@@ -87,7 +87,12 @@ async function startScreencast(tabId, opts = {}) {
   const page = getTab(tabId);
   if (screencasts.has(tabId)) return { ok: true, already: true };
   const cdp = await page.context().newCDPSession(page);
+  let frameCount = 0;
   cdp.on("Page.screencastFrame", async (frame) => {
+    frameCount += 1;
+    if (frameCount <= 2) {
+      logErr(`screencast frame #${frameCount} for ${tabId} (${frame.data.length} b64 chars)`);
+    }
     sendEvent("screencast.frame", {
       tab_id: tabId,
       jpeg_b64: frame.data,
@@ -107,7 +112,27 @@ async function startScreencast(tabId, opts = {}) {
     everyNthFrame: opts.every_nth_frame ?? 1,
   });
   screencasts.set(tabId, cdp);
+  void pushManualFrame(tabId).catch(() => {});
   return { ok: true };
+}
+
+async function pushManualFrame(tabId) {
+  const page = tabs.get(tabId);
+  if (!page) return;
+  try {
+    const buf = await page.screenshot({ type: "jpeg", quality: 60 });
+    sendEvent("screencast.frame", {
+      tab_id: tabId,
+      jpeg_b64: buf.toString("base64"),
+      metadata: {
+        deviceWidth: 1280,
+        deviceHeight: 720,
+        pageScaleFactor: 1,
+      },
+    });
+  } catch (e) {
+    logErr("manual frame failed", e?.message || e);
+  }
 }
 
 async function stopScreencast(tabId) {
@@ -210,6 +235,9 @@ async function handle(msg) {
           timeout: params.timeout ?? 30000,
         });
         result = { url: p.url() };
+        if (screencasts.has(params.tab_id)) {
+          void pushManualFrame(params.tab_id).catch(() => {});
+        }
         break;
       }
       case "page.back": {

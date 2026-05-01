@@ -120,11 +120,25 @@ export function BrowserScreen() {
         },
       ),
     );
+    let frameLog = 0;
     subs.push(
       listen<FramePayload>(
         "reflex://browser/screencast.frame",
         (ev) => {
           if (!ev.payload) return;
+          frameLog += 1;
+          if (frameLog <= 3) {
+            console.log(
+              "[browser] frame",
+              frameLog,
+              "tab",
+              ev.payload.tab_id,
+              "active",
+              activeIdRef.current,
+              "len",
+              ev.payload.jpeg_b64?.length,
+            );
+          }
           if (ev.payload.tab_id !== activeIdRef.current) return;
           setFrameSrc(`data:image/jpeg;base64,${ev.payload.jpeg_b64}`);
           if (ev.payload.metadata) setFrameMeta(ev.payload.metadata);
