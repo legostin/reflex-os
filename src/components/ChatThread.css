@@ -9,14 +9,28 @@
     sans-serif;
 }
 
-.chat-header {
+.chat-titlebar {
+  height: 28px;
+  flex-shrink: 0;
   -webkit-app-region: drag;
   app-region: drag;
-  padding: 36px 24px 12px;
+  background: transparent;
+}
+
+.chat-header {
+  padding: 8px 24px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-header button,
+.chat-header a,
+.chat-header input,
+.chat-header textarea {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .chat-title {

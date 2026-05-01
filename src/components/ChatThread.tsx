@@ -892,6 +892,7 @@ export default function ChatThread() {
 
   return (
     <div className="chat-root">
+      <div className="chat-titlebar" data-tauri-drag-region />
       <Header
         route={currentRoute}
         threads={threads}
