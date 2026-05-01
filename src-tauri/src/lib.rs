@@ -531,6 +531,7 @@ async fn create_app(
         widgets: Vec::new(),
     };
     apps::write_manifest(&app, &app_id, &manifest).map_err(|e| e.to_string())?;
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
 
     let thread_id = format!("t_{now_ms}");
     let project_root = dir.clone();

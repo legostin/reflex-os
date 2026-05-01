@@ -3496,7 +3496,7 @@ function ProjectScreen({
             {(() => {
               const linkedIds = new Set(project.apps ?? []);
               const available = installedApps.filter(
-                (a) => !linkedIds.has(a.id) && a.ready !== false,
+                (a) => !linkedIds.has(a.id),
               );
               if (available.length === 0) {
                 return (
@@ -3517,7 +3517,12 @@ function ProjectScreen({
                         {a.icon ?? "🧩"}
                       </span>
                       <div className="project-linked-info">
-                        <div className="project-linked-name">{a.name}</div>
+                        <div className="project-linked-name">
+                          {a.name}
+                          {a.ready === false && (
+                            <span className="apps-card-badge">creating…</span>
+                          )}
+                        </div>
                         {a.description && (
                           <div className="project-linked-desc">
                             {a.description}
