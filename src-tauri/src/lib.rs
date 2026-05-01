@@ -1,12 +1,15 @@
+mod app_bus;
 mod app_runtime;
 mod app_server;
 mod app_watcher;
 mod apps;
+mod apps_dispatch;
 mod codex;
 mod context;
 mod memory;
 mod project;
 mod project_watcher;
+mod scheduler;
 mod storage;
 
 use serde::{Deserialize, Serialize};
@@ -92,435 +95,7 @@ async fn app_invoke(
     method: String,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    eprintln!("[reflex] app_invoke app={app_id} method={method}");
-    match method.as_str() {
-        "agent.ask" => {
-            let prompt = params
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .ok_or("missing prompt")?;
-            let answer = ask_agent_oneshot(&app, prompt)
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok(serde_json::json!({"answer": answer}))
-        }
-        "agent.startTopic" => {
-            let prompt = params
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .ok_or("missing prompt")?;
-            let project_id = params
-                .get("projectId")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let ctx = QuickContext::default();
-            let thread_id = submit_quick(app.clone(), prompt.into(), ctx, project_id, None)?;
-            Ok(serde_json::json!({"threadId": thread_id}))
-        }
-        "storage.get" => {
-            let key = params
-                .get("key")
-                .and_then(|v| v.as_str())
-                .ok_or("missing key")?;
-            let store = apps::read_storage(&app, &app_id).map_err(|e| e.to_string())?;
-            Ok(serde_json::json!({
-                "value": store.get(key).cloned().unwrap_or(serde_json::Value::Null),
-            }))
-        }
-        "storage.set" => {
-            let key = params
-                .get("key")
-                .and_then(|v| v.as_str())
-                .ok_or("missing key")?;
-            let value = params
-                .get("value")
-                .cloned()
-                .unwrap_or(serde_json::Value::Null);
-            let mut store = apps::read_storage(&app, &app_id).map_err(|e| e.to_string())?;
-            if let Some(obj) = store.as_object_mut() {
-                obj.insert(key.to_string(), value);
-            }
-            apps::write_storage(&app, &app_id, &store).map_err(|e| e.to_string())?;
-            Ok(serde_json::json!({"ok": true}))
-        }
-        "fs.read" => {
-            let path = params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .ok_or("missing path")?;
-            let bytes = apps::read_app_file(&app, &app_id, path).map_err(|e| e.to_string())?;
-            let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
-            Ok(serde_json::json!({"content": text}))
-        }
-        "fs.write" => {
-            let path = params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .ok_or("missing path")?;
-            let content = params
-                .get("content")
-                .and_then(|v| v.as_str())
-                .ok_or("missing content")?;
-            apps::write_app_file(&app, &app_id, path, content.as_bytes())
-                .map_err(|e| e.to_string())?;
-            Ok(serde_json::json!({"ok": true}))
-        }
-        "notify.show" => {
-            let title = params
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Reflex App");
-            let body = params
-                .get("body")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            use tauri_plugin_notification::NotificationExt;
-            app.notification()
-                .builder()
-                .title(title)
-                .body(body)
-                .show()
-                .map_err(|e| e.to_string())?;
-            Ok(serde_json::json!({"ok": true}))
-        }
-        "dialog.openDirectory" => {
-            use tauri_plugin_dialog::DialogExt;
-            let title = params
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Выбор папки")
-                .to_string();
-            let mut builder = app.dialog().file().set_title(&title);
-            if let Some(default_path) = params.get("defaultPath").and_then(|v| v.as_str()) {
-                builder = builder.set_directory(std::path::PathBuf::from(default_path));
-            }
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            builder.pick_folder(move |path| {
-                let _ = tx.send(path);
-            });
-            let picked = rx.await.map_err(|e| e.to_string())?;
-            Ok(serde_json::json!({
-                "path": picked.map(|p| p.to_string()),
-            }))
-        }
-        "dialog.openFile" => {
-            use tauri_plugin_dialog::DialogExt;
-            let title = params
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Выбор файла")
-                .to_string();
-            let multiple = params
-                .get("multiple")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let mut builder = app.dialog().file().set_title(&title);
-            if let Some(default_path) = params.get("defaultPath").and_then(|v| v.as_str()) {
-                builder = builder.set_directory(std::path::PathBuf::from(default_path));
-            }
-            if let Some(filters) = params.get("filters").and_then(|v| v.as_array()) {
-                for f in filters {
-                    let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("filter");
-                    let exts: Vec<&str> = f
-                        .get("extensions")
-                        .and_then(|v| v.as_array())
-                        .map(|a| a.iter().filter_map(|s| s.as_str()).collect())
-                        .unwrap_or_default();
-                    builder = builder.add_filter(name, &exts);
-                }
-            }
-            if multiple {
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                builder.pick_files(move |paths| {
-                    let _ = tx.send(paths);
-                });
-                let picked = rx.await.map_err(|e| e.to_string())?;
-                let paths: Vec<String> = picked
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|p| p.to_string())
-                    .collect();
-                Ok(serde_json::json!({"paths": paths}))
-            } else {
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                builder.pick_file(move |path| {
-                    let _ = tx.send(path);
-                });
-                let picked = rx.await.map_err(|e| e.to_string())?;
-                Ok(serde_json::json!({
-                    "path": picked.map(|p| p.to_string()),
-                }))
-            }
-        }
-        "dialog.saveFile" => {
-            use tauri_plugin_dialog::DialogExt;
-            let title = params
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Сохранить как")
-                .to_string();
-            let mut builder = app.dialog().file().set_title(&title);
-            if let Some(default_path) = params.get("defaultPath").and_then(|v| v.as_str()) {
-                let pb = std::path::PathBuf::from(default_path);
-                if let Some(parent) = pb.parent() {
-                    if !parent.as_os_str().is_empty() {
-                        builder = builder.set_directory(parent);
-                    }
-                }
-                if let Some(name) = pb.file_name().and_then(|n| n.to_str()) {
-                    builder = builder.set_file_name(name);
-                }
-            }
-            if let Some(filters) = params.get("filters").and_then(|v| v.as_array()) {
-                for f in filters {
-                    let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("filter");
-                    let exts: Vec<&str> = f
-                        .get("extensions")
-                        .and_then(|v| v.as_array())
-                        .map(|a| a.iter().filter_map(|s| s.as_str()).collect())
-                        .unwrap_or_default();
-                    builder = builder.add_filter(name, &exts);
-                }
-            }
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            builder.save_file(move |path| {
-                let _ = tx.send(path);
-            });
-            let picked = rx.await.map_err(|e| e.to_string())?;
-            let path_str = picked.as_ref().map(|p| p.to_string());
-            // optional content: write the file at chosen path
-            if let (Some(p), Some(content)) =
-                (picked.as_ref(), params.get("content").and_then(|v| v.as_str()))
-            {
-                if let Some(fs_path) = p.as_path() {
-                    std::fs::write(fs_path, content).map_err(|e| e.to_string())?;
-                } else {
-                    return Err("save target not a local path".into());
-                }
-            }
-            Ok(serde_json::json!({"path": path_str}))
-        }
-        "agent.stream" => {
-            let prompt = params
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .ok_or("missing prompt")?
-                .to_string();
-            let sandbox = params
-                .get("sandbox")
-                .and_then(|v| v.as_str())
-                .unwrap_or("read-only")
-                .to_string();
-            let cwd_str = params.get("cwd").and_then(|v| v.as_str());
-            let cwd_path = match cwd_str {
-                Some(p) => PathBuf::from(p),
-                None => apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?,
-            };
-
-            let handle = app.state::<app_server::AppServerHandle>();
-            let server = handle.wait().await;
-            let app_thread_id = server
-                .thread_start(&cwd_path, &sandbox, None)
-                .await
-                .map_err(|e| format!("thread_start: {e}"))?;
-
-            let mut rx = server.subscribe_stream(&app_thread_id);
-            let stream_id = format!("s_{}_{}", app_id, uuid_like());
-            let app_emit = app.clone();
-            let stream_id_for_task = stream_id.clone();
-            let app_id_for_task = app_id.clone();
-            let app_thread_id_for_task = app_thread_id.clone();
-            let server_for_task = server.clone();
-            tauri::async_runtime::spawn(async move {
-                while let Some(ev) = rx.recv().await {
-                    match ev {
-                        app_server::StreamEvent::Delta(token) => {
-                            let _ = app_emit.emit(
-                                "reflex://app-stream-token",
-                                &serde_json::json!({
-                                    "stream_id": stream_id_for_task,
-                                    "app_id": app_id_for_task,
-                                    "token": token,
-                                }),
-                            );
-                        }
-                        app_server::StreamEvent::Done(full) => {
-                            let _ = app_emit.emit(
-                                "reflex://app-stream-done",
-                                &serde_json::json!({
-                                    "stream_id": stream_id_for_task,
-                                    "app_id": app_id_for_task,
-                                    "result": full,
-                                }),
-                            );
-                            break;
-                        }
-                    }
-                }
-                server_for_task.unsubscribe_stream(&app_thread_id_for_task);
-            });
-
-            // kick off the turn (don't await — events flow via the listener)
-            let server_kick = server.clone();
-            let thread_for_kick = app_thread_id.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = server_kick.turn_start(&thread_for_kick, &prompt).await {
-                    eprintln!("[reflex] agent.stream turn_start failed: {e:?}");
-                }
-            });
-
-            Ok(serde_json::json!({
-                "streamId": stream_id,
-                "threadId": app_thread_id,
-            }))
-        }
-        "agent.streamAbort" => {
-            let stream_thread = params
-                .get("threadId")
-                .and_then(|v| v.as_str())
-                .ok_or("missing threadId")?;
-            let handle = app.state::<app_server::AppServerHandle>();
-            let server = handle.wait().await;
-            server.unsubscribe_stream(stream_thread);
-            Ok(serde_json::json!({"ok": true}))
-        }
-        "agent.task" => {
-            let prompt = params
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .ok_or("missing prompt")?;
-            let sandbox = params
-                .get("sandbox")
-                .and_then(|v| v.as_str())
-                .unwrap_or("read-only")
-                .to_string();
-            let cwd_str = params.get("cwd").and_then(|v| v.as_str());
-            let cwd_path = match cwd_str {
-                Some(p) => PathBuf::from(p),
-                None => apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?,
-            };
-
-            let handle = app.state::<app_server::AppServerHandle>();
-            let server = handle.wait().await;
-            let app_thread_id = server
-                .thread_start(&cwd_path, &sandbox, None)
-                .await
-                .map_err(|e| format!("thread_start: {e}"))?;
-            let _ = server.turn_start(&app_thread_id, prompt).await;
-            let turn = server.wait_for_turn(&app_thread_id).await;
-            let result_text = turn
-                .as_ref()
-                .and_then(|t| {
-                    t.get("lastAgentMessage")
-                        .or_else(|| t.get("last_agent_message"))
-                })
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            Ok(serde_json::json!({
-                "threadId": app_thread_id,
-                "result": result_text,
-            }))
-        }
-        "net.fetch" => {
-            let url_str = params
-                .get("url")
-                .and_then(|v| v.as_str())
-                .ok_or("missing url")?;
-            let parsed_url = reqwest::Url::parse(url_str)
-                .map_err(|e| format!("invalid url: {e}"))?;
-            let host = parsed_url
-                .host_str()
-                .ok_or("url has no host")?
-                .to_string();
-
-            let manifest = apps::read_manifest(&app, &app_id).map_err(|e| e.to_string())?;
-            let policy = manifest
-                .network
-                .ok_or_else(|| "manifest.network is missing — declare allowed_hosts".to_string())?;
-            if !policy.allows_host(&host) {
-                return Err(format!(
-                    "host '{host}' not in manifest.network.allowed_hosts"
-                ));
-            }
-
-            let method_str = params
-                .get("method")
-                .and_then(|v| v.as_str())
-                .unwrap_or("GET")
-                .to_uppercase();
-            let method = reqwest::Method::from_bytes(method_str.as_bytes())
-                .map_err(|e| format!("invalid method: {e}"))?;
-            let timeout_ms = params
-                .get("timeoutMs")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(30_000);
-
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_millis(timeout_ms))
-                .build()
-                .map_err(|e| format!("client build: {e}"))?;
-            let mut req = client.request(method, parsed_url);
-
-            if let Some(headers) = params.get("headers").and_then(|v| v.as_object()) {
-                let mut header_map = reqwest::header::HeaderMap::new();
-                for (k, v) in headers {
-                    let val = v.as_str().ok_or("header value must be string")?;
-                    let name = reqwest::header::HeaderName::from_bytes(k.as_bytes())
-                        .map_err(|e| format!("invalid header {k}: {e}"))?;
-                    let value = reqwest::header::HeaderValue::from_str(val)
-                        .map_err(|e| format!("invalid header value for {k}: {e}"))?;
-                    header_map.insert(name, value);
-                }
-                req = req.headers(header_map);
-            }
-
-            if let Some(body) = params.get("body") {
-                if let Some(s) = body.as_str() {
-                    req = req.body(s.to_string());
-                } else if !body.is_null() {
-                    let json = serde_json::to_string(body).map_err(|e| e.to_string())?;
-                    req = req.header("content-type", "application/json").body(json);
-                }
-            }
-
-            let resp = req.send().await.map_err(|e| format!("fetch failed: {e}"))?;
-            let status_code = resp.status().as_u16();
-            let mut headers_out = serde_json::Map::new();
-            for (k, v) in resp.headers().iter() {
-                if let Ok(s) = v.to_str() {
-                    headers_out.insert(k.as_str().to_string(), serde_json::Value::String(s.into()));
-                }
-            }
-            let bytes = resp
-                .bytes()
-                .await
-                .map_err(|e| format!("read body: {e}"))?;
-            const MAX_BODY: usize = 10 * 1024 * 1024;
-            if bytes.len() > MAX_BODY {
-                return Err(format!(
-                    "response too large: {} bytes (limit 10MB)",
-                    bytes.len()
-                ));
-            }
-            let (body_value, encoding) = match std::str::from_utf8(&bytes) {
-                Ok(s) => (serde_json::Value::String(s.to_string()), "utf8"),
-                Err(_) => {
-                    use base64::Engine;
-                    let b64 =
-                        base64::engine::general_purpose::STANDARD.encode(&bytes);
-                    (serde_json::Value::String(b64), "base64")
-                }
-            };
-            Ok(serde_json::json!({
-                "status": status_code,
-                "headers": headers_out,
-                "body": body_value,
-                "encoding": encoding,
-            }))
-        }
-        other => Err(format!("unknown method: {other}")),
-    }
+    apps_dispatch::dispatch_app_method(&app, &app_id, &method, params).await
 }
 
 #[tauri::command]
@@ -707,6 +282,7 @@ fn build_empty_app_thread(
         title: Some(format!("App · {label}")),
         goal: Some("Доработка утилиты".into()),
         plan_mode: true,
+        plan_confirmed: false,
     };
     storage::write_meta(&dir, &meta).map_err(|e| e.to_string())?;
 
@@ -859,8 +435,7 @@ fn app_revise(
 - После твоих правок iframe перезагрузится сам (file watcher), для server runtime — процесс перезапустится. Не требуй ручного reload.\n\
 - Не трогай .reflex/, .git/, storage.json. Manifest можно обновлять (permissions, network.allowed_hosts, runtime, server)."
     );
-    let wrapped = wrap_with_plan_mode(&prompt);
-    continue_thread(app, project.id, latest.meta.id.clone(), wrapped)?;
+    continue_thread(app, project.id, latest.meta.id.clone(), prompt, None)?;
     Ok(serde_json::json!({"thread_id": latest.meta.id}))
 }
 
@@ -903,6 +478,8 @@ async fn create_app(
         runtime: None,
         server: None,
         network: None,
+        schedules: Vec::new(),
+        actions: Vec::new(),
     };
     apps::write_manifest(&app, &app_id, &manifest).map_err(|e| e.to_string())?;
 
@@ -924,6 +501,7 @@ async fn create_app(
         title: Some(format!("Создание app: {label}")),
         goal: Some(format!("Написать Reflex app: {trimmed}")),
         plan_mode: true,
+        plan_confirmed: false,
     };
     let _ = storage::write_meta(&project_root, &meta);
 
@@ -1007,6 +585,64 @@ fn wrap_with_plan_mode(prompt: &str) -> String {
 «Жду подтверждения. Напиши `go` чтобы я выполнил план как есть, или скажи что поправить — я перепланирую и снова покажу.»\n\n\
 ЗАДАЧА:\n{prompt}"
     )
+}
+
+fn wrap_with_plan_revision(feedback: &str) -> String {
+    format!(
+        "⚠️ РЕЖИМ ПЛАНИРОВАНИЯ — ЭТО ПРАВКА ПЛАНА, НЕ ВЫПОЛНЕНИЕ\n\n\
+Пользователь уточнил или поправил предыдущий план. НИЧЕГО не модифицируй и не запускай команды на этом ходу. \
+Обнови план с учетом замечания и снова попроси подтверждение перед выполнением.\n\n\
+ПРАВКА ПОЛЬЗОВАТЕЛЯ:\n{feedback}"
+    )
+}
+
+fn stored_event_has_agent_output(ev: &storage::StoredEvent) -> bool {
+    if ev.stream != "stdout" {
+        return false;
+    }
+    let parsed: serde_json::Value = match serde_json::from_str(&ev.raw) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let msg = parsed.get("msg").unwrap_or(&parsed);
+    let msg_type = msg
+        .get("type")
+        .or_else(|| parsed.get("type"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if msg_type == "item.agentMessage.delta" || msg_type == "agent_message_delta" {
+        return true;
+    }
+    if msg_type == "agent_message" {
+        return true;
+    }
+    if msg_type == "turn.completed" {
+        return msg
+            .get("turn")
+            .or_else(|| parsed.get("turn"))
+            .and_then(|turn| {
+                turn.get("lastAgentMessage")
+                    .or_else(|| turn.get("last_agent_message"))
+            })
+            .is_some();
+    }
+    if msg_type == "item.completed" {
+        let item = msg.get("item").or_else(|| parsed.get("item"));
+        let item_type = item
+            .and_then(|it| it.get("type").or_else(|| it.get("kind")))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        return item_type.contains("agentmessage")
+            || item_type.contains("agent_message")
+            || item_type.contains("assistantmessage")
+            || item_type.contains("assistant_message")
+            || item_type == "assistant"
+            || item_type == "agent";
+    }
+
+    false
 }
 
 fn template_skeleton(template: &str) -> Option<&'static str> {
@@ -1104,7 +740,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p
 }
 
-async fn ask_agent_oneshot(app: &AppHandle, prompt: &str) -> std::io::Result<String> {
+pub(crate) async fn ask_agent_oneshot(app: &AppHandle, prompt: &str) -> std::io::Result<String> {
     use std::process::Stdio;
     use tokio::process::Command as TokioCommand;
     let base = app
@@ -1148,7 +784,7 @@ async fn ask_agent_oneshot(app: &AppHandle, prompt: &str) -> std::io::Result<Str
     Ok(text.trim().to_string())
 }
 
-fn uuid_like() -> String {
+pub(crate) fn uuid_like() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -1503,6 +1139,16 @@ fn submit_quick(
     project_id: Option<String>,
     plan_mode: Option<bool>,
 ) -> Result<String, String> {
+    submit_quick_impl(app, prompt, ctx, project_id, plan_mode)
+}
+
+pub(crate) fn submit_quick_impl(
+    app: AppHandle,
+    prompt: String,
+    ctx: QuickContext,
+    project_id: Option<String>,
+    plan_mode: Option<bool>,
+) -> Result<String, String> {
     let plan_mode = plan_mode.unwrap_or(false);
     eprintln!(
         "[reflex] submit_quick: prompt_len={} project_id={:?} ctx={:?}/{:?}",
@@ -1539,6 +1185,7 @@ fn submit_quick(
         title: None,
         goal: None,
         plan_mode,
+        plan_confirmed: false,
     };
     if let Err(e) = storage::write_meta(&project_root, &meta) {
         eprintln!("[reflex] write_meta failed: {e}");
@@ -1661,6 +1308,7 @@ fn continue_thread(
     project_id: String,
     thread_id: String,
     prompt: String,
+    plan_confirmed: Option<bool>,
 ) -> Result<(), String> {
     eprintln!(
         "[reflex] continue_thread: project={project_id} thread={thread_id} prompt_len={}",
@@ -1677,12 +1325,37 @@ fn continue_thread(
     let project_root = PathBuf::from(&project.root);
 
     let mut meta = storage::read_meta(&project_root, &thread_id).map_err(|e| e.to_string())?;
+    let stored_events =
+        storage::read_stored_events(&project_root, &thread_id).map_err(|e| e.to_string())?;
+    let has_agent_output = stored_events.iter().any(stored_event_has_agent_output);
+    let requested_plan_confirmation = plan_confirmed.unwrap_or(false);
+    let mut meta_dirty = false;
+    let mut plan_state_changed = false;
+    let prompt_for_model = if meta.plan_mode {
+        if requested_plan_confirmation {
+            if !meta.plan_confirmed {
+                meta.plan_confirmed = true;
+                meta_dirty = true;
+                plan_state_changed = true;
+            }
+            trimmed.to_string()
+        } else if meta.plan_confirmed {
+            meta.plan_confirmed = false;
+            meta_dirty = true;
+            plan_state_changed = true;
+            wrap_with_plan_mode(trimmed)
+        } else if has_agent_output {
+            wrap_with_plan_revision(trimmed)
+        } else {
+            wrap_with_plan_mode(trimmed)
+        }
+    } else {
+        trimmed.to_string()
+    };
     let app_thread_id_opt: Option<String> = match meta.session_id.clone() {
         Some(sid) => Some(sid),
         None => {
-            let events =
-                storage::read_stored_events(&project_root, &thread_id).map_err(|e| e.to_string())?;
-            let extracted = events.iter().find_map(|ev| {
+            let extracted = stored_events.iter().find_map(|ev| {
                 if ev.stream != "stdout" {
                     return None;
                 }
@@ -1691,13 +1364,14 @@ fn continue_thread(
             });
             if let Some(ref sid) = extracted {
                 meta.session_id = Some(sid.clone());
-                if let Err(e) = storage::write_meta(&project_root, &meta) {
-                    eprintln!("[reflex] backfill write_meta failed: {e}");
-                }
+                meta_dirty = true;
             }
             extracted
         }
     };
+    if meta_dirty {
+        storage::write_meta(&project_root, &meta).map_err(|e| e.to_string())?;
+    }
 
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1728,6 +1402,15 @@ fn continue_thread(
         "reflex://thread-running",
         &serde_json::json!({ "thread_id": thread_id }),
     );
+    if plan_state_changed {
+        let _ = app.emit(
+            "reflex://thread-meta-updated",
+            &serde_json::json!({
+                "thread_id": thread_id,
+                "plan_confirmed": meta.plan_confirmed,
+            }),
+        );
+    }
 
     let _ = app.emit(
         "reflex://codex-event",
@@ -1743,7 +1426,7 @@ fn continue_thread(
 
     let app_handle = app.clone();
     let id_for_task = thread_id.clone();
-    let prompt_owned = trimmed.to_string();
+    let prompt_owned = prompt_for_model;
     let root_for_task = project_root.clone();
     let project_id_for_task = project_id.clone();
     tauri::async_runtime::spawn(async move {
@@ -2110,6 +1793,8 @@ pub fn run() {
         .manage(app_watcher::AppWatchers::default())
         .manage(project_watcher::ProjectWatchers::default())
         .manage(memory::MemoryState::default())
+        .manage(scheduler::SchedulerHandle::default())
+        .manage(app_bus::AppBusBridge::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init());
@@ -2173,6 +1858,23 @@ pub fn run() {
                 }
             });
 
+            let app_for_scheduler = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let h: scheduler::SchedulerHandle = app_for_scheduler
+                    .state::<scheduler::SchedulerHandle>()
+                    .inner()
+                    .clone();
+                scheduler::engine::run(app_for_scheduler, h).await;
+            });
+
+            let app_for_bus = app.handle().clone();
+            let bridge: app_bus::AppBusBridge = app_for_bus
+                .state::<app_bus::AppBusBridge>()
+                .inner()
+                .clone();
+            let bus = app_for_bus.state::<memory::MemoryState>().bus.clone();
+            app_bus::start(bridge, bus, app_for_bus);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -2226,11 +1928,19 @@ pub fn run() {
             memory::tools::memory_path_status,
             memory::tools::memory_path_status_batch,
             memory::tools::memory_forget_path,
+            scheduler::commands::scheduler_list,
+            scheduler::commands::scheduler_set_paused,
+            scheduler::commands::scheduler_run_now,
+            scheduler::commands::scheduler_runs,
+            scheduler::commands::scheduler_run_detail,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                let scheduler_h: scheduler::SchedulerHandle =
+                    app.state::<scheduler::SchedulerHandle>().inner().clone();
+                scheduler_h.shutdown();
                 let runtimes = app.state::<app_runtime::AppRuntimes>();
                 let runtimes_arc = runtimes.servers.clone();
                 tauri::async_runtime::block_on(async move {

@@ -28,6 +28,50 @@ pub struct AppManifest {
     pub server: Option<ServerConfig>,
     #[serde(default)]
     pub network: Option<NetworkPolicy>,
+    #[serde(default)]
+    pub schedules: Vec<ScheduleDef>,
+    #[serde(default)]
+    pub actions: Vec<ActionDef>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Step {
+    pub method: String,
+    #[serde(default)]
+    pub params: serde_json::Value,
+    #[serde(default)]
+    pub save_as: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ScheduleDef {
+    pub id: String,
+    pub name: String,
+    pub cron: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_catch_up")]
+    pub catch_up: String,
+    pub steps: Vec<Step>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ActionDef {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub public: bool,
+    pub steps: Vec<Step>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_catch_up() -> String {
+    "once".into()
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -511,6 +555,40 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   }
   document.addEventListener('mousemove', onMove, true);
   document.addEventListener('click', onClickCapture, true);
+
+  // ---- inter-app event SDK ----
+  var eventHandlers = Object.create(null);
+  function reflexInvokeRaw(method, params) {
+    return new Promise(function(resolve, reject){
+      var id = 'r_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
+      function once(ev){
+        var d = ev.data;
+        if (!d || d.source !== 'reflex' || d.id !== id) return;
+        window.removeEventListener('message', once);
+        d.error ? reject(d.error) : resolve(d.result);
+      }
+      window.addEventListener('message', once);
+      window.parent.postMessage({source:'reflex-app',type:'request',id:id,method:method,params:params||{}}, '*');
+    });
+  }
+  window.reflexEventOn = function(topic, cb) {
+    if (!eventHandlers[topic]) {
+      eventHandlers[topic] = [];
+      reflexInvokeRaw('events.subscribe', {topics: [topic]}).catch(function(e){ console.warn('[reflex] subscribe failed', e); });
+    }
+    eventHandlers[topic].push(cb);
+  };
+  window.reflexEventOff = function(topic) {
+    delete eventHandlers[topic];
+    reflexInvokeRaw('events.unsubscribe', {topics: [topic]}).catch(function(){});
+  };
+  window.reflexEventEmit = function(topic, payload) {
+    return reflexInvokeRaw('events.emit', {topic: topic, payload: payload});
+  };
+  window.reflexAppsInvoke = function(appId, actionId, params) {
+    return reflexInvokeRaw('apps.invoke', {app_id: appId, action_id: actionId, params: params||{}});
+  };
+
   window.addEventListener('message', function(ev){
     var m = ev.data;
     if (!m || m.source !== 'reflex') return;
@@ -518,6 +596,13 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
       inspecting = !!m.on;
       document.body.style.cursor = inspecting ? 'crosshair' : '';
       if (!inspecting) { setOutline(hovered, false); hovered = null; }
+    } else if (m.type === 'event' && m.topic) {
+      var handlers = eventHandlers[m.topic];
+      if (handlers) {
+        for (var i = 0; i < handlers.length; i++) {
+          try { handlers[i](m.data, m.fromApp); } catch(err) { console.error('[reflex] event handler error', err); }
+        }
+      }
     }
   });
 })();
@@ -778,6 +863,8 @@ pub fn ensure_sample_app(app: &AppHandle) -> io::Result<()> {
         runtime: None,
         server: None,
         network: None,
+        schedules: Vec::new(),
+        actions: Vec::new(),
     };
     fs::write(
         dir.join("manifest.json"),
@@ -785,8 +872,87 @@ pub fn ensure_sample_app(app: &AppHandle) -> io::Result<()> {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
     )?;
     fs::write(dir.join("index.html"), SAMPLE_HTML)?;
+    ensure_sample_cron_app(app, now_ms)?;
     Ok(())
 }
+
+fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
+    let dir = app_dir(app, "sample-cron")?;
+    if dir.join("manifest.json").exists() {
+        return Ok(());
+    }
+    fs::create_dir_all(&dir)?;
+    let manifest = AppManifest {
+        id: "sample-cron".into(),
+        name: "Sample · Heartbeat".into(),
+        icon: Some("⏱".into()),
+        description: Some("Демо-расписания: каждую минуту пишет timestamp в storage.".into()),
+        entry: "index.html".into(),
+        permissions: vec!["storage.set".into(), "storage.get".into()],
+        kind: "panel".into(),
+        created_at_ms: now_ms,
+        runtime: None,
+        server: None,
+        network: None,
+        schedules: vec![ScheduleDef {
+            id: "heartbeat".into(),
+            name: "Heartbeat (every minute)".into(),
+            cron: "0 * * * * *".into(),
+            enabled: true,
+            catch_up: "once".into(),
+            steps: vec![Step {
+                method: "storage.set".into(),
+                params: serde_json::json!({
+                    "key": "last_tick_ms",
+                    "value": now_ms,
+                }),
+                save_as: None,
+            }],
+        }],
+        actions: Vec::new(),
+    };
+    fs::write(
+        dir.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
+    )?;
+    fs::write(dir.join("index.html"), SAMPLE_CRON_HTML)?;
+    Ok(())
+}
+
+const SAMPLE_CRON_HTML: &str = r#"<!doctype html>
+<html><head><meta charset="utf-8"><title>Heartbeat</title>
+<style>body{font-family:system-ui;background:#15171c;color:#eee;padding:24px}code{background:#222;padding:2px 6px;border-radius:4px}</style>
+</head><body>
+<h2>⏱ Heartbeat sample</h2>
+<p>Это демо-приложение, у которого в манифесте описано расписание <code>0 * * * * *</code> (раз в минуту).</p>
+<p>Reflex запускает шаг <code>storage.set last_tick_ms</code> сам, даже когда это окно скрыто. Открой раздел Automations чтобы видеть запуски.</p>
+<p>Последний tick: <code id="last">—</code></p>
+<script>
+async function reflexInvoke(method, params){
+  return new Promise((res, rej) => {
+    const id = Math.random().toString(36).slice(2);
+    function on(ev){
+      if (ev.data?.source !== 'reflex' || ev.data?.id !== id) return;
+      window.removeEventListener('message', on);
+      ev.data.error ? rej(ev.data.error) : res(ev.data.result);
+    }
+    window.addEventListener('message', on);
+    window.parent.postMessage({source:'reflex-app',type:'request',id,method,params}, '*');
+  });
+}
+async function refresh(){
+  try {
+    const r = await reflexInvoke('storage.get',{key:'last_tick_ms'});
+    document.getElementById('last').textContent = r.value
+      ? new Date(Number(r.value)).toLocaleString()
+      : '—';
+  } catch (e) { document.getElementById('last').textContent = String(e); }
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body></html>"#;
 
 const SAMPLE_HTML: &str = r#"<!doctype html>
 <html><head><meta charset="utf-8"><title>Sample</title>

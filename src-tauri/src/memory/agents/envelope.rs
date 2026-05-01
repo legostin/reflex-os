@@ -12,6 +12,10 @@ pub mod intents {
     pub const FACT_REJECTED: &str = "memory.fact.rejected";
     pub const TOPIC_TURN: &str = "topic.turn";
     pub const TOPIC_IDLE: &str = "topic.idle";
+    pub const APP_EVENT: &str = "app.event";
+    pub const APP_ACTION_REQUEST: &str = "app.action.request";
+    pub const APP_ACTION_RESPONSE: &str = "app.action.response";
+    pub const SCHEDULER_FIRE: &str = "scheduler.fire";
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

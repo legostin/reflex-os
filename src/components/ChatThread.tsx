@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DiffPanel } from "./DiffPanel";
 import MemoryPanel from "./memory/MemoryPanel";
+import { AutomationsScreen } from "./automations/AutomationsScreen";
 import RecallView from "./memory/RecallView";
 import {
   FileActionsDrawer,
@@ -82,8 +83,9 @@ type Thread = {
 
 type ThreadMetaUpdated = {
   thread_id: string;
-  title: string;
-  goal: string;
+  title?: string | null;
+  goal?: string | null;
+  plan_confirmed?: boolean;
 };
 
 type ThreadQuestion = {
@@ -109,6 +111,7 @@ type StoredThreadMeta = {
   title: string | null;
   goal: string | null;
   plan_mode?: boolean;
+  plan_confirmed?: boolean;
 };
 
 type ProjectThread = {
@@ -122,7 +125,8 @@ type Route =
   | { kind: "topic"; thread_id: string }
   | { kind: "apps" }
   | { kind: "app"; app_id: string }
-  | { kind: "memory"; project_id?: string };
+  | { kind: "memory"; project_id?: string }
+  | { kind: "automations" };
 
 function routeKey(r: Route): string {
   switch (r.kind) {
@@ -138,6 +142,8 @@ function routeKey(r: Route): string {
       return `app:${r.app_id}`;
     case "memory":
       return r.project_id ? `memory:${r.project_id}` : "memory";
+    case "automations":
+      return "automations";
   }
 }
 
@@ -155,6 +161,8 @@ function tabIcon(r: Route): string {
       return "🪟";
     case "memory":
       return "M";
+    case "automations":
+      return "⏱";
   }
 }
 
@@ -183,6 +191,8 @@ function tabLabel(
       const p = projects.find((x) => x.id === r.project_id);
       return `Memory · ${p?.name ?? r.project_id}`;
     }
+    case "automations":
+      return "Automations";
   }
 }
 
@@ -290,7 +300,7 @@ function fromProjectThread(pt: ProjectThread): Thread {
     goal: pt.thread.meta.goal,
     pending_questions: [],
     plan_mode: !!pt.thread.meta.plan_mode,
-    plan_confirmed: false,
+    plan_confirmed: !!pt.thread.meta.plan_confirmed,
   };
 }
 
@@ -642,7 +652,13 @@ export default function ChatThread() {
         setThreads((prev) =>
           prev.map((t) =>
             t.id === e.payload.thread_id
-              ? { ...t, title: e.payload.title, goal: e.payload.goal }
+              ? {
+                  ...t,
+                  title: e.payload.title ?? t.title,
+                  goal: e.payload.goal ?? t.goal,
+                  plan_confirmed:
+                    e.payload.plan_confirmed ?? t.plan_confirmed,
+                }
               : t,
           ),
         );
@@ -813,6 +829,8 @@ export default function ChatThread() {
           />
         );
       }
+      case "automations":
+        return <AutomationsScreen />;
     }
   };
 
@@ -973,6 +991,13 @@ function Header({
           title="Memory"
         >
           Memory
+        </button>
+        <button
+          className={`header-tab ${route.kind === "automations" ? "active" : ""}`}
+          onClick={() => onNavigate({ kind: "automations" })}
+          title="Расписания и история запусков"
+        >
+          Automations
         </button>
         <span className="chat-subtitle">
           {threads.length} thread{threads.length === 1 ? "" : "s"} ·{" "}
@@ -1750,9 +1775,28 @@ function AppViewer({
         result: e.payload.result,
       });
     });
+    const eventUn = listen<{
+      topic: string;
+      from_app: string;
+      data: unknown;
+    }>(`reflex://app-event/${appId}`, (e) => {
+      sendToIframe({
+        source: "reflex",
+        type: "event",
+        topic: e.payload.topic,
+        fromApp: e.payload.from_app,
+        data: e.payload.data,
+      });
+    });
     return () => {
       tokenUn.then((u) => u());
       doneUn.then((u) => u());
+      eventUn.then((u) => u());
+      void invoke("app_invoke", {
+        appId,
+        method: "events.clearSubscriptions",
+        params: {},
+      }).catch(() => {});
     };
   }, [appId]);
 
@@ -3090,16 +3134,27 @@ function mostRecentTopicPrompt(thread: Thread): string {
   return thread.prompt ?? "";
 }
 
+function isPlanApprovalText(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return /^(go|go!|run|start|yes|y|ok|okay|да|ок|старт|выполняй)$/.test(
+    normalized,
+  );
+}
+
 function ThreadCard({ thread }: { thread: Thread }) {
   const [followup, setFollowup] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [planConfirmed, setPlanConfirmed] = useState(false);
 
   // Banner появляется только когда у треда уже есть выдача агента (план написан)
   // и тред в done-состоянии. На пустом или ещё работающем треде — скрыт.
+  const latestUserSeq = thread.events.reduce(
+    (max, ev) => (ev.stream === "user" ? Math.max(max, ev.seq) : max),
+    0,
+  );
   const hasAgentOutput = thread.events.some((ev) => {
+    if (ev.seq <= latestUserSeq) return false;
     if (ev.stream !== "stdout") return false;
     const msg = ev.parsed?.msg ?? ev.parsed ?? {};
     const t: string = msg.type ?? ev.parsed?.type ?? "";
@@ -3115,7 +3170,6 @@ function ThreadCard({ thread }: { thread: Thread }) {
   });
   const showPlanBanner =
     thread.plan_mode &&
-    !planConfirmed &&
     !thread.plan_confirmed &&
     thread.done &&
     hasAgentOutput;
@@ -3134,14 +3188,15 @@ function ThreadCard({ thread }: { thread: Thread }) {
     setError(null);
     setSubmitting(true);
     try {
-      await invoke("continue_thread", {
+      const confirmsPlan = showPlanBanner && isPlanApprovalText(text);
+      const args: Record<string, unknown> = {
         projectId: thread.project_id,
         threadId: thread.id,
-        prompt: text,
-      });
+        prompt: confirmsPlan ? "go — выполняй план как описал." : text,
+      };
+      if (confirmsPlan) args.planConfirmed = true;
+      await invoke("continue_thread", args);
       setFollowup("");
-      // Any followup after a plan implies the user moved past it.
-      if (thread.plan_mode) setPlanConfirmed(true);
     } catch (e) {
       console.error("[reflex] continue_thread failed", e);
       setError(String(e));
@@ -3159,8 +3214,8 @@ function ThreadCard({ thread }: { thread: Thread }) {
         projectId: thread.project_id,
         threadId: thread.id,
         prompt: "go — выполняй план как описал.",
+        planConfirmed: true,
       });
-      setPlanConfirmed(true);
     } catch (e) {
       console.error("[reflex] confirmPlan failed", e);
       setError(String(e));

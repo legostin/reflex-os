@@ -25,6 +25,10 @@ pub struct ThreadMeta {
     /// user must confirm or edit before execution.
     #[serde(default)]
     pub plan_mode: bool,
+    /// Current plan cycle has been confirmed. In plan mode this suppresses the
+    /// approval banner after execution; a later user task resets it.
+    #[serde(default)]
+    pub plan_confirmed: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
