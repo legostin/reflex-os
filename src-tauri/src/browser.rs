@@ -38,7 +38,7 @@ impl BrowserSidecar {
             .ok_or_else(|| "sidecar script has no parent".to_string())?
             .to_path_buf();
         let state_path = browser_state_path(app)?;
-        let node_bin = std::env::var("REFLEX_NODE_BIN").unwrap_or_else(|_| "node".into());
+        let node_bin = resolve_node_binary()?;
 
         eprintln!(
             "[browser] spawning sidecar: {} {}",
@@ -222,6 +222,34 @@ fn sidecar_script_path(app: &AppHandle) -> Result<PathBuf, String> {
             .collect::<Vec<_>>()
             .join(", ")
     ))
+}
+
+fn resolve_node_binary() -> Result<String, String> {
+    if let Ok(p) = std::env::var("REFLEX_NODE_BIN") {
+        if !p.is_empty() {
+            return Ok(p);
+        }
+    }
+    let candidates = [
+        "/opt/homebrew/bin/node",
+        "/usr/local/bin/node",
+        "/usr/bin/node",
+    ];
+    for c in candidates.iter() {
+        if std::path::Path::new(c).exists() {
+            return Ok((*c).to_string());
+        }
+    }
+    if let Ok(out) = std::process::Command::new("/bin/bash")
+        .args(["-lc", "command -v node"])
+        .output()
+    {
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !path.is_empty() && std::path::Path::new(&path).exists() {
+            return Ok(path);
+        }
+    }
+    Err("node binary not found (tried REFLEX_NODE_BIN env, common paths, and login shell)".into())
 }
 
 fn browser_state_path(app: &AppHandle) -> Result<PathBuf, String> {
