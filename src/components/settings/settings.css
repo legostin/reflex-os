@@ -1,0 +1,207 @@
+.settings-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: rgba(245, 245, 247, 0.95);
+  background: #15171c;
+}
+
+.settings-header {
+  flex-shrink: 0;
+  padding: 16px 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  padding: 3px;
+}
+
+.settings-tabs button {
+  background: transparent;
+  border: none;
+  color: rgba(240, 240, 245, 0.7);
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-tabs button.tab-on {
+  background: rgba(80, 140, 255, 0.18);
+  color: #fff;
+}
+
+.settings-pane {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-section {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.settings-section h2 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(180, 185, 195, 0.85);
+}
+
+.settings-section p {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(220, 220, 225, 0.85);
+  line-height: 1.5;
+}
+
+.settings-hint {
+  font-size: 12px !important;
+  color: rgba(180, 185, 195, 0.65) !important;
+  font-style: italic;
+}
+
+.logs-pane {
+  padding: 12px 16px 16px;
+  gap: 8px;
+}
+
+.logs-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.logs-toolbar select,
+.logs-toolbar input,
+.logs-toolbar button {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(245, 245, 247, 0.95);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.logs-toolbar input.logs-search {
+  flex: 1;
+  min-width: 160px;
+  cursor: text;
+}
+
+.logs-toolbar select:focus,
+.logs-toolbar input:focus {
+  border-color: rgba(74, 140, 255, 0.4);
+}
+
+.logs-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.logs-count {
+  font-size: 11px;
+  color: rgba(180, 185, 195, 0.7);
+  margin-left: auto;
+}
+
+.logs-list {
+  flex: 1;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 6px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.logs-empty {
+  padding: 16px;
+  color: rgba(180, 185, 195, 0.5);
+  text-align: center;
+}
+
+.log-row {
+  display: grid;
+  grid-template-columns: 80px 60px 140px 1fr;
+  gap: 8px;
+  padding: 2px 12px;
+  align-items: baseline;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.log-time {
+  color: rgba(180, 185, 195, 0.6);
+}
+
+.log-level {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  align-self: center;
+}
+
+.log-level-trace {
+  color: rgba(180, 185, 195, 0.5);
+}
+
+.log-level-debug {
+  color: rgba(160, 200, 230, 0.85);
+}
+
+.log-level-info {
+  color: rgba(140, 200, 130, 0.95);
+}
+
+.log-level-warn {
+  color: #f0c674;
+}
+
+.log-level-error {
+  color: #fca5a5;
+}
+
+.log-source {
+  color: rgba(140, 170, 220, 0.85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-msg {
+  color: rgba(230, 230, 235, 0.92);
+}
+
+.log-error .log-msg {
+  color: rgba(255, 200, 200, 0.95);
+}

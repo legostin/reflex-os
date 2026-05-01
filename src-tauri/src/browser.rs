@@ -1,3 +1,4 @@
+use crate::logs::{self, LogLevel};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -5,7 +6,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{timeout, Duration};
 
@@ -52,13 +53,14 @@ impl BrowserSidecar {
             .env("REFLEX_BROWSER_STATE", &state_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| format!("spawn node sidecar: {e}"))?;
 
         let stdin = child.stdin.take().ok_or("no sidecar stdin")?;
         let stdout = child.stdout.take().ok_or("no sidecar stdout")?;
+        let stderr = child.stderr.take().ok_or("no sidecar stderr")?;
 
         {
             let mut inner = self.inner.lock().await;
@@ -66,10 +68,16 @@ impl BrowserSidecar {
             inner.child = Some(child);
         }
 
+        logs::log_with(app, LogLevel::Info, "browser", "sidecar spawned");
+
         let inner_arc = self.inner.clone();
         let app_for_events = app.clone();
         tauri::async_runtime::spawn(async move {
             read_loop(inner_arc, stdout, app_for_events).await;
+        });
+        let app_for_stderr = app.clone();
+        tauri::async_runtime::spawn(async move {
+            stderr_loop(stderr, app_for_stderr).await;
         });
         Ok(())
     }
@@ -179,6 +187,47 @@ async fn read_loop(
             }
             Err(e) => {
                 eprintln!("[browser] sidecar read err: {e}");
+                break;
+            }
+        }
+    }
+}
+
+async fn stderr_loop(stderr: ChildStderr, app: AppHandle) {
+    let mut lines = BufReader::new(stderr).lines();
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let level = if line.to_lowercase().contains("error")
+                    || line.to_lowercase().contains("fail")
+                {
+                    LogLevel::Error
+                } else if line.to_lowercase().contains("warn") {
+                    LogLevel::Warn
+                } else {
+                    LogLevel::Info
+                };
+                logs::log_with(&app, level, "browser-sidecar", line);
+            }
+            Ok(None) => {
+                logs::log_with(
+                    &app,
+                    LogLevel::Warn,
+                    "browser",
+                    "sidecar stderr closed",
+                );
+                break;
+            }
+            Err(e) => {
+                logs::log_with(
+                    &app,
+                    LogLevel::Error,
+                    "browser",
+                    format!("stderr read: {e}"),
+                );
                 break;
             }
         }

@@ -7,6 +7,7 @@ mod apps_dispatch;
 mod browser;
 mod codex;
 mod context;
+mod logs;
 mod memory;
 mod project;
 mod project_watcher;
@@ -1979,6 +1980,7 @@ pub fn run() {
         .manage(scheduler::SchedulerHandle::default())
         .manage(app_bus::AppBusBridge::default())
         .manage(browser::BrowserSidecar::default())
+        .manage(logs::LogStore::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init());
@@ -2154,6 +2156,8 @@ pub fn run() {
             browser::browser_mouse_wheel,
             browser::browser_keyboard_type,
             browser::browser_keyboard_press,
+            logs::logs_get,
+            logs::log_push,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
