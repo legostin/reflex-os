@@ -1,4 +1,5 @@
 use crate::memory::agents::recall::{self, RecallRequest, RecallResult};
+use crate::memory::files::{self, IndexOutcome, PathStatus};
 use crate::memory::rag::{self, RagHit};
 use crate::memory::schema::{MemoryKind, MemoryNote, MemoryScope, ScopeRoots};
 use crate::memory::store::{self, ListFilter, SaveRequest};
@@ -170,6 +171,42 @@ pub async fn memory_recall(
 #[tauri::command]
 pub async fn memory_reindex(_app: AppHandle, project_root: String) -> Result<usize, String> {
     rag::reindex_project(Path::new(&project_root))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn memory_index_path(
+    _app: AppHandle,
+    project_root: String,
+    path: String,
+) -> Result<IndexOutcome, String> {
+    files::index_path(Path::new(&project_root), Path::new(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn memory_path_status(
+    _app: AppHandle,
+    project_root: String,
+    path: String,
+) -> Result<PathStatus, String> {
+    let project_root = PathBuf::from(project_root);
+    let path = PathBuf::from(path);
+    tokio::task::spawn_blocking(move || files::status(&project_root, &path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn memory_forget_path(
+    _app: AppHandle,
+    project_root: String,
+    path: String,
+) -> Result<usize, String> {
+    files::forget_path(Path::new(&project_root), Path::new(&path))
         .await
         .map_err(|e| e.to_string())
 }

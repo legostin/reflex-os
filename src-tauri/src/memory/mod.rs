@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod files;
 pub mod injection;
 pub mod map;
 pub mod rag;

@@ -173,6 +173,44 @@ impl VecStore {
         Ok(())
     }
 
+    pub fn forget_under(&self, prefix: &str) -> Result<usize> {
+        let like = format!("{prefix}%");
+        let n = self
+            .conn
+            .execute("DELETE FROM docs WHERE doc_id LIKE ?1", params![like])
+            .map_err(|e| MemoryError::Other(format!("sqlite delete: {e}")))?;
+        Ok(n)
+    }
+
+    pub fn has_doc(&self, doc_id: &str) -> Result<bool> {
+        let n: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM docs WHERE doc_id = ?1",
+                params![doc_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| MemoryError::Other(format!("sqlite has_doc: {e}")))?
+            .unwrap_or(0);
+        Ok(n > 0)
+    }
+
+    pub fn count_under(&self, prefix: &str) -> Result<usize> {
+        let like = format!("{prefix}%");
+        let n: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(DISTINCT doc_id) FROM docs WHERE doc_id LIKE ?1",
+                params![like],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| MemoryError::Other(format!("sqlite count_under: {e}")))?
+            .unwrap_or(0);
+        Ok(n as usize)
+    }
+
     #[cfg(test)]
     pub fn count(&self) -> Result<i64> {
         let n: i64 = self

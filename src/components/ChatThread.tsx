@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { DiffPanel } from "./DiffPanel";
 import MemoryPanel from "./memory/MemoryPanel";
 import RecallView from "./memory/RecallView";
+import { FileActionsDrawer, type DrawerTarget } from "./files/FileActionsDrawer";
 import "./ChatThread.css";
 
 type QuickContext = {
@@ -2617,6 +2618,7 @@ function ProjectScreen({
   const [newTopicPrompt, setNewTopicPrompt] = useState("");
   const [newTopicPlanMode, setNewTopicPlanMode] = useState(false);
   const [creatingTopic, setCreatingTopic] = useState(false);
+  const [drawerTarget, setDrawerTarget] = useState<DrawerTarget | null>(null);
   const [topicError, setTopicError] = useState<string | null>(null);
 
   async function submitNewTopic() {
@@ -2831,8 +2833,14 @@ function ProjectScreen({
               <li key={e.path}>
                 <button
                   className="file-row"
-                  onClick={() => openExternal(e.path)}
-                  title={e.path}
+                  onClick={(ev) => {
+                    if (ev.altKey) {
+                      openExternal(e.path);
+                    } else {
+                      setDrawerTarget(e);
+                    }
+                  }}
+                  title={`${e.path}\n(Alt+клик — открыть в Finder)`}
                 >
                   <span className="file-icon">
                     {e.kind === "directory"
@@ -2905,6 +2913,16 @@ function ProjectScreen({
             </div>
           </div>
         </div>
+      )}
+      {project && (
+        <FileActionsDrawer
+          target={drawerTarget}
+          projectRoot={project.root}
+          onClose={() => setDrawerTarget(null)}
+          onStartTopic={async (prompt, planMode) => {
+            await onCreateTopic(prompt, planMode ?? false);
+          }}
+        />
       )}
     </div>
   );
