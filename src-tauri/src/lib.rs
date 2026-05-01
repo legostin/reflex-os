@@ -1533,6 +1533,19 @@ fn submit_quick(
     let root_for_task = project_root.clone();
     let project_id_for_task = project.id.clone();
     tauri::async_runtime::spawn(async move {
+        let codex_prompt = match crate::memory::injection::build_preface(
+            &root_for_task,
+            &reflex_id,
+            &codex_prompt,
+        )
+        .await
+        {
+            Ok(r) => crate::memory::injection::wrap_user_prompt(&r.preface, &codex_prompt),
+            Err(e) => {
+                eprintln!("[reflex] memory inject failed: {e}");
+                codex_prompt
+            }
+        };
         let handle = app_handle.state::<app_server::AppServerHandle>();
         let server = handle.wait().await;
         let project_now = project::get_by_id(&app_handle, &project_id_for_task)
