@@ -27,24 +27,23 @@ const HOME_URL = "about:blank";
 const VIEWPORT_W = 1280;
 const VIEWPORT_H = 720;
 
+interface TabFrame {
+  src: string;
+  meta?: FramePayload["metadata"];
+}
+
 export function BrowserScreen() {
   const [tabs, setTabs] = useState<TabSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [urlDraft, setUrlDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [frameSrc, setFrameSrc] = useState<string>("");
-  const [frameMeta, setFrameMeta] = useState<FramePayload["metadata"]>(
-    undefined,
-  );
+  const [framesByTab, setFramesByTab] = useState<Record<string, TabFrame>>({});
   const initRef = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
-  const activeIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    activeIdRef.current = activeId;
-  }, [activeId]);
+  const frameSrc = activeId ? framesByTab[activeId]?.src ?? "" : "";
+  const frameMeta = activeId ? framesByTab[activeId]?.meta : undefined;
 
   async function refreshTabs() {
     try {
@@ -95,6 +94,17 @@ export function BrowserScreen() {
   }, []);
 
   useEffect(() => {
+    setFramesByTab((prev) => {
+      const ids = new Set(tabs.map((t) => t.tab_id));
+      const next: Record<string, TabFrame> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        if (ids.has(k)) next[k] = v;
+      }
+      return next;
+    });
+  }, [tabs]);
+
+  useEffect(() => {
     const subs: Promise<() => void>[] = [];
     subs.push(
       listen("reflex://browser/tabs.opened", () => void refreshTabs()),
@@ -114,34 +124,24 @@ export function BrowserScreen() {
                 : t,
             ),
           );
-          if (ev.payload.tab_id === activeIdRef.current) {
-            setUrlDraft(ev.payload.url);
-          }
+          setUrlDraft((cur) =>
+            ev.payload.tab_id === activeId ? ev.payload.url : cur,
+          );
         },
       ),
     );
-    let frameLog = 0;
     subs.push(
       listen<FramePayload>(
         "reflex://browser/screencast.frame",
         (ev) => {
           if (!ev.payload) return;
-          frameLog += 1;
-          if (frameLog <= 3) {
-            console.log(
-              "[browser] frame",
-              frameLog,
-              "tab",
-              ev.payload.tab_id,
-              "active",
-              activeIdRef.current,
-              "len",
-              ev.payload.jpeg_b64?.length,
-            );
-          }
-          if (ev.payload.tab_id !== activeIdRef.current) return;
-          setFrameSrc(`data:image/jpeg;base64,${ev.payload.jpeg_b64}`);
-          if (ev.payload.metadata) setFrameMeta(ev.payload.metadata);
+          setFramesByTab((prev) => ({
+            ...prev,
+            [ev.payload.tab_id]: {
+              src: `data:image/jpeg;base64,${ev.payload.jpeg_b64}`,
+              meta: ev.payload.metadata ?? prev[ev.payload.tab_id]?.meta,
+            },
+          }));
         },
       ),
     );
@@ -157,7 +157,6 @@ export function BrowserScreen() {
         await invoke("browser_screencast_stop", { tabId: activeId });
       } catch {}
     }
-    setFrameSrc("");
     setActiveId(id);
     try {
       await invoke("browser_set_viewport", {
@@ -198,8 +197,7 @@ export function BrowserScreen() {
         width: VIEWPORT_W,
         height: VIEWPORT_H,
       });
-      setFrameSrc("");
-      setActiveId(res.tab_id);
+        setActiveId(res.tab_id);
       await invoke("browser_screencast_start", {
         tabId: res.tab_id,
         quality: 60,
