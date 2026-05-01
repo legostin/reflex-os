@@ -1441,6 +1441,46 @@ fn resolve_project(
     Err("no project resolved (provide project_id or open Finder in a Reflex project)".into())
 }
 
+fn memory_kick_topic(app: &AppHandle, project_root: &Path, thread_id: &str) {
+    use crate::memory::agents::envelope::{intents, Envelope};
+    use crate::memory::agents::indexer::{self, IndexerConfig};
+
+    let state = app.state::<memory::MemoryState>();
+    let bus = state.bus.clone();
+    let indexed = state.indexed_threads.clone();
+
+    let id = thread_id.to_string();
+    let root = project_root.to_path_buf();
+    let bus_for_indexer = bus.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let mut guard = indexed.lock().await;
+        let already = !guard.insert(id.clone());
+        drop(guard);
+        if !already {
+            let bus_arg = bus_for_indexer.clone();
+            let id_arg = id.clone();
+            let root_arg = root.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) =
+                    indexer::run(bus_arg, root_arg, id_arg.clone(), IndexerConfig::default()).await
+                {
+                    eprintln!("[reflex] indexer for {id_arg} exited: {e}");
+                }
+            });
+        }
+        let env = Envelope::new(
+            "core",
+            &format!("indexer:{id}"),
+            intents::TOPIC_TURN,
+            serde_json::json!({ "thread_id": id }),
+        );
+        if let Err(e) = bus.send(env).await {
+            eprintln!("[reflex] bus send TOPIC_TURN failed: {e}");
+        }
+    });
+}
+
 #[tauri::command]
 fn submit_quick(
     app: AppHandle,
@@ -1512,6 +1552,8 @@ fn submit_quick(
     if let Err(e) = app.emit(THREAD_CREATED_EVENT, &payload) {
         eprintln!("[reflex] emit thread-created failed: {e}");
     }
+
+    memory_kick_topic(&app, &project_root, &thread_id);
 
     {
         let app_meta = app.clone();
@@ -1683,12 +1725,27 @@ fn continue_thread(
         }),
     );
 
+    memory_kick_topic(&app, &project_root, &thread_id);
+
     let app_handle = app.clone();
     let id_for_task = thread_id.clone();
     let prompt_owned = trimmed.to_string();
     let root_for_task = project_root.clone();
     let project_id_for_task = project_id.clone();
     tauri::async_runtime::spawn(async move {
+        let prompt_owned = match crate::memory::injection::build_preface(
+            &root_for_task,
+            &id_for_task,
+            &prompt_owned,
+        )
+        .await
+        {
+            Ok(r) => crate::memory::injection::wrap_user_prompt(&r.preface, &prompt_owned),
+            Err(e) => {
+                eprintln!("[reflex] memory inject failed (continue): {e}");
+                prompt_owned
+            }
+        };
         let handle = app_handle.state::<app_server::AppServerHandle>();
         let server = handle.wait().await;
         let initial_seq = storage::count_events(&root_for_task, &id_for_task).unwrap_or(0);
@@ -1910,6 +1967,8 @@ async fn resume_interrupted_threads(app: AppHandle, server: app_server::AppServe
             };
 
             eprintln!("[reflex] auto-resume thread={reflex_id} session={session_id}");
+
+            memory_kick_topic(&app, &root, &reflex_id);
 
             let now_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
