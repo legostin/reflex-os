@@ -230,6 +230,53 @@ fn app_export(app: AppHandle, app_id: String, target_path: String) -> Result<(),
 }
 
 #[tauri::command]
+fn delete_app(app: AppHandle, app_id: String) -> Result<apps::TrashEntry, String> {
+    let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
+    if !dir.exists() {
+        return Err(format!("app not found: {app_id}"));
+    }
+    if let Ok(threads) = storage::read_all_threads(&dir) {
+        for t in threads.iter().filter(|t| !t.meta.done) {
+            if let Err(e) = storage::finalize_thread(&dir, &t.meta.id, Some(-3), None) {
+                eprintln!("[delete_app] finalize_thread({}) failed: {e}", t.meta.id);
+            }
+        }
+    }
+    let entry = apps::move_to_trash(&app, &app_id).map_err(|e| e.to_string())?;
+    if let Err(e) = project::deregister_by_root(&app, &dir) {
+        eprintln!("[delete_app] deregister_by_root failed: {e}");
+    }
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    Ok(entry)
+}
+
+#[tauri::command]
+fn list_trashed_apps(app: AppHandle) -> Result<Vec<apps::TrashEntry>, String> {
+    apps::list_trash(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn restore_app(app: AppHandle, trash_id: String) -> Result<String, String> {
+    let new_id = apps::restore_from_trash(&app, &trash_id).map_err(|e| e.to_string())?;
+    if let Ok(dir) = apps::app_dir(&app, &new_id) {
+        if let Ok(proj) = project::read_project_at(&dir) {
+            if let Err(e) = project::register(&app, &proj) {
+                eprintln!("[restore_app] register failed: {e}");
+            }
+        }
+    }
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    Ok(new_id)
+}
+
+#[tauri::command]
+fn purge_trashed_app(app: AppHandle, trash_id: String) -> Result<(), String> {
+    apps::purge_trashed(&app, &trash_id).map_err(|e| e.to_string())?;
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    Ok(())
+}
+
+#[tauri::command]
 fn app_import(app: AppHandle, zip_path: String) -> Result<apps::AppManifest, String> {
     apps::import_app(&app, std::path::Path::new(&zip_path)).map_err(|e| e.to_string())
 }
@@ -1904,6 +1951,10 @@ pub fn run() {
             read_app_manifest,
             app_export,
             app_import,
+            delete_app,
+            list_trashed_apps,
+            restore_app,
+            purge_trashed_app,
             app_server_start,
             app_server_stop,
             app_server_restart,

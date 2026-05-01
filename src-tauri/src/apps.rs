@@ -130,6 +130,188 @@ pub fn app_dir(app: &AppHandle, id: &str) -> io::Result<PathBuf> {
     Ok(dir)
 }
 
+pub fn trash_dir(app: &AppHandle) -> io::Result<PathBuf> {
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    let dir = base.join("trash").join("apps");
+    fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TrashEntry {
+    pub trash_id: String,
+    pub original_id: String,
+    pub original_name: String,
+    pub original_icon: Option<String>,
+    pub original_description: Option<String>,
+    pub deleted_at_ms: u128,
+    pub original_root: String,
+}
+
+fn trash_index_path(app: &AppHandle) -> io::Result<PathBuf> {
+    Ok(trash_dir(app)?.join("index.json"))
+}
+
+fn read_trash_index(app: &AppHandle) -> io::Result<Vec<TrashEntry>> {
+    let path = trash_index_path(app)?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&raw).unwrap_or_default())
+}
+
+fn write_trash_index(app: &AppHandle, entries: &[TrashEntry]) -> io::Result<()> {
+    let path = trash_index_path(app)?;
+    let tmp = path.with_extension("json.tmp");
+    let bytes = serde_json::to_vec_pretty(entries)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    fs::write(&tmp, bytes)?;
+    fs::rename(tmp, path)
+}
+
+pub fn list_trash(app: &AppHandle) -> io::Result<Vec<TrashEntry>> {
+    let mut all = read_trash_index(app)?;
+    all.sort_by(|a, b| b.deleted_at_ms.cmp(&a.deleted_at_ms));
+    Ok(all)
+}
+
+pub fn move_to_trash(app: &AppHandle, app_id: &str) -> io::Result<TrashEntry> {
+    let src = app_dir(app, app_id)?;
+    if !src.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("app dir missing: {}", src.display()),
+        ));
+    }
+    let manifest = read_manifest(app, app_id).ok();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let trash_id = format!("{app_id}__{now}");
+    let dst = trash_dir(app)?.join(&trash_id);
+    fs::rename(&src, &dst)?;
+
+    let entry = TrashEntry {
+        trash_id: trash_id.clone(),
+        original_id: app_id.to_string(),
+        original_name: manifest
+            .as_ref()
+            .map(|m| m.name.clone())
+            .unwrap_or_else(|| app_id.to_string()),
+        original_icon: manifest.as_ref().and_then(|m| m.icon.clone()),
+        original_description: manifest.as_ref().and_then(|m| m.description.clone()),
+        deleted_at_ms: now,
+        original_root: src.to_string_lossy().into_owned(),
+    };
+    let mut all = read_trash_index(app)?;
+    all.push(entry.clone());
+    write_trash_index(app, &all)?;
+    Ok(entry)
+}
+
+pub fn restore_from_trash(app: &AppHandle, trash_id: &str) -> io::Result<String> {
+    let mut all = read_trash_index(app)?;
+    let pos = all
+        .iter()
+        .position(|e| e.trash_id == trash_id)
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, format!("trash entry: {trash_id}"))
+        })?;
+    let entry = all[pos].clone();
+    let src = trash_dir(app)?.join(&entry.trash_id);
+    if !src.exists() {
+        all.remove(pos);
+        write_trash_index(app, &all)?;
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("trashed dir missing: {}", src.display()),
+        ));
+    }
+
+    let mut target_id = entry.original_id.clone();
+    let mut target_dir = app_dir(app, &target_id)?;
+    if target_dir.exists() {
+        let suffix = uuid::Uuid::new_v4()
+            .simple()
+            .to_string()
+            .chars()
+            .take(6)
+            .collect::<String>();
+        target_id = format!("{}_{suffix}", entry.original_id);
+        target_dir = app_dir(app, &target_id)?;
+    }
+    fs::rename(&src, &target_dir)?;
+
+    if target_id != entry.original_id {
+        let manifest_path = target_dir.join("manifest.json");
+        if let Ok(s) = fs::read_to_string(&manifest_path) {
+            if let Ok(mut m) = serde_json::from_str::<AppManifest>(&s) {
+                m.id = target_id.clone();
+                let _ = fs::write(
+                    &manifest_path,
+                    serde_json::to_string_pretty(&m).unwrap_or_default(),
+                );
+            }
+        }
+        let project_file = target_dir.join(".reflex").join("project.json");
+        if let Ok(s) = fs::read_to_string(&project_file) {
+            if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&s) {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert(
+                        "root".into(),
+                        serde_json::Value::String(target_dir.to_string_lossy().into_owned()),
+                    );
+                }
+                let _ = fs::write(
+                    &project_file,
+                    serde_json::to_string_pretty(&v).unwrap_or_default(),
+                );
+            }
+        }
+    } else {
+        let project_file = target_dir.join(".reflex").join("project.json");
+        if let Ok(s) = fs::read_to_string(&project_file) {
+            if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&s) {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert(
+                        "root".into(),
+                        serde_json::Value::String(target_dir.to_string_lossy().into_owned()),
+                    );
+                }
+                let _ = fs::write(
+                    &project_file,
+                    serde_json::to_string_pretty(&v).unwrap_or_default(),
+                );
+            }
+        }
+    }
+
+    all.remove(pos);
+    write_trash_index(app, &all)?;
+    Ok(target_id)
+}
+
+pub fn purge_trashed(app: &AppHandle, trash_id: &str) -> io::Result<()> {
+    let mut all = read_trash_index(app)?;
+    let pos = all
+        .iter()
+        .position(|e| e.trash_id == trash_id)
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, format!("trash entry: {trash_id}"))
+        })?;
+    let entry = all.remove(pos);
+    let dir = trash_dir(app)?.join(&entry.trash_id);
+    if dir.exists() {
+        fs::remove_dir_all(&dir)?;
+    }
+    write_trash_index(app, &all)
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct AppListing {
     #[serde(flatten)]

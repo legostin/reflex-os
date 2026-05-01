@@ -143,6 +143,24 @@ pub fn register(app: &AppHandle, project: &Project) -> io::Result<()> {
     Ok(())
 }
 
+pub fn deregister_by_root(app: &AppHandle, root: &Path) -> io::Result<()> {
+    let path = registry_path(app)?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let mut list: Vec<Project> =
+        serde_json::from_str(&fs::read_to_string(&path)?).unwrap_or_default();
+    let before = list.len();
+    let target = root.to_string_lossy().into_owned();
+    list.retain(|p| p.root != target);
+    if list.len() == before {
+        return Ok(());
+    }
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, serde_json::to_string_pretty(&list).map_err(io_err)?)?;
+    fs::rename(tmp, path)
+}
+
 /// Suggest nearby existing projects when none was found at `path`. Returns
 /// registered projects whose root shares a path prefix with `path`, sorted
 /// by closest first.

@@ -744,15 +744,224 @@
   border-color: rgba(74, 140, 255, 0.3);
 }
 
+.apps-card {
+  position: relative;
+}
+
 .apps-card-creating {
-  opacity: 0.6;
-  cursor: not-allowed;
+  opacity: 0.75;
   border-style: dashed;
 }
 
 .apps-card-creating:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(240, 198, 116, 0.4);
+}
+
+.apps-card-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(245, 245, 247, 0.65);
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+
+.apps-card:hover .apps-card-delete,
+.apps-card-creating .apps-card-delete {
+  opacity: 1;
+}
+
+.apps-card-delete:hover:not(:disabled) {
+  background: rgba(220, 80, 80, 0.25);
+  color: #fff;
+}
+
+.apps-card-delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.apps-header-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.apps-trash-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(245, 245, 247, 0.85);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.apps-trash-btn:hover {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.apps-trash {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+
+.apps-trash-title {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(245, 245, 247, 0.85);
+}
+
+.apps-trash-empty {
+  font-size: 12px;
+  color: rgba(180, 185, 195, 0.7);
+}
+
+.apps-trash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.apps-trash-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.apps-trash-icon {
+  font-size: 18px;
+}
+
+.apps-trash-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.apps-trash-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.apps-trash-meta {
+  font-size: 11px;
+  color: rgba(180, 185, 195, 0.7);
+}
+
+.apps-trash-meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.apps-trash-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.apps-trash-action {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(245, 245, 247, 0.95);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.apps-trash-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.apps-trash-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.apps-trash-purge {
+  background: rgba(220, 80, 80, 0.10);
+  border-color: rgba(220, 80, 80, 0.25);
+  color: rgba(255, 180, 180, 0.95);
+}
+
+.apps-trash-purge:hover:not(:disabled) {
+  background: rgba(220, 80, 80, 0.20);
+}
+
+.appviewer-stuck {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(240, 198, 116, 0.35);
+  border-radius: 12px;
+  margin: 12px;
+  color: rgba(245, 245, 247, 0.85);
+}
+
+.appviewer-stuck h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #f0c674;
+}
+
+.appviewer-stuck p {
+  margin: 0;
+  max-width: 480px;
+  font-size: 13px;
+  color: rgba(220, 220, 225, 0.7);
+}
+
+.appviewer-stuck p code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.appviewer-stuck-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.appviewer-btn-danger {
+  background: rgba(220, 80, 80, 0.15);
+  border-color: rgba(220, 80, 80, 0.30);
+  color: rgba(255, 180, 180, 0.95);
+}
+
+.appviewer-btn-danger:hover:not(:disabled) {
+  background: rgba(220, 80, 80, 0.25);
 }
 
 .apps-card-badge {

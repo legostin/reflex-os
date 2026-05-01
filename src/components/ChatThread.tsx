@@ -815,6 +815,7 @@ export default function ChatThread() {
             onResolveExistingThread={() => resolveExistingAppThread(r.app_id)}
             onResolveNewThread={() => resolveNewAppThread(r.app_id)}
             onApplyRevise={(instr) => applyAppRevise(r.app_id, instr)}
+            onDeleted={() => navigate({ kind: "apps" })}
           />
         );
       case "memory": {
@@ -1263,6 +1264,26 @@ const TEMPLATES: {
   },
 ];
 
+type TrashEntry = {
+  trash_id: string;
+  original_id: string;
+  original_name: string;
+  original_icon: string | null;
+  original_description: string | null;
+  deleted_at_ms: number;
+  original_root: string;
+};
+
+function formatAgo(ms: number): string {
+  if (ms < 60_000) return "только что";
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `${min} мин назад`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} ч назад`;
+  const d = Math.floor(h / 24);
+  return `${d} дн назад`;
+}
+
 function AppsScreen({
   onOpenApp,
   onOpenTopic,
@@ -1278,6 +1299,9 @@ function AppsScreen({
   const [step, setStep] = useState<"template" | "describe">("template");
   const [template, setTemplate] = useState<string>("blank");
   const [description, setDescription] = useState("");
+  const [trash, setTrash] = useState<TrashEntry[]>([]);
+  const [showTrash, setShowTrash] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   async function importBundle() {
     if (importing) return;
@@ -1305,10 +1329,61 @@ function AppsScreen({
 
   async function refresh() {
     try {
-      const list = await invoke<AppManifest[]>("list_apps");
+      const [list, t] = await Promise.all([
+        invoke<AppManifest[]>("list_apps"),
+        invoke<TrashEntry[]>("list_trashed_apps"),
+      ]);
       setItems(list);
+      setTrash(t);
     } catch (e) {
       setError(String(e));
+    }
+  }
+
+  async function deleteApp(appId: string, appName: string) {
+    if (busyId) return;
+    if (!window.confirm(`Переместить "${appName}" в корзину?`)) return;
+    setBusyId(appId);
+    setError(null);
+    try {
+      await invoke("delete_app", { appId });
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function restoreApp(trashId: string) {
+    if (busyId) return;
+    setBusyId(trashId);
+    setError(null);
+    try {
+      await invoke("restore_app", { trashId });
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function purgeApp(trashId: string, name: string) {
+    if (busyId) return;
+    if (
+      !window.confirm(`Удалить "${name}" окончательно? Это действие необратимо.`)
+    )
+      return;
+    setBusyId(trashId);
+    setError(null);
+    try {
+      await invoke("purge_trashed_app", { trashId });
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -1316,11 +1391,14 @@ function AppsScreen({
     let alive = true;
     let timer: ReturnType<typeof setInterval> | null = null;
     const tick = () => {
-      invoke<AppManifest[]>("list_apps")
-        .then((list) => {
+      Promise.all([
+        invoke<AppManifest[]>("list_apps"),
+        invoke<TrashEntry[]>("list_trashed_apps"),
+      ])
+        .then(([list, t]) => {
           if (!alive) return;
           setItems(list);
-          // poll until everything is ready
+          setTrash(t);
           const stillCreating = list.some((a) => a.ready === false);
           if (!stillCreating && timer) {
             clearInterval(timer);
@@ -1331,9 +1409,11 @@ function AppsScreen({
     };
     tick();
     timer = setInterval(tick, 3000);
+    const u = listen("reflex://apps-changed", () => tick());
     return () => {
       alive = false;
       if (timer) clearInterval(timer);
+      u.then((un) => un());
     };
   }, []);
 
@@ -1368,12 +1448,21 @@ function AppsScreen({
       <header className="apps-header">
         <div className="apps-header-row">
           <h1 className="section-title">Apps</h1>
-          <button
-            className="apps-create-btn"
-            onClick={() => setShowModal(true)}
-          >
-            + New App
-          </button>
+          <div className="apps-header-buttons">
+            <button
+              className="apps-create-btn"
+              onClick={() => setShowModal(true)}
+            >
+              + New App
+            </button>
+            <button
+              className="apps-trash-btn"
+              onClick={() => setShowTrash((v) => !v)}
+              title="Удалённые приложения"
+            >
+              🗑 Корзина{trash.length > 0 ? ` (${trash.length})` : ""}
+            </button>
+          </div>
         </div>
         <p className="apps-hint">
           Утилиты, общающиеся с агентом через мост Reflex. Опиши что хочешь —
@@ -1381,6 +1470,55 @@ function AppsScreen({
         </p>
       </header>
       {error && <div className="apps-error">{error}</div>}
+      {showTrash && (
+        <section className="apps-trash">
+          <h3 className="apps-trash-title">Корзина</h3>
+          {trash.length === 0 ? (
+            <div className="apps-trash-empty">Пусто.</div>
+          ) : (
+            <ul className="apps-trash-list">
+              {trash.map((t) => {
+                const ageMs = Date.now() - t.deleted_at_ms;
+                const ageStr = formatAgo(ageMs);
+                return (
+                  <li key={t.trash_id} className="apps-trash-row">
+                    <span className="apps-trash-icon">
+                      {t.original_icon ?? "🧩"}
+                    </span>
+                    <div className="apps-trash-info">
+                      <div className="apps-trash-name">{t.original_name}</div>
+                      <div className="apps-trash-meta">
+                        удалено {ageStr} ·{" "}
+                        <code>{t.original_id}</code>
+                      </div>
+                    </div>
+                    <div className="apps-trash-actions">
+                      <button
+                        className="apps-trash-action"
+                        disabled={busyId === t.trash_id}
+                        onClick={() => void restoreApp(t.trash_id)}
+                        title="Восстановить"
+                      >
+                        ↩ Восстановить
+                      </button>
+                      <button
+                        className="apps-trash-action apps-trash-purge"
+                        disabled={busyId === t.trash_id}
+                        onClick={() =>
+                          void purgeApp(t.trash_id, t.original_name)
+                        }
+                        title="Удалить навсегда"
+                      >
+                        ✕ Навсегда
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
       {items.length === 0 ? (
         <div className="chat-empty">
           <p>Apps пока нет.</p>
@@ -1390,13 +1528,28 @@ function AppsScreen({
           {items.map((a) => {
             const isReady = a.ready !== false;
             return (
-              <button
+              <div
                 key={a.id}
+                role="button"
+                tabIndex={0}
                 className={`apps-card ${isReady ? "" : "apps-card-creating"}`}
-                disabled={!isReady}
-                onClick={() => isReady && onOpenApp(a.id)}
-                title={isReady ? "Открыть" : "Codex ещё пишет файлы…"}
+                onClick={() => onOpenApp(a.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") onOpenApp(a.id);
+                }}
+                title={isReady ? "Открыть" : "Codex ещё пишет файлы — клик чтобы посмотреть"}
               >
+                <button
+                  className="apps-card-delete"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    void deleteApp(a.id, a.name);
+                  }}
+                  disabled={busyId === a.id}
+                  title="В корзину"
+                >
+                  ✕
+                </button>
                 <div className="apps-card-icon">{a.icon ?? "🧩"}</div>
                 <div className="apps-card-name">
                   {a.name}
@@ -1416,7 +1569,7 @@ function AppsScreen({
                     ))}
                   </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -1555,12 +1708,14 @@ function AppViewer({
   onResolveExistingThread,
   onResolveNewThread,
   onApplyRevise,
+  onDeleted,
 }: {
   appId: string;
   threads: Thread[];
   onResolveExistingThread: () => Promise<string | null>;
   onResolveNewThread: () => Promise<string | null>;
   onApplyRevise: (instruction: string) => Promise<string | null>;
+  onDeleted?: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -2268,7 +2423,43 @@ function AppViewer({
         </div>
       )}
 
-      {src ? (
+      {!isServerRuntime && status && !status.entry_exists ? (
+        <div className="appviewer-stuck">
+          <h3>Генерация не завершена</h3>
+          <p>
+            Codex ещё не записал <code>{entry}</code>. Возможно процесс прерван
+            или сейчас в плане ждёт подтверждения.
+          </p>
+          <div className="appviewer-stuck-actions">
+            <button
+              className="appviewer-btn"
+              onClick={() => setReloadKey((n) => n + 1)}
+            >
+              Проверить ещё раз
+            </button>
+            <button
+              className="appviewer-btn appviewer-btn-danger"
+              disabled={busy !== null}
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    `Переместить "${manifest?.name ?? appId}" в корзину?`,
+                  )
+                )
+                  return;
+                try {
+                  await invoke("delete_app", { appId });
+                  onDeleted?.();
+                } catch (e) {
+                  setError(String(e));
+                }
+              }}
+            >
+              В корзину
+            </button>
+          </div>
+        </div>
+      ) : src ? (
         <iframe
           ref={iframeRef}
           key={`${reloadKey}:${serverPort ?? "static"}`}
