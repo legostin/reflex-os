@@ -14,6 +14,7 @@ import {
 } from "./files/FileActionsDrawer";
 import { WidgetGrid, type WidgetSource } from "./widgets/WidgetGrid";
 import { SuggesterModal } from "./projects/SuggesterModal";
+import { BrowserScreen } from "./browser/BrowserScreen";
 import "./ChatThread.css";
 
 type QuickContext = {
@@ -130,7 +131,8 @@ type Route =
   | { kind: "apps" }
   | { kind: "app"; app_id: string }
   | { kind: "memory"; project_id?: string }
-  | { kind: "automations" };
+  | { kind: "automations" }
+  | { kind: "browser" };
 
 function routeKey(r: Route): string {
   switch (r.kind) {
@@ -148,6 +150,8 @@ function routeKey(r: Route): string {
       return r.project_id ? `memory:${r.project_id}` : "memory";
     case "automations":
       return "automations";
+    case "browser":
+      return "browser";
   }
 }
 
@@ -167,6 +171,8 @@ function tabIcon(r: Route): string {
       return "M";
     case "automations":
       return "⏱";
+    case "browser":
+      return "🌐";
   }
 }
 
@@ -197,6 +203,8 @@ function tabLabel(
     }
     case "automations":
       return "Automations";
+    case "browser":
+      return "Browser";
   }
 }
 
@@ -887,6 +895,8 @@ export default function ChatThread() {
       }
       case "automations":
         return <AutomationsScreen />;
+      case "browser":
+        return <BrowserScreen />;
     }
   };
 
@@ -1113,6 +1123,13 @@ function Header({
           title="Расписания и история запусков"
         >
           Automations
+        </button>
+        <button
+          className={`header-tab ${route.kind === "browser" ? "active" : ""}`}
+          onClick={() => onNavigate({ kind: "browser" })}
+          title="Встроенный браузер"
+        >
+          Browser
         </button>
         <span className="chat-subtitle">
           {threads.length} thread{threads.length === 1 ? "" : "s"} ·{" "}

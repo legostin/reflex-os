@@ -4,6 +4,7 @@ mod app_server;
 mod app_watcher;
 mod apps;
 mod apps_dispatch;
+mod browser;
 mod codex;
 mod context;
 mod memory;
@@ -1977,6 +1978,7 @@ pub fn run() {
         .manage(memory::MemoryState::default())
         .manage(scheduler::SchedulerHandle::default())
         .manage(app_bus::AppBusBridge::default())
+        .manage(browser::BrowserSidecar::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init());
@@ -2123,6 +2125,25 @@ pub fn run() {
             scheduler::commands::scheduler_run_now,
             scheduler::commands::scheduler_runs,
             scheduler::commands::scheduler_run_detail,
+            browser::browser_init,
+            browser::browser_shutdown,
+            browser::browser_tabs_list,
+            browser::browser_tab_open,
+            browser::browser_tab_close,
+            browser::browser_navigate,
+            browser::browser_back,
+            browser::browser_forward,
+            browser::browser_reload,
+            browser::browser_current_url,
+            browser::browser_read_text,
+            browser::browser_read_outline,
+            browser::browser_click_text,
+            browser::browser_click_selector,
+            browser::browser_fill,
+            browser::browser_scroll,
+            browser::browser_wait_for,
+            browser::browser_screenshot,
+            browser::browser_state_save,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
