@@ -2651,6 +2651,8 @@ function ProjectScreen({
     [threads, projectId],
   );
 
+  const [entriesTick, setEntriesTick] = useState(0);
+
   useEffect(() => {
     if (!project) return;
     let alive = true;
@@ -2662,7 +2664,28 @@ function ProjectScreen({
     return () => {
       alive = false;
     };
-  }, [project?.root]);
+  }, [project?.root, entriesTick]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let unlisten: (() => void) | null = null;
+    invoke("project_watch_start", { projectId }).catch((e) =>
+      console.error("[reflex] project_watch_start", e),
+    );
+    listen<{ project_id: string }>("reflex://project-files-changed", (ev) => {
+      if (ev.payload?.project_id !== projectId) return;
+      setEntriesTick((n) => n + 1);
+      setStatusTick((n) => n + 1);
+    })
+      .then((u) => {
+        unlisten = u;
+      })
+      .catch((e) => console.error("[reflex] listen project-files-changed", e));
+    return () => {
+      unlisten?.();
+      invoke("project_watch_stop", { projectId }).catch(() => {});
+    };
+  }, [projectId]);
 
   const visibleEntries = entries.filter(
     (e) => (showHidden || !e.is_hidden) && e.name !== ".reflex",

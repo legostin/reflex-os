@@ -6,6 +6,7 @@ mod codex;
 mod context;
 mod memory;
 mod project;
+mod project_watcher;
 mod storage;
 
 use serde::{Deserialize, Serialize};
@@ -630,6 +631,19 @@ fn app_watch_start(app: AppHandle, app_id: String) -> Result<(), String> {
 fn app_watch_stop(app: AppHandle, app_id: String) -> Result<(), String> {
     let watchers = app.state::<app_watcher::AppWatchers>();
     app_watcher::stop(&watchers, &app_id);
+    Ok(())
+}
+
+#[tauri::command]
+fn project_watch_start(app: AppHandle, project_id: String) -> Result<(), String> {
+    let watchers = app.state::<project_watcher::ProjectWatchers>();
+    project_watcher::start(&watchers, &app, &project_id)
+}
+
+#[tauri::command]
+fn project_watch_stop(app: AppHandle, project_id: String) -> Result<(), String> {
+    let watchers = app.state::<project_watcher::ProjectWatchers>();
+    project_watcher::stop(&watchers, &project_id);
     Ok(())
 }
 
@@ -2094,6 +2108,7 @@ pub fn run() {
         .manage(app_server::AppServerHandle::default())
         .manage(app_runtime::AppRuntimes::default())
         .manage(app_watcher::AppWatchers::default())
+        .manage(project_watcher::ProjectWatchers::default())
         .manage(memory::MemoryState::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -2194,6 +2209,8 @@ pub fn run() {
             app_server_logs,
             app_watch_start,
             app_watch_stop,
+            project_watch_start,
+            project_watch_stop,
             list_directory,
             reveal_in_finder,
             continue_thread,
