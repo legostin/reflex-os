@@ -201,6 +201,20 @@ pub async fn memory_path_status(
 }
 
 #[tauri::command]
+pub async fn memory_path_status_batch(
+    _app: AppHandle,
+    project_root: String,
+    paths: Vec<String>,
+) -> Result<Vec<PathStatus>, String> {
+    let project_root = PathBuf::from(project_root);
+    let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    tokio::task::spawn_blocking(move || files::status_batch(&project_root, &paths))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn memory_forget_path(
     _app: AppHandle,
     project_root: String,

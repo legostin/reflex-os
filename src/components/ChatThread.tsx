@@ -6,7 +6,11 @@ import remarkGfm from "remark-gfm";
 import { DiffPanel } from "./DiffPanel";
 import MemoryPanel from "./memory/MemoryPanel";
 import RecallView from "./memory/RecallView";
-import { FileActionsDrawer, type DrawerTarget } from "./files/FileActionsDrawer";
+import {
+  FileActionsDrawer,
+  type DrawerTarget,
+  type PathStatus,
+} from "./files/FileActionsDrawer";
 import "./ChatThread.css";
 
 type QuickContext = {
@@ -2619,6 +2623,8 @@ function ProjectScreen({
   const [newTopicPlanMode, setNewTopicPlanMode] = useState(false);
   const [creatingTopic, setCreatingTopic] = useState(false);
   const [drawerTarget, setDrawerTarget] = useState<DrawerTarget | null>(null);
+  const [statuses, setStatuses] = useState<Record<string, PathStatus>>({});
+  const [statusTick, setStatusTick] = useState(0);
   const [topicError, setTopicError] = useState<string | null>(null);
 
   async function submitNewTopic() {
@@ -2662,6 +2668,31 @@ function ProjectScreen({
     (e) => (showHidden || !e.is_hidden) && e.name !== ".reflex",
   );
   const runningCount = topics.filter((t) => !t.done).length;
+
+  useEffect(() => {
+    if (!project || visibleEntries.length === 0) {
+      setStatuses({});
+      return;
+    }
+    let alive = true;
+    const paths = visibleEntries.map((e) => e.path);
+    invoke<PathStatus[]>("memory_path_status_batch", {
+      projectRoot: project.root,
+      paths,
+    })
+      .then((arr) => {
+        if (!alive) return;
+        const map: Record<string, PathStatus> = {};
+        arr.forEach((s) => {
+          map[s.path] = s;
+        });
+        setStatuses(map);
+      })
+      .catch((e) => console.error("[reflex] memory_path_status_batch", e));
+    return () => {
+      alive = false;
+    };
+  }, [project?.root, visibleEntries.length, statusTick]);
 
   function openExternal(path: string) {
     invoke("reveal_in_finder", { path }).catch((e) =>
@@ -2829,35 +2860,64 @@ function ProjectScreen({
           <div className="section-empty">Папка пуста.</div>
         ) : (
           <ul className="file-list">
-            {visibleEntries.map((e) => (
-              <li key={e.path}>
-                <button
-                  className="file-row"
-                  onClick={(ev) => {
-                    if (ev.altKey) {
-                      openExternal(e.path);
-                    } else {
-                      setDrawerTarget(e);
-                    }
-                  }}
-                  title={`${e.path}\n(Alt+клик — открыть в Finder)`}
-                >
-                  <span className="file-icon">
-                    {e.kind === "directory"
-                      ? "📁"
-                      : e.kind === "symlink"
-                        ? "🔗"
-                        : "📄"}
-                  </span>
-                  <span className="file-name">{e.name}</span>
-                  {e.modified_ms != null && (
-                    <span className="file-meta">
-                      {new Date(e.modified_ms).toLocaleDateString()}
+            {visibleEntries.map((e) => {
+              const s = statuses[e.path];
+              const ignored =
+                s?.class === "binary" ||
+                s?.class === "toolarge" ||
+                s?.class === "unsupported";
+              const stateClass = !s
+                ? ""
+                : s.indexed && s.stale
+                  ? "file-stale"
+                  : s.indexed
+                    ? "file-indexed"
+                    : ignored
+                      ? "file-ignored"
+                      : "file-fresh";
+              const dotTitle = !s
+                ? ""
+                : s.indexed && s.stale
+                  ? "В RAG, но изменён после индексации — переиндексируй"
+                  : s.indexed
+                    ? `В RAG${s.indexed_under ? ` (${s.indexed_under} док.)` : ""}`
+                    : ignored
+                      ? "Не индексируется (бинарный / большой / неподдерживаемый)"
+                      : "Можно проиндексировать";
+              return (
+                <li key={e.path}>
+                  <button
+                    className={`file-row ${stateClass}`}
+                    onClick={(ev) => {
+                      if (ev.altKey) {
+                        openExternal(e.path);
+                      } else {
+                        setDrawerTarget(e);
+                      }
+                    }}
+                    title={`${e.path}\n${dotTitle}\n(Alt+клик — открыть в Finder)`}
+                  >
+                    <span
+                      className="file-status-dot"
+                      aria-label={dotTitle}
+                    />
+                    <span className="file-icon">
+                      {e.kind === "directory"
+                        ? "📁"
+                        : e.kind === "symlink"
+                          ? "🔗"
+                          : "📄"}
                     </span>
-                  )}
-                </button>
-              </li>
-            ))}
+                    <span className="file-name">{e.name}</span>
+                    {e.modified_ms != null && (
+                      <span className="file-meta">
+                        {new Date(e.modified_ms).toLocaleDateString()}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -2922,6 +2982,7 @@ function ProjectScreen({
           onStartTopic={async (prompt, planMode) => {
             await onCreateTopic(prompt, planMode ?? false);
           }}
+          onStatusChanged={() => setStatusTick((n) => n + 1)}
         />
       )}
     </div>

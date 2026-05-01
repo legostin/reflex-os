@@ -18,12 +18,15 @@ type FileClass =
   | "toolarge"
   | "unsupported";
 
-interface PathStatus {
+export interface PathStatus {
   path: string;
   kind: string;
   class: FileClass;
   indexed: boolean;
   indexed_under: number | null;
+  indexed_at_ms: number | null;
+  modified_ms: number | null;
+  stale: boolean;
 }
 
 interface IndexOutcome {
@@ -36,6 +39,7 @@ interface Props {
   projectRoot: string;
   onClose: () => void;
   onStartTopic: (prompt: string, planMode?: boolean) => void | Promise<void>;
+  onStatusChanged?: () => void;
 }
 
 const CLASS_LABEL: Record<FileClass, string> = {
@@ -52,6 +56,7 @@ export function FileActionsDrawer({
   projectRoot,
   onClose,
   onStartTopic,
+  onStatusChanged,
 }: Props) {
   const [status, setStatus] = useState<PathStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -128,6 +133,7 @@ export function FileActionsDrawer({
       });
       setOutcome(out);
       await refreshStatus();
+      onStatusChanged?.();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -146,6 +152,7 @@ export function FileActionsDrawer({
         path: target.path,
       });
       await refreshStatus();
+      onStatusChanged?.();
     } catch (e) {
       setError(String(e));
     } finally {

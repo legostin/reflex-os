@@ -51,6 +51,9 @@ pub struct PathStatus {
     pub class: FileClass,
     pub indexed: bool,
     pub indexed_under: Option<usize>,
+    pub indexed_at_ms: Option<u64>,
+    pub modified_ms: Option<u64>,
+    pub stale: bool,
 }
 
 pub fn classify_path(path: &Path) -> Result<FileClass> {
@@ -299,11 +302,36 @@ async fn describe_image(project_root: &Path, path: &Path) -> Result<String> {
 }
 
 pub fn status(project_root: &Path, path: &Path) -> Result<PathStatus> {
-    let class = classify_path(path)?;
     let cfg = RagConfig::default();
     let store = VecStore::open(project_root, cfg.embed_dim)?;
-    let doc_id = path.to_string_lossy().to_string();
+    status_with_store(&store, path)
+}
 
+pub fn status_batch(project_root: &Path, paths: &[PathBuf]) -> Result<Vec<PathStatus>> {
+    let cfg = RagConfig::default();
+    let store = VecStore::open(project_root, cfg.embed_dim)?;
+    let mut out = Vec::with_capacity(paths.len());
+    for p in paths {
+        match status_with_store(&store, p) {
+            Ok(s) => out.push(s),
+            Err(_) => out.push(PathStatus {
+                path: p.to_string_lossy().into_owned(),
+                kind: "missing".into(),
+                class: FileClass::Unsupported,
+                indexed: false,
+                indexed_under: None,
+                indexed_at_ms: None,
+                modified_ms: None,
+                stale: false,
+            }),
+        }
+    }
+    Ok(out)
+}
+
+fn status_with_store(store: &VecStore, path: &Path) -> Result<PathStatus> {
+    let class = classify_path(path)?;
+    let doc_id = path.to_string_lossy().to_string();
     let meta = std::fs::metadata(path)?;
     let kind = if meta.is_dir() {
         "directory".to_string()
@@ -313,12 +341,29 @@ pub fn status(project_root: &Path, path: &Path) -> Result<PathStatus> {
         "other".to_string()
     };
 
-    let (indexed, indexed_under) = if meta.is_dir() {
+    let modified_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64);
+
+    let (indexed, indexed_under, indexed_at_ms) = if meta.is_dir() {
         let prefix = format!("{}/", path.to_string_lossy());
         let n = store.count_under(&prefix)?;
-        (n > 0, Some(n))
+        (n > 0, Some(n), None)
     } else {
-        (store.has_doc(&doc_id)?, None)
+        let has = store.has_doc(&doc_id)?;
+        let when = if has {
+            store.last_indexed_at(&doc_id)?
+        } else {
+            None
+        };
+        (has, None, when)
+    };
+
+    let stale = match (indexed, modified_ms, indexed_at_ms) {
+        (true, Some(m), Some(i)) => m > i + 1_000,
+        _ => false,
     };
 
     Ok(PathStatus {
@@ -327,6 +372,9 @@ pub fn status(project_root: &Path, path: &Path) -> Result<PathStatus> {
         class,
         indexed,
         indexed_under,
+        indexed_at_ms,
+        modified_ms,
+        stale,
     })
 }
 

@@ -2207,6 +2207,7 @@ pub fn run() {
             memory::tools::memory_reindex,
             memory::tools::memory_index_path,
             memory::tools::memory_path_status,
+            memory::tools::memory_path_status_batch,
             memory::tools::memory_forget_path,
         ])
         .build(tauri::generate_context!())

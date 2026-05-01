@@ -1674,6 +1674,42 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.file-status-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.10);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25) inset;
+}
+
+.file-row.file-fresh .file-status-dot {
+  background: rgba(160, 170, 185, 0.45);
+}
+
+.file-row.file-indexed .file-status-dot {
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+}
+
+.file-row.file-stale .file-status-dot {
+  background: #fbbf24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.55);
+}
+
+.file-row.file-ignored {
+  opacity: 0.5;
+}
+
+.file-row.file-ignored .file-name {
+  color: rgba(245, 245, 247, 0.6);
+}
+
+.file-row.file-ignored .file-status-dot {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: none;
+}
+
 .chat-item {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.06);

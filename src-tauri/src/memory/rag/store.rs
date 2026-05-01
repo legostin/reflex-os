@@ -196,6 +196,20 @@ impl VecStore {
         Ok(n > 0)
     }
 
+    pub fn last_indexed_at(&self, doc_id: &str) -> Result<Option<u64>> {
+        let v: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT MAX(created_at_ms) FROM docs WHERE doc_id = ?1",
+                params![doc_id],
+                |r| r.get::<_, Option<i64>>(0),
+            )
+            .optional()
+            .map_err(|e| MemoryError::Other(format!("sqlite last_indexed_at: {e}")))?
+            .flatten();
+        Ok(v.map(|x| x as u64))
+    }
+
     pub fn count_under(&self, prefix: &str) -> Result<usize> {
         let like = format!("{prefix}%");
         let n: i64 = self
