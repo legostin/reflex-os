@@ -911,6 +911,123 @@
   background: rgba(220, 80, 80, 0.20);
 }
 
+.project-description {
+  margin: 0;
+}
+
+.project-description-view {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: rgba(245, 245, 247, 0.92);
+  cursor: text;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.project-description-view:hover {
+  border-color: rgba(74, 140, 255, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.project-description-empty {
+  color: rgba(180, 185, 195, 0.55);
+  font-style: italic;
+}
+
+.project-description-edit {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(74, 140, 255, 0.4);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: rgba(245, 245, 247, 0.95);
+  font-family: inherit;
+  resize: vertical;
+  line-height: 1.45;
+  outline: none;
+}
+
+.project-linked {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-linked .section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.project-linked-empty {
+  font-size: 12px;
+  color: rgba(180, 185, 195, 0.6);
+  padding: 12px 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.project-linked-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.project-linked-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.project-linked-row-clickable {
+  cursor: pointer;
+}
+
+.project-linked-row-clickable:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(74, 140, 255, 0.25);
+}
+
+.project-linked-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.project-linked-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-linked-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.project-linked-desc {
+  font-size: 11px;
+  color: rgba(180, 185, 195, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-linked-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .appviewer-stuck {
   flex: 1;
   display: flex;

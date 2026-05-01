@@ -296,7 +296,7 @@ fn ensure_app_project(app: &AppHandle, app_id: &str) -> Result<project::Project,
         .as_ref()
         .map(|m| format!("App · {}", m.name))
         .unwrap_or_else(|| format!("App · {app_id}"));
-    project::create_project(app, &dir, Some(proj_name)).map_err(|e| e.to_string())
+    project::create_project(app, &dir, Some(proj_name), None).map_err(|e| e.to_string())
 }
 
 fn build_empty_app_thread(
@@ -510,7 +510,7 @@ async fn create_app(
 
     let label = short_label(trimmed);
     let proj_name = format!("App · {label}");
-    let project = project::create_project(&app, &dir, Some(proj_name.clone()))
+    let project = project::create_project(&app, &dir, Some(proj_name.clone()), None)
         .map_err(|e| e.to_string())?;
 
     let manifest = apps::AppManifest {
@@ -896,12 +896,62 @@ fn create_project(
     app: AppHandle,
     root: String,
     name: Option<String>,
+    description: Option<String>,
 ) -> Result<project::Project, String> {
     let path = PathBuf::from(&root);
     if !path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
-    project::create_project(&app, &path, name).map_err(|e| e.to_string())
+    project::create_project(&app, &path, name, description).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_project_description(
+    app: AppHandle,
+    project_id: String,
+    description: Option<String>,
+) -> Result<project::Project, String> {
+    let mut p = project::get_by_id(&app, &project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    p.description = description
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
+    project::register(&app, &p).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+
+#[tauri::command]
+fn link_app_to_project(
+    app: AppHandle,
+    project_id: String,
+    app_id: String,
+) -> Result<project::Project, String> {
+    let mut p = project::get_by_id(&app, &project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    if !p.apps.contains(&app_id) {
+        p.apps.push(app_id);
+    }
+    project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
+    project::register(&app, &p).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+
+#[tauri::command]
+fn unlink_app_from_project(
+    app: AppHandle,
+    project_id: String,
+    app_id: String,
+) -> Result<project::Project, String> {
+    let mut p = project::get_by_id(&app, &project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    p.apps.retain(|a| a != &app_id);
+    project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
+    project::register(&app, &p).map_err(|e| e.to_string())?;
+    Ok(p)
 }
 
 #[tauri::command]
@@ -1982,6 +2032,9 @@ pub fn run() {
             list_threads,
             list_projects,
             create_project,
+            update_project_description,
+            link_app_to_project,
+            unlink_app_from_project,
             find_project_for_path,
             update_project_sandbox,
             update_project_browser,

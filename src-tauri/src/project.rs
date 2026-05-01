@@ -19,6 +19,10 @@ pub struct Project {
     pub sandbox: String,
     #[serde(default)]
     pub mcp_servers: Option<Value>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub apps: Vec<String>,
 }
 
 fn default_sandbox() -> String {
@@ -72,6 +76,7 @@ pub fn create_project(
     app: &AppHandle,
     root: &Path,
     name: Option<String>,
+    description: Option<String>,
 ) -> io::Result<Project> {
     fs::create_dir_all(topics_dir(root))?;
     let now_ms = std::time::SystemTime::now()
@@ -94,6 +99,8 @@ pub fn create_project(
         created_at_ms: now_ms,
         sandbox: default_sandbox(),
         mcp_servers: None,
+        description: description.filter(|s| !s.trim().is_empty()),
+        apps: Vec::new(),
     };
     let path = project_dir(root).join(PROJECT_FILE);
     fs::write(path, serde_json::to_string_pretty(&project).map_err(io_err)?)?;

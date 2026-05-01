@@ -26,6 +26,8 @@ type Project = {
   created_at_ms: number;
   sandbox?: string;
   mcp_servers?: Record<string, any> | null;
+  description?: string | null;
+  apps?: string[];
 };
 
 type ThreadCreated = {
@@ -339,6 +341,9 @@ export default function ChatThread() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [layout, setLayout] = useState<Layout>(initialLayout);
   const [draggingTab, setDraggingTab] = useState(false);
+  const [newProjectPath, setNewProjectPath] = useState<string | null>(null);
+  const [newProjectDescription, setNewProjectDescription] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const focusPane = (paneId: PaneId) =>
@@ -562,7 +567,24 @@ export default function ChatThread() {
         title: "Выбор папки проекта",
       });
       if (!path) return;
-      const p = await invoke<Project>("create_project", { root: path });
+      setNewProjectPath(path);
+      setNewProjectDescription("");
+    } catch (e) {
+      console.error("[reflex] pick_directory failed", e);
+    }
+  };
+
+  const submitNewProject = async (withDescription: boolean) => {
+    if (!newProjectPath || creatingProject) return;
+    setCreatingProject(true);
+    try {
+      const description = withDescription
+        ? newProjectDescription.trim() || null
+        : null;
+      const p = await invoke<Project>("create_project", {
+        root: newProjectPath,
+        description,
+      });
       setProjects((prev) => {
         const idx = prev.findIndex((x) => x.id === p.id);
         if (idx === -1) return [...prev, p];
@@ -570,9 +592,13 @@ export default function ChatThread() {
         copy[idx] = p;
         return copy;
       });
+      setNewProjectPath(null);
+      setNewProjectDescription("");
       navigate({ kind: "project", project_id: p.id });
     } catch (e) {
       console.error("[reflex] create project failed", e);
+    } finally {
+      setCreatingProject(false);
     }
   };
 
@@ -790,6 +816,7 @@ export default function ChatThread() {
             onCreateTopic={(prompt, planMode) =>
               createNewTopic(r.project_id, prompt, planMode)
             }
+            onOpenApp={(id) => navigate({ kind: "app", app_id: id })}
           />
         );
       case "topic":
@@ -884,6 +911,52 @@ export default function ChatThread() {
           }}
         />
       </div>
+      {newProjectPath && (
+        <div
+          className="modal-backdrop"
+          onClick={() => !creatingProject && setNewProjectPath(null)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">Новый проект</h2>
+            <p className="modal-hint">
+              <code>{newProjectPath}</code>
+              <br />
+              Опиши зачем этот проект и что хочешь делать. Это поможет агенту
+              предлагать утилиты и подсказки.
+            </p>
+            <textarea
+              className="modal-input"
+              placeholder="Например: следить за весом и активностью; собирать новости по AI каждое утро…"
+              value={newProjectDescription}
+              onChange={(e) => setNewProjectDescription(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void submitNewProject(true);
+                }
+              }}
+              autoFocus
+              rows={5}
+            />
+            <div className="modal-actions">
+              <button
+                className="modal-btn"
+                disabled={creatingProject}
+                onClick={() => void submitNewProject(false)}
+              >
+                Пропустить
+              </button>
+              <button
+                className="modal-btn modal-btn-primary"
+                disabled={creatingProject || !newProjectDescription.trim()}
+                onClick={() => void submitNewProject(true)}
+              >
+                {creatingProject ? "Создаю…" : "Создать (⌘↵)"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2842,6 +2915,7 @@ function ProjectScreen({
   onSelectTopic,
   onProjectUpdated,
   onCreateTopic,
+  onOpenApp,
 }: {
   projectId: string;
   projects: Project[];
@@ -2849,6 +2923,7 @@ function ProjectScreen({
   onSelectTopic: (id: string) => void;
   onProjectUpdated: (p: Project) => void;
   onCreateTopic: (prompt: string, planMode: boolean) => Promise<void>;
+  onOpenApp: (id: string) => void;
 }) {
   const project = projects.find((p) => p.id === projectId);
   const [entries, setEntries] = useState<DirEntry[]>([]);
@@ -2861,6 +2936,66 @@ function ProjectScreen({
   const [statuses, setStatuses] = useState<Record<string, PathStatus>>({});
   const [statusTick, setStatusTick] = useState(0);
   const [topicError, setTopicError] = useState<string | null>(null);
+  const [editDescription, setEditDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [installedApps, setInstalledApps] = useState<AppManifest[]>([]);
+  const [showLinkPicker, setShowLinkPicker] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    invoke<AppManifest[]>("list_apps")
+      .then((list) => alive && setInstalledApps(list))
+      .catch((e) => console.error("[reflex] list_apps failed", e));
+    const u = listen("reflex://apps-changed", () => {
+      invoke<AppManifest[]>("list_apps")
+        .then((list) => alive && setInstalledApps(list))
+        .catch(() => {});
+    });
+    return () => {
+      alive = false;
+      u.then((un) => un());
+    };
+  }, []);
+
+  async function saveDescription(value: string) {
+    if (!project) return;
+    try {
+      const updated = await invoke<Project>("update_project_description", {
+        projectId: project.id,
+        description: value.trim() || null,
+      });
+      onProjectUpdated(updated);
+    } catch (e) {
+      console.error("[reflex] update_project_description failed", e);
+    }
+  }
+
+  async function linkApp(appId: string) {
+    if (!project) return;
+    try {
+      const updated = await invoke<Project>("link_app_to_project", {
+        projectId: project.id,
+        appId,
+      });
+      onProjectUpdated(updated);
+      setShowLinkPicker(false);
+    } catch (e) {
+      console.error("[reflex] link_app_to_project failed", e);
+    }
+  }
+
+  async function unlinkApp(appId: string) {
+    if (!project) return;
+    try {
+      const updated = await invoke<Project>("unlink_app_from_project", {
+        projectId: project.id,
+        appId,
+      });
+      onProjectUpdated(updated);
+    } catch (e) {
+      console.error("[reflex] unlink_app_from_project failed", e);
+    }
+  }
 
   async function submitNewTopic() {
     const text = newTopicPrompt.trim();
@@ -3003,6 +3138,108 @@ function ProjectScreen({
           </div>
         )}
       </header>
+
+      {project && (
+        <section className="project-description">
+          {editDescription ? (
+            <textarea
+              className="project-description-edit"
+              value={descriptionDraft}
+              autoFocus
+              rows={4}
+              placeholder="Опиши зачем этот проект, что хочешь делать"
+              onChange={(e) => setDescriptionDraft(e.currentTarget.value)}
+              onBlur={() => {
+                void saveDescription(descriptionDraft);
+                setEditDescription(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setEditDescription(false);
+                } else if (
+                  e.key === "Enter" &&
+                  (e.metaKey || e.ctrlKey)
+                ) {
+                  e.preventDefault();
+                  void saveDescription(descriptionDraft);
+                  setEditDescription(false);
+                }
+              }}
+            />
+          ) : (
+            <div
+              className={`project-description-view ${project.description ? "" : "project-description-empty"}`}
+              onClick={() => {
+                setDescriptionDraft(project.description ?? "");
+                setEditDescription(true);
+              }}
+              title="Кликни чтобы редактировать"
+            >
+              {project.description ?? "Без описания. Кликни чтобы заполнить."}
+            </div>
+          )}
+        </section>
+      )}
+
+      {project && (
+        <section className="project-linked">
+          <div className="section-head">
+            <h2 className="section-title">Привязанные утилиты</h2>
+            <button
+              className="apps-create-btn"
+              onClick={() => setShowLinkPicker(true)}
+            >
+              + Привязать утилиту
+            </button>
+          </div>
+          {(() => {
+            const linkedIds = project.apps ?? [];
+            const linked = linkedIds
+              .map((id) => installedApps.find((a) => a.id === id))
+              .filter((a): a is AppManifest => !!a);
+            if (linked.length === 0) {
+              return (
+                <div className="project-linked-empty">
+                  Утилит пока нет. Привяжи существующую или создай новую.
+                </div>
+              );
+            }
+            return (
+              <ul className="project-linked-list">
+                {linked.map((a) => (
+                  <li key={a.id} className="project-linked-row">
+                    <span className="project-linked-icon">
+                      {a.icon ?? "🧩"}
+                    </span>
+                    <div className="project-linked-info">
+                      <div className="project-linked-name">{a.name}</div>
+                      {a.description && (
+                        <div className="project-linked-desc">
+                          {a.description}
+                        </div>
+                      )}
+                    </div>
+                    <div className="project-linked-actions">
+                      <button
+                        className="apps-trash-action"
+                        onClick={() => onOpenApp(a.id)}
+                      >
+                        Открыть
+                      </button>
+                      <button
+                        className="apps-trash-action"
+                        onClick={() => void unlinkApp(a.id)}
+                      >
+                        Отвязать
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
+        </section>
+      )}
 
       {project && (
         <section className="project-settings">
@@ -3179,6 +3416,65 @@ function ProjectScreen({
           </ul>
         )}
       </section>
+
+      {showLinkPicker && project && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setShowLinkPicker(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">Привязать утилиту</h2>
+            <p className="modal-hint">
+              Утилиты, не привязанные к этому проекту. Клик по строке —
+              привязать.
+            </p>
+            {(() => {
+              const linkedIds = new Set(project.apps ?? []);
+              const available = installedApps.filter(
+                (a) => !linkedIds.has(a.id) && a.ready !== false,
+              );
+              if (available.length === 0) {
+                return (
+                  <div className="project-linked-empty">
+                    Все доступные утилиты уже привязаны.
+                  </div>
+                );
+              }
+              return (
+                <ul className="project-linked-list">
+                  {available.map((a) => (
+                    <li
+                      key={a.id}
+                      className="project-linked-row project-linked-row-clickable"
+                      onClick={() => void linkApp(a.id)}
+                    >
+                      <span className="project-linked-icon">
+                        {a.icon ?? "🧩"}
+                      </span>
+                      <div className="project-linked-info">
+                        <div className="project-linked-name">{a.name}</div>
+                        {a.description && (
+                          <div className="project-linked-desc">
+                            {a.description}
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()}
+            <div className="modal-actions">
+              <button
+                className="modal-btn"
+                onClick={() => setShowLinkPicker(false)}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showNewTopic && (
         <div
