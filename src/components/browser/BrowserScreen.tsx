@@ -32,14 +32,6 @@ interface TabFrame {
   meta?: FramePayload["metadata"];
 }
 
-interface DebugStats {
-  framesReceived: number;
-  lastTabId: string;
-  lastBytes: number;
-  listenersAttached: boolean;
-  bootstrapDone: boolean;
-}
-
 export function BrowserScreen() {
   const [tabs, setTabs] = useState<TabSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -47,13 +39,6 @@ export function BrowserScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [framesByTab, setFramesByTab] = useState<Record<string, TabFrame>>({});
-  const [debug, setDebug] = useState<DebugStats>({
-    framesReceived: 0,
-    lastTabId: "",
-    lastBytes: 0,
-    listenersAttached: false,
-    bootstrapDone: false,
-  });
   const initRef = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -95,7 +80,6 @@ export function BrowserScreen() {
         everyNthFrame: 1,
       });
       await refreshTabs();
-      setDebug((d) => ({ ...d, bootstrapDone: true }));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -106,11 +90,6 @@ export function BrowserScreen() {
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
-    void invoke("log_push", {
-      level: "info",
-      source: "frontend-browser",
-      message: "BrowserScreen mounted, bootstrapping",
-    }).catch(() => {});
     void bootstrap();
   }, []);
 
@@ -156,12 +135,6 @@ export function BrowserScreen() {
         "reflex://browser/screencast-frame",
         (ev) => {
           if (!ev.payload) return;
-          setDebug((d) => ({
-            ...d,
-            framesReceived: d.framesReceived + 1,
-            lastTabId: ev.payload.tab_id,
-            lastBytes: ev.payload.jpeg_b64?.length || 0,
-          }));
           setFramesByTab((prev) => ({
             ...prev,
             [ev.payload.tab_id]: {
@@ -172,7 +145,6 @@ export function BrowserScreen() {
         },
       ),
     );
-    setDebug((d) => ({ ...d, listenersAttached: true }));
     return () => {
       subs.forEach((p) => p.then((u) => u()));
     };
@@ -474,21 +446,6 @@ export function BrowserScreen() {
         </div>
       </header>
       {error && <div className="browser-error">{error}</div>}
-      <div
-        style={{
-          background: "rgba(0,0,0,0.4)",
-          color: "rgba(220,220,225,0.8)",
-          fontSize: 11,
-          fontFamily: "ui-monospace, Menlo, monospace",
-          padding: "4px 12px",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-        }}
-      >
-        debug: bootstrap={debug.bootstrapDone ? "ok" : "no"} listeners=
-        {debug.listenersAttached ? "ok" : "no"} active={activeId || "—"} tabs=
-        {tabs.length} frames={debug.framesReceived} lastTab={debug.lastTabId || "—"} lastBytes=
-        {debug.lastBytes} hasFrame={frameSrc ? "yes" : "no"}
-      </div>
       <div
         ref={stageRef}
         className="browser-stage"

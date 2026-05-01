@@ -55,13 +55,6 @@ async function ensureBrowser({ headless = true } = {}) {
     storageState,
     viewport: { width: 1280, height: 720 },
   });
-  context.on("page", (page) => {
-    if ([...tabs.values()].includes(page)) return;
-    const id = makeTabId();
-    tabs.set(id, page);
-    attachPage(id, page);
-    sendEvent("tabs.opened", { tab_id: id, url: page.url() });
-  });
   sendEvent("browser.ready", { headless });
 }
 
