@@ -9,17 +9,42 @@ interface TabSummary {
   title: string;
 }
 
+interface FramePayload {
+  tab_id: string;
+  jpeg_b64: string;
+  metadata?: {
+    deviceWidth?: number;
+    deviceHeight?: number;
+    pageScaleFactor?: number;
+    offsetTop?: number;
+    scrollOffsetX?: number;
+    scrollOffsetY?: number;
+    timestamp?: number;
+  };
+}
+
 const HOME_URL = "about:blank";
+const VIEWPORT_W = 1280;
+const VIEWPORT_H = 720;
 
 export function BrowserScreen() {
   const [tabs, setTabs] = useState<TabSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [urlDraft, setUrlDraft] = useState("");
-  const [snapshot, setSnapshot] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [frameSrc, setFrameSrc] = useState<string>("");
+  const [frameMeta, setFrameMeta] = useState<FramePayload["metadata"]>(
+    undefined,
+  );
   const initRef = useRef(false);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const activeIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
 
   async function refreshTabs() {
     try {
@@ -33,16 +58,28 @@ export function BrowserScreen() {
     }
   }
 
-  async function openInitialTab() {
+  async function bootstrap() {
     setBusy(true);
     setError(null);
     try {
-      await invoke("browser_init", { headless: false });
+      await invoke("browser_init", { headless: true });
       const res = await invoke<{ tab_id: string; url: string }>(
         "browser_tab_open",
         { url: HOME_URL },
       );
+      await invoke("browser_set_viewport", {
+        tabId: res.tab_id,
+        width: VIEWPORT_W,
+        height: VIEWPORT_H,
+      });
       setActiveId(res.tab_id);
+      await invoke("browser_screencast_start", {
+        tabId: res.tab_id,
+        quality: 60,
+        maxWidth: VIEWPORT_W,
+        maxHeight: VIEWPORT_H,
+        everyNthFrame: 1,
+      });
       await refreshTabs();
     } catch (e) {
       setError(String(e));
@@ -54,7 +91,7 @@ export function BrowserScreen() {
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
-    void openInitialTab();
+    void bootstrap();
   }, []);
 
   useEffect(() => {
@@ -77,44 +114,86 @@ export function BrowserScreen() {
                 : t,
             ),
           );
-          if (ev.payload.tab_id === activeId) {
+          if (ev.payload.tab_id === activeIdRef.current) {
             setUrlDraft(ev.payload.url);
           }
+        },
+      ),
+    );
+    subs.push(
+      listen<FramePayload>(
+        "reflex://browser/screencast.frame",
+        (ev) => {
+          if (!ev.payload) return;
+          if (ev.payload.tab_id !== activeIdRef.current) return;
+          setFrameSrc(`data:image/jpeg;base64,${ev.payload.jpeg_b64}`);
+          if (ev.payload.metadata) setFrameMeta(ev.payload.metadata);
         },
       ),
     );
     return () => {
       subs.forEach((p) => p.then((u) => u()));
     };
-  }, [activeId]);
+  }, []);
 
-  useEffect(() => {
-    if (!activeId) return;
-    let alive = true;
-    void (async () => {
+  async function switchActive(id: string) {
+    if (id === activeId) return;
+    if (activeId) {
       try {
-        const r = await invoke<{ url: string; title: string }>(
-          "browser_current_url",
-          { tabId: activeId },
-        );
-        if (alive) setUrlDraft(r.url);
+        await invoke("browser_screencast_stop", { tabId: activeId });
       } catch {}
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [activeId]);
+    }
+    setFrameSrc("");
+    setActiveId(id);
+    try {
+      await invoke("browser_set_viewport", {
+        tabId: id,
+        width: VIEWPORT_W,
+        height: VIEWPORT_H,
+      });
+      await invoke("browser_screencast_start", {
+        tabId: id,
+        quality: 60,
+        maxWidth: VIEWPORT_W,
+        maxHeight: VIEWPORT_H,
+        everyNthFrame: 1,
+      });
+      const r = await invoke<{ url: string }>("browser_current_url", {
+        tabId: id,
+      });
+      setUrlDraft(r.url);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
 
   async function newTab() {
     setBusy(true);
     setError(null);
     try {
+      if (activeId) {
+        try {
+          await invoke("browser_screencast_stop", { tabId: activeId });
+        } catch {}
+      }
       const res = await invoke<{ tab_id: string }>("browser_tab_open", {
         url: HOME_URL,
       });
+      await invoke("browser_set_viewport", {
+        tabId: res.tab_id,
+        width: VIEWPORT_W,
+        height: VIEWPORT_H,
+      });
+      setFrameSrc("");
       setActiveId(res.tab_id);
+      await invoke("browser_screencast_start", {
+        tabId: res.tab_id,
+        quality: 60,
+        maxWidth: VIEWPORT_W,
+        maxHeight: VIEWPORT_H,
+        everyNthFrame: 1,
+      });
       await refreshTabs();
-      setSnapshot("");
     } catch (e) {
       setError(String(e));
     } finally {
@@ -126,6 +205,9 @@ export function BrowserScreen() {
     setBusy(true);
     setError(null);
     try {
+      try {
+        await invoke("browser_screencast_stop", { tabId: id });
+      } catch {}
       await invoke("browser_tab_close", { tabId: id });
       await refreshTabs();
     } catch (e) {
@@ -150,7 +232,6 @@ export function BrowserScreen() {
     setError(null);
     try {
       await invoke("browser_navigate", { tabId: activeId, url });
-      await loadSnapshot(activeId);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -160,55 +241,122 @@ export function BrowserScreen() {
 
   async function back() {
     if (!activeId) return;
-    setBusy(true);
     try {
       await invoke("browser_back", { tabId: activeId });
-      await loadSnapshot(activeId);
     } catch (e) {
       setError(String(e));
-    } finally {
-      setBusy(false);
     }
   }
 
   async function forward() {
     if (!activeId) return;
-    setBusy(true);
     try {
       await invoke("browser_forward", { tabId: activeId });
-      await loadSnapshot(activeId);
     } catch (e) {
       setError(String(e));
-    } finally {
-      setBusy(false);
     }
   }
 
   async function reload() {
     if (!activeId) return;
-    setBusy(true);
     try {
       await invoke("browser_reload", { tabId: activeId });
-      await loadSnapshot(activeId);
     } catch (e) {
       setError(String(e));
-    } finally {
-      setBusy(false);
     }
   }
 
-  async function loadSnapshot(id: string) {
-    setLoading(true);
+  function pageCoords(ev: { clientX: number; clientY: number }): {
+    x: number;
+    y: number;
+  } | null {
+    const img = imgRef.current;
+    if (!img) return null;
+    const rect = img.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    const xLocal = ev.clientX - rect.left;
+    const yLocal = ev.clientY - rect.top;
+    const w = frameMeta?.deviceWidth ?? VIEWPORT_W;
+    const h = frameMeta?.deviceHeight ?? VIEWPORT_H;
+    return {
+      x: Math.max(0, Math.min(w, (xLocal / rect.width) * w)),
+      y: Math.max(0, Math.min(h, (yLocal / rect.height) * h)),
+    };
+  }
+
+  async function onStageClick(ev: React.MouseEvent) {
+    if (!activeId) return;
+    const c = pageCoords(ev);
+    if (!c) return;
+    stageRef.current?.focus();
     try {
-      const r = await invoke<{ text: string }>("browser_read_text", {
-        tabId: id,
+      await invoke("browser_mouse_click", {
+        tabId: activeId,
+        x: c.x,
+        y: c.y,
+        button: "left",
+        clickCount: ev.detail || 1,
       });
-      setSnapshot(r.text || "");
     } catch (e) {
-      setSnapshot("");
       setError(String(e));
-    } finally {
-      setLoading(false);
+    }
+  }
+
+  async function onStageWheel(ev: React.WheelEvent) {
+    if (!activeId) return;
+    ev.preventDefault();
+    try {
+      await invoke("browser_mouse_wheel", {
+        tabId: activeId,
+        dx: ev.deltaX,
+        dy: ev.deltaY,
+      });
+    } catch {}
+  }
+
+  const SPECIAL_KEYS = new Set([
+    "Enter",
+    "Backspace",
+    "Tab",
+    "Escape",
+    "ArrowLeft",
+    "ArrowRight",
+    "ArrowUp",
+    "ArrowDown",
+    "Home",
+    "End",
+    "PageUp",
+    "PageDown",
+    "Delete",
+  ]);
+
+  async function onStageKeyDown(ev: React.KeyboardEvent) {
+    if (!activeId) return;
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) {
+      return;
+    }
+    if (SPECIAL_KEYS.has(ev.key)) {
+      ev.preventDefault();
+      try {
+        await invoke("browser_keyboard_press", {
+          tabId: activeId,
+          key: ev.key,
+        });
+      } catch (e) {
+        setError(String(e));
+      }
+      return;
+    }
+    if (ev.key.length === 1) {
+      ev.preventDefault();
+      try {
+        await invoke("browser_keyboard_type", {
+          tabId: activeId,
+          text: ev.key,
+        });
+      } catch (e) {
+        setError(String(e));
+      }
     }
   }
 
@@ -220,10 +368,7 @@ export function BrowserScreen() {
             <button
               key={t.tab_id}
               className={`browser-tab ${activeId === t.tab_id ? "active" : ""}`}
-              onClick={() => {
-                setActiveId(t.tab_id);
-                setUrlDraft(t.url);
-              }}
+              onClick={() => void switchActive(t.tab_id)}
               title={t.url}
             >
               <span className="browser-tab-title">
@@ -289,27 +434,28 @@ export function BrowserScreen() {
         </div>
       </header>
       {error && <div className="browser-error">{error}</div>}
-      <main className="browser-main">
-        <div className="browser-snapshot-toolbar">
-          <button
-            onClick={() => activeId && void loadSnapshot(activeId)}
-            disabled={!activeId || loading}
-          >
-            {loading ? "Читаю…" : "Обновить snapshot"}
-          </button>
-          <span className="browser-hint">
-            Шаг 1: Chromium открыт отдельным окном (headed). На шаге 2 он
-            переедет в эту панель.
-          </span>
-        </div>
-        {snapshot ? (
-          <pre className="browser-snapshot">{snapshot}</pre>
+      <div
+        ref={stageRef}
+        className="browser-stage"
+        tabIndex={0}
+        onClick={onStageClick}
+        onWheel={onStageWheel}
+        onKeyDown={onStageKeyDown}
+      >
+        {frameSrc ? (
+          <img
+            ref={imgRef}
+            src={frameSrc}
+            alt=""
+            className="browser-frame"
+            draggable={false}
+          />
         ) : (
           <div className="browser-empty">
-            Открой страницу через URL bar, потом нажми «Обновить snapshot».
+            {busy ? "Запускаю Chromium…" : "Нет картинки. Открой страницу."}
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }

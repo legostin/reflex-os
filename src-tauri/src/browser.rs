@@ -485,3 +485,174 @@ pub async fn browser_state_save(app: AppHandle) -> Result<Value, String> {
     let s = app.state::<BrowserSidecar>();
     s.request(&app, "state.save", Value::Null).await
 }
+
+#[tauri::command]
+pub async fn browser_screencast_start(
+    app: AppHandle,
+    tab_id: String,
+    quality: Option<u32>,
+    max_width: Option<u32>,
+    max_height: Option<u32>,
+    every_nth_frame: Option<u32>,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(
+        &app,
+        "screencast.start",
+        serde_json::json!({
+            "tab_id": tab_id,
+            "quality": quality,
+            "max_width": max_width,
+            "max_height": max_height,
+            "every_nth_frame": every_nth_frame,
+        }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn browser_screencast_stop(
+    app: AppHandle,
+    tab_id: String,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(&app, "screencast.stop", serde_json::json!({ "tab_id": tab_id }))
+        .await
+}
+
+#[tauri::command]
+pub async fn browser_set_viewport(
+    app: AppHandle,
+    tab_id: String,
+    width: u32,
+    height: u32,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(
+        &app,
+        "page.set_viewport",
+        serde_json::json!({ "tab_id": tab_id, "width": width, "height": height }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn browser_mouse_move(
+    app: AppHandle,
+    tab_id: String,
+    x: f64,
+    y: f64,
+    steps: Option<u32>,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(
+        &app,
+        "page.mouse_move",
+        serde_json::json!({ "tab_id": tab_id, "x": x, "y": y, "steps": steps }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn browser_mouse_down(
+    app: AppHandle,
+    tab_id: String,
+    button: Option<String>,
+    click_count: Option<u32>,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(
+        &app,
+        "page.mouse_down",
+        serde_json::json!({ "tab_id": tab_id, "button": button, "click_count": click_count }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn browser_mouse_up(
+    app: AppHandle,
+    tab_id: String,
+    button: Option<String>,
+    click_count: Option<u32>,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(
+        &app,
+        "page.mouse_up",
+        serde_json::json!({ "tab_id": tab_id, "button": button, "click_count": click_count }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn browser_mouse_click(
+    app: AppHandle,
+    tab_id: String,
+    x: f64,
+    y: f64,
+    button: Option<String>,
+    click_count: Option<u32>,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(
+        &app,
+        "page.mouse_click",
+        serde_json::json!({
+            "tab_id": tab_id,
+            "x": x,
+            "y": y,
+            "button": button,
+            "click_count": click_count,
+        }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn browser_mouse_wheel(
+    app: AppHandle,
+    tab_id: String,
+    dx: f64,
+    dy: f64,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(
+        &app,
+        "page.mouse_wheel",
+        serde_json::json!({ "tab_id": tab_id, "dx": dx, "dy": dy }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn browser_keyboard_type(
+    app: AppHandle,
+    tab_id: String,
+    text: String,
+    delay: Option<u32>,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(
+        &app,
+        "page.keyboard_type",
+        serde_json::json!({ "tab_id": tab_id, "text": text, "delay": delay }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn browser_keyboard_press(
+    app: AppHandle,
+    tab_id: String,
+    key: String,
+    delay: Option<u32>,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(
+        &app,
+        "page.keyboard_press",
+        serde_json::json!({ "tab_id": tab_id, "key": key, "delay": delay }),
+    )
+    .await
+}

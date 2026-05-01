@@ -2144,6 +2144,16 @@ pub fn run() {
             browser::browser_wait_for,
             browser::browser_screenshot,
             browser::browser_state_save,
+            browser::browser_screencast_start,
+            browser::browser_screencast_stop,
+            browser::browser_set_viewport,
+            browser::browser_mouse_move,
+            browser::browser_mouse_down,
+            browser::browser_mouse_up,
+            browser::browser_mouse_click,
+            browser::browser_mouse_wheel,
+            browser::browser_keyboard_type,
+            browser::browser_keyboard_press,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

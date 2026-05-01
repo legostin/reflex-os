@@ -13,6 +13,7 @@ let context = null;
 let headlessMode = false;
 const tabs = new Map();
 let nextTabSeq = 0;
+const screencasts = new Map();
 
 function send(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -77,8 +78,49 @@ function attachPage(id, page) {
   });
   page.on("close", () => {
     tabs.delete(id);
+    void stopScreencast(id);
     sendEvent("tabs.closed", { tab_id: id });
   });
+}
+
+async function startScreencast(tabId, opts = {}) {
+  const page = getTab(tabId);
+  if (screencasts.has(tabId)) return { ok: true, already: true };
+  const cdp = await page.context().newCDPSession(page);
+  cdp.on("Page.screencastFrame", async (frame) => {
+    sendEvent("screencast.frame", {
+      tab_id: tabId,
+      jpeg_b64: frame.data,
+      metadata: frame.metadata,
+    });
+    try {
+      await cdp.send("Page.screencastFrameAck", {
+        sessionId: frame.sessionId,
+      });
+    } catch {}
+  });
+  await cdp.send("Page.startScreencast", {
+    format: opts.format ?? "jpeg",
+    quality: opts.quality ?? 60,
+    maxWidth: opts.max_width ?? 1280,
+    maxHeight: opts.max_height ?? 720,
+    everyNthFrame: opts.every_nth_frame ?? 1,
+  });
+  screencasts.set(tabId, cdp);
+  return { ok: true };
+}
+
+async function stopScreencast(tabId) {
+  const cdp = screencasts.get(tabId);
+  if (!cdp) return { ok: true, already: true };
+  try {
+    await cdp.send("Page.stopScreencast");
+  } catch {}
+  try {
+    await cdp.detach();
+  } catch {}
+  screencasts.delete(tabId);
+  return { ok: true };
 }
 
 async function saveState() {
@@ -282,6 +324,77 @@ async function handle(msg) {
         result = { ok: true };
         break;
       }
+      case "screencast.start": {
+        result = await startScreencast(params.tab_id, params);
+        break;
+      }
+      case "screencast.stop": {
+        result = await stopScreencast(params.tab_id);
+        break;
+      }
+      case "page.set_viewport": {
+        const p = getTab(params.tab_id);
+        await p.setViewportSize({
+          width: params.width ?? 1280,
+          height: params.height ?? 720,
+        });
+        result = { ok: true };
+        break;
+      }
+      case "page.mouse_move": {
+        const p = getTab(params.tab_id);
+        await p.mouse.move(params.x, params.y, {
+          steps: params.steps ?? 1,
+        });
+        result = { ok: true };
+        break;
+      }
+      case "page.mouse_down": {
+        const p = getTab(params.tab_id);
+        await p.mouse.down({
+          button: params.button ?? "left",
+          clickCount: params.click_count ?? 1,
+        });
+        result = { ok: true };
+        break;
+      }
+      case "page.mouse_up": {
+        const p = getTab(params.tab_id);
+        await p.mouse.up({
+          button: params.button ?? "left",
+          clickCount: params.click_count ?? 1,
+        });
+        result = { ok: true };
+        break;
+      }
+      case "page.mouse_click": {
+        const p = getTab(params.tab_id);
+        await p.mouse.click(params.x, params.y, {
+          button: params.button ?? "left",
+          clickCount: params.click_count ?? 1,
+          delay: params.delay ?? 0,
+        });
+        result = { ok: true };
+        break;
+      }
+      case "page.mouse_wheel": {
+        const p = getTab(params.tab_id);
+        await p.mouse.wheel(params.dx ?? 0, params.dy ?? 0);
+        result = { ok: true };
+        break;
+      }
+      case "page.keyboard_type": {
+        const p = getTab(params.tab_id);
+        await p.keyboard.type(params.text, { delay: params.delay ?? 0 });
+        result = { ok: true };
+        break;
+      }
+      case "page.keyboard_press": {
+        const p = getTab(params.tab_id);
+        await p.keyboard.press(params.key, { delay: params.delay ?? 0 });
+        result = { ok: true };
+        break;
+      }
       default:
         throw new Error(`unknown method: ${method}`);
     }
@@ -306,6 +419,9 @@ rl.on("line", (line) => {
 
 async function shutdown() {
   try {
+    for (const id of [...screencasts.keys()]) {
+      await stopScreencast(id);
+    }
     await saveState();
     if (browser) await browser.close();
   } catch (e) {
