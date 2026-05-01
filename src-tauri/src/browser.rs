@@ -274,6 +274,49 @@ fn sidecar_script_path(app: &AppHandle) -> Result<PathBuf, String> {
     ))
 }
 
+pub fn resolve_node() -> Result<String, String> {
+    resolve_node_binary()
+}
+
+pub fn mcp_bridge_path(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Ok(p) = std::env::var("REFLEX_BROWSER_MCP_BRIDGE") {
+        return Ok(PathBuf::from(p));
+    }
+    let mut tried = Vec::new();
+    if let Ok(resource) = app.path().resource_dir() {
+        let candidate = resource
+            .join("sidecars")
+            .join("reflex-browser-mcp")
+            .join("bridge.mjs");
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+        tried.push(candidate);
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut up = Some(cwd);
+        while let Some(dir) = up {
+            let candidate = dir
+                .join("sidecars")
+                .join("reflex-browser-mcp")
+                .join("bridge.mjs");
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+            tried.push(candidate);
+            up = dir.parent().map(|p| p.to_path_buf());
+        }
+    }
+    Err(format!(
+        "browser mcp bridge not found, tried: {}",
+        tried
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
 fn resolve_node_binary() -> Result<String, String> {
     if let Ok(p) = std::env::var("REFLEX_NODE_BIN") {
         if !p.is_empty() {
@@ -534,6 +577,16 @@ pub async fn browser_screenshot(
 pub async fn browser_state_save(app: AppHandle) -> Result<Value, String> {
     let s = app.state::<BrowserSidecar>();
     s.request(&app, "state.save", Value::Null).await
+}
+
+#[tauri::command]
+pub async fn browser_set_active_tab(
+    app: AppHandle,
+    tab_id: String,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    s.request(&app, "tabs.set_active", serde_json::json!({ "tab_id": tab_id }))
+        .await
 }
 
 #[tauri::command]

@@ -1,12 +1,16 @@
 import { chromium } from "playwright";
-import { mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { homedir } from "node:os";
 import readline from "node:readline";
+import net from "node:net";
 
 const STATE_PATH =
   process.env.REFLEX_BROWSER_STATE ||
   `${homedir()}/Library/Application Support/reflex-os/browser/storageState.json`;
+const SOCK_PATH =
+  process.env.REFLEX_BROWSER_SOCK ||
+  `${homedir()}/Library/Application Support/reflex-os/browser/sock`;
 
 let browser = null;
 let context = null;
@@ -14,6 +18,7 @@ let headlessMode = false;
 const tabs = new Map();
 let nextTabSeq = 0;
 const screencasts = new Map();
+let activeTabId = null;
 
 function send(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -171,9 +176,20 @@ async function summarizeTabs() {
   return out;
 }
 
-async function handle(msg) {
+function resolveTabId(tab_id) {
+  if (tab_id) return tab_id;
+  if (activeTabId && tabs.has(activeTabId)) return activeTabId;
+  const first = tabs.keys().next().value;
+  return first ?? null;
+}
+
+async function handle(msg, sendFn) {
   const { id, method, params = {} } = msg;
   if (id === undefined) return;
+  if (params && params.tab_id === undefined && tabHungryMethods.has(method)) {
+    const fallback = resolveTabId(undefined);
+    if (fallback) params.tab_id = fallback;
+  }
   try {
     let result;
     switch (method) {
@@ -201,6 +217,7 @@ async function handle(msg) {
         const tabId = makeTabId();
         tabs.set(tabId, page);
         attachPage(tabId, page);
+        activeTabId = tabId;
         if (params.url) {
           try {
             await page.goto(params.url, {
@@ -218,7 +235,22 @@ async function handle(msg) {
         const p = getTab(params.tab_id);
         await p.close();
         tabs.delete(params.tab_id);
+        if (activeTabId === params.tab_id) {
+          activeTabId = tabs.keys().next().value ?? null;
+        }
         result = { ok: true };
+        break;
+      }
+      case "tabs.set_active": {
+        if (!tabs.has(params.tab_id)) {
+          throw new Error(`tab not found: ${params.tab_id}`);
+        }
+        activeTabId = params.tab_id;
+        result = { ok: true, tab_id: activeTabId };
+        break;
+      }
+      case "tabs.get_active": {
+        result = { tab_id: activeTabId };
         break;
       }
       case "page.navigate": {
@@ -419,11 +451,38 @@ async function handle(msg) {
       default:
         throw new Error(`unknown method: ${method}`);
     }
-    send({ id, result });
+    sendFn({ id, result });
   } catch (e) {
-    send({ id, error: String((e && e.message) || e) });
+    sendFn({ id, error: String((e && e.message) || e) });
   }
 }
+
+const tabHungryMethods = new Set([
+  "page.navigate",
+  "page.back",
+  "page.forward",
+  "page.reload",
+  "page.current_url",
+  "page.read_text",
+  "page.read_outline",
+  "page.click_text",
+  "page.click_selector",
+  "page.fill",
+  "page.scroll",
+  "page.wait_for",
+  "page.screenshot",
+  "page.set_viewport",
+  "page.mouse_move",
+  "page.mouse_down",
+  "page.mouse_up",
+  "page.mouse_click",
+  "page.mouse_wheel",
+  "page.keyboard_type",
+  "page.keyboard_press",
+  "screencast.start",
+  "screencast.stop",
+  "tabs.close",
+]);
 
 const rl = readline.createInterface({ input: process.stdin });
 rl.on("line", (line) => {
@@ -435,7 +494,43 @@ rl.on("line", (line) => {
     logErr("parse", e);
     return;
   }
-  Promise.resolve(handle(msg)).catch((e) => logErr("handle", e));
+  Promise.resolve(handle(msg, send)).catch((e) => logErr("handle", e));
+});
+
+mkdirSync(dirname(SOCK_PATH), { recursive: true });
+try {
+  unlinkSync(SOCK_PATH);
+} catch {}
+const sockServer = net.createServer((socket) => {
+  let buf = "";
+  const sendToSock = (obj) => {
+    try {
+      socket.write(JSON.stringify(obj) + "\n");
+    } catch {}
+  };
+  socket.on("data", (chunk) => {
+    buf += chunk.toString("utf-8");
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      if (!line.trim()) continue;
+      let msg;
+      try {
+        msg = JSON.parse(line);
+      } catch (e) {
+        logErr("sock parse", e);
+        continue;
+      }
+      Promise.resolve(handle(msg, sendToSock)).catch((e) =>
+        logErr("sock handle", e),
+      );
+    }
+  });
+  socket.on("error", () => {});
+});
+sockServer.listen(SOCK_PATH, () => {
+  logErr(`mcp socket listening at ${SOCK_PATH}`);
 });
 
 async function shutdown() {
@@ -445,6 +540,12 @@ async function shutdown() {
     }
     await saveState();
     if (browser) await browser.close();
+    try {
+      sockServer.close();
+    } catch {}
+    try {
+      unlinkSync(SOCK_PATH);
+    } catch {}
   } catch (e) {
     logErr("shutdown", e);
   }

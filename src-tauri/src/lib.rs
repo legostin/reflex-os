@@ -1028,14 +1028,20 @@ fn update_project_browser(
         .unwrap_or_else(|| serde_json::json!({}));
     if let Some(obj) = servers.as_object_mut() {
         if enabled {
+            let bridge = browser::mcp_bridge_path(&app)
+                .map_err(|e| format!("bridge path: {e}"))?;
+            let node = browser::resolve_node()
+                .unwrap_or_else(|_| "node".to_string());
             obj.insert(
-                "playwright".to_string(),
+                "reflex_browser".to_string(),
                 serde_json::json!({
-                    "command": "npx",
-                    "args": ["-y", "@playwright/mcp@latest"],
+                    "command": node,
+                    "args": [bridge.to_string_lossy()],
                 }),
             );
+            obj.remove("playwright");
         } else {
+            obj.remove("reflex_browser");
             obj.remove("playwright");
         }
     }

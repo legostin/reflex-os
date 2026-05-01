@@ -50,7 +50,8 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "../sidecars/reflex-browser-server": "sidecars/reflex-browser-server"
+      "../sidecars/reflex-browser-server": "sidecars/reflex-browser-server",
+      "../sidecars/reflex-browser-mcp": "sidecars/reflex-browser-mcp"
     },
     "icon": [
       "icons/32x32.png",

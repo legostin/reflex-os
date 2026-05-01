@@ -159,6 +159,7 @@ export function BrowserScreen() {
     }
     setActiveId(id);
     try {
+      await invoke("browser_set_active_tab", { tabId: id });
       await invoke("browser_set_viewport", {
         tabId: id,
         width: VIEWPORT_W,
