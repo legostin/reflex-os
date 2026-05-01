@@ -4,6 +4,7 @@ mod app_watcher;
 mod apps;
 mod codex;
 mod context;
+mod memory;
 mod project;
 mod storage;
 
@@ -2021,6 +2022,7 @@ pub fn run() {
         .manage(app_server::AppServerHandle::default())
         .manage(app_runtime::AppRuntimes::default())
         .manage(app_watcher::AppWatchers::default())
+        .manage(memory::MemoryState::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init());
@@ -2124,7 +2126,13 @@ pub fn run() {
             reveal_in_finder,
             continue_thread,
             stop_thread,
-            respond_to_question
+            respond_to_question,
+            memory::tools::memory_save,
+            memory::tools::memory_list,
+            memory::tools::memory_delete,
+            memory::tools::memory_search,
+            memory::tools::memory_recall,
+            memory::tools::memory_reindex,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

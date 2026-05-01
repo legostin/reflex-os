@@ -32,6 +32,10 @@ notify-debouncer-mini = "0.4"
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "gzip", "brotli"], default-features = false }
 base64 = "0.22"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+thiserror = "1"
+serde_yaml = "0.9"
+rusqlite = { version = "0.32", features = ["bundled", "blob"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
