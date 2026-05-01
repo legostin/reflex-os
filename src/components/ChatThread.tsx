@@ -1,0 +1,3549 @@
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { DiffPanel } from "./DiffPanel";
+import "./ChatThread.css";
+
+type QuickContext = {
+  frontmost_app: string | null;
+  finder_target: string | null;
+};
+
+type Project = {
+  id: string;
+  name: string;
+  root: string;
+  created_at_ms: number;
+  sandbox?: string;
+  mcp_servers?: Record<string, any> | null;
+};
+
+type ThreadCreated = {
+  id: string;
+  project_id: string;
+  project_name: string;
+  prompt: string;
+  cwd: string;
+  ctx: QuickContext;
+  created_at_ms: number;
+  plan_mode?: boolean;
+};
+
+type CodexEventPayload = {
+  thread_id: string;
+  seq: number;
+  raw: string;
+  stream: "stdout" | "stderr" | "error" | "user";
+};
+
+type CodexEndPayload = {
+  thread_id: string;
+  exit_code: number | null;
+};
+
+type ThreadRunningPayload = {
+  thread_id: string;
+};
+
+type ThreadEvent = {
+  seq: number;
+  stream: CodexEventPayload["stream"];
+  raw: string;
+  parsed: any | null;
+};
+
+type Thread = {
+  id: string;
+  project_id: string;
+  project_name: string;
+  prompt: string;
+  cwd: string;
+  ctx: QuickContext;
+  created_at_ms: number;
+  events: ThreadEvent[];
+  exit_code: number | null | undefined;
+  done: boolean;
+  session_id: string | null;
+  title: string | null;
+  goal: string | null;
+  pending_questions: ThreadQuestion[];
+  plan_mode: boolean;
+  plan_confirmed: boolean;
+};
+
+type ThreadMetaUpdated = {
+  thread_id: string;
+  title: string;
+  goal: string;
+};
+
+type ThreadQuestion = {
+  question_id: string;
+  method: string;
+  params: any;
+  thread_id: string | null;
+};
+
+type StoredEvent = { seq: number; stream: string; ts_ms: number; raw: string };
+
+type StoredThreadMeta = {
+  id: string;
+  project_id: string | null;
+  prompt: string;
+  cwd: string;
+  frontmost_app: string | null;
+  finder_target: string | null;
+  created_at_ms: number;
+  exit_code: number | null;
+  done: boolean;
+  session_id: string | null;
+  title: string | null;
+  goal: string | null;
+  plan_mode?: boolean;
+};
+
+type ProjectThread = {
+  project: Project;
+  thread: { meta: StoredThreadMeta; events: StoredEvent[] };
+};
+
+type Route =
+  | { kind: "home" }
+  | { kind: "project"; project_id: string }
+  | { kind: "topic"; thread_id: string }
+  | { kind: "apps" }
+  | { kind: "app"; app_id: string };
+
+function routeKey(r: Route): string {
+  switch (r.kind) {
+    case "home":
+      return "home";
+    case "apps":
+      return "apps";
+    case "project":
+      return `project:${r.project_id}`;
+    case "topic":
+      return `topic:${r.thread_id}`;
+    case "app":
+      return `app:${r.app_id}`;
+  }
+}
+
+function tabIcon(r: Route): string {
+  switch (r.kind) {
+    case "home":
+      return "🏠";
+    case "apps":
+      return "🧩";
+    case "project":
+      return "📁";
+    case "topic":
+      return "💬";
+    case "app":
+      return "🪟";
+  }
+}
+
+function tabLabel(
+  r: Route,
+  projects: Project[],
+  threads: Thread[],
+): string {
+  switch (r.kind) {
+    case "home":
+      return "Home";
+    case "apps":
+      return "Apps";
+    case "project": {
+      const p = projects.find((x) => x.id === r.project_id);
+      return p?.name ?? r.project_id;
+    }
+    case "topic": {
+      const t = threads.find((x) => x.id === r.thread_id);
+      return t?.title ?? t?.prompt?.slice(0, 40) ?? r.thread_id;
+    }
+    case "app":
+      return r.app_id;
+  }
+}
+
+type PaneId = string;
+type Pane = { id: PaneId; tabs: Route[]; activeKey: string };
+type Layout = {
+  panes: Pane[];
+  paneSizes: Record<PaneId, number>;
+  focusedPaneId: PaneId;
+};
+
+let paneSeq = 0;
+const nextPaneId = (): PaneId => `p${++paneSeq}`;
+
+const TAB_DRAG_TYPE = "application/reflex-tab";
+
+const initialLayout = (): Layout => {
+  const id = nextPaneId();
+  return {
+    panes: [{ id, tabs: [{ kind: "home" }], activeKey: "home" }],
+    paneSizes: { [id]: 1 },
+    focusedPaneId: id,
+  };
+};
+
+function removeTabFromPane(p: Pane, key: string): Pane {
+  const idx = p.tabs.findIndex((t) => routeKey(t) === key);
+  if (idx === -1) return p;
+  const newTabs = p.tabs.filter((_, i) => i !== idx);
+  let newActive = p.activeKey;
+  if (newActive === key) {
+    const fb = newTabs[idx] ?? newTabs[idx - 1] ?? newTabs[0];
+    newActive = fb ? routeKey(fb) : "";
+  }
+  return { ...p, tabs: newTabs, activeKey: newActive };
+}
+
+function compactLayout(prev: Layout, panes: Pane[]): Layout {
+  const nonEmpty = panes.filter((p) => p.tabs.length > 0);
+  if (nonEmpty.length === 0) {
+    const id = nextPaneId();
+    return {
+      panes: [{ id, tabs: [{ kind: "home" }], activeKey: "home" }],
+      paneSizes: { [id]: 1 },
+      focusedPaneId: id,
+    };
+  }
+  const sizes: Record<PaneId, number> = {};
+  for (const p of nonEmpty) sizes[p.id] = prev.paneSizes[p.id] ?? 1;
+  const focus = nonEmpty.some((p) => p.id === prev.focusedPaneId)
+    ? prev.focusedPaneId
+    : nonEmpty[0].id;
+  return { panes: nonEmpty, paneSizes: sizes, focusedPaneId: focus };
+}
+
+type ServerLogLine = {
+  seq: number;
+  stream: "stdout" | "stderr" | "system";
+  line: string;
+  ts_ms: number;
+};
+
+type AppManifest = {
+  id: string;
+  name: string;
+  icon?: string | null;
+  description?: string | null;
+  entry: string;
+  permissions: string[];
+  kind: string;
+  created_at_ms: number;
+  ready?: boolean;
+  runtime?: string | null;
+  server?: { command: string[]; ready_timeout_ms?: number | null } | null;
+};
+
+type AppServerStatus = {
+  running: boolean;
+  port: number | null;
+  exit_code: number | null;
+};
+
+function fromProjectThread(pt: ProjectThread): Thread {
+  return {
+    id: pt.thread.meta.id,
+    project_id: pt.project.id,
+    project_name: pt.project.name,
+    prompt: pt.thread.meta.prompt,
+    cwd: pt.thread.meta.cwd,
+    ctx: {
+      frontmost_app: pt.thread.meta.frontmost_app,
+      finder_target: pt.thread.meta.finder_target,
+    },
+    created_at_ms: pt.thread.meta.created_at_ms,
+    events: pt.thread.events.map((e) => ({
+      seq: e.seq,
+      stream: (e.stream as ThreadEvent["stream"]) ?? "stdout",
+      raw: e.raw,
+      parsed: tryParse(e.raw),
+    })),
+    exit_code: pt.thread.meta.exit_code,
+    done: pt.thread.meta.done,
+    session_id: pt.thread.meta.session_id,
+    title: pt.thread.meta.title,
+    goal: pt.thread.meta.goal,
+    pending_questions: [],
+    plan_mode: !!pt.thread.meta.plan_mode,
+    plan_confirmed: false,
+  };
+}
+
+function tryParse(s: string): any | null {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+function upsertThread(prev: Thread[], next: Thread): Thread[] {
+  const idx = prev.findIndex((t) => t.id === next.id);
+  if (idx === -1) return [...prev, next];
+  const merged = { ...prev[idx], ...next, events: prev[idx].events };
+  const copy = [...prev];
+  copy[idx] = merged;
+  return copy;
+}
+
+function appendEvent(
+  prev: Thread[],
+  thread_id: string,
+  ev: ThreadEvent,
+): Thread[] {
+  return prev.map((t) => {
+    if (t.id !== thread_id) return t;
+    if (t.events.some((e) => e.seq === ev.seq)) return t;
+    const events = [...t.events, ev].sort((a, b) => a.seq - b.seq);
+    return { ...t, events };
+  });
+}
+
+export default function ChatThread() {
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [layout, setLayout] = useState<Layout>(initialLayout);
+  const [draggingTab, setDraggingTab] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const focusPane = (paneId: PaneId) =>
+    setLayout((prev) =>
+      prev.focusedPaneId === paneId ? prev : { ...prev, focusedPaneId: paneId },
+    );
+
+  const activateTab = (paneId: PaneId, key: string) =>
+    setLayout((prev) => ({
+      ...prev,
+      panes: prev.panes.map((p) =>
+        p.id === paneId ? { ...p, activeKey: key } : p,
+      ),
+      focusedPaneId: paneId,
+    }));
+
+  // Navigate within focused pane. If route already lives in another pane, just focus it.
+  const navigate = (r: Route) => {
+    const k = routeKey(r);
+    setLayout((prev) => {
+      const focused = prev.panes.find((p) => p.id === prev.focusedPaneId);
+      if (focused?.tabs.some((t) => routeKey(t) === k)) {
+        return {
+          ...prev,
+          panes: prev.panes.map((p) =>
+            p.id === prev.focusedPaneId
+              ? { ...p, activeKey: k, tabs: p.tabs.map((t) => (routeKey(t) === k ? r : t)) }
+              : p,
+          ),
+        };
+      }
+      const other = prev.panes.find((p) => p.tabs.some((t) => routeKey(t) === k));
+      if (other) {
+        return {
+          ...prev,
+          panes: prev.panes.map((p) =>
+            p.id === other.id
+              ? { ...p, activeKey: k, tabs: p.tabs.map((t) => (routeKey(t) === k ? r : t)) }
+              : p,
+          ),
+          focusedPaneId: other.id,
+        };
+      }
+      return {
+        ...prev,
+        panes: prev.panes.map((p) =>
+          p.id === prev.focusedPaneId
+            ? { ...p, tabs: [...p.tabs, r], activeKey: k }
+            : p,
+        ),
+      };
+    });
+  };
+
+  const addPane = () => {
+    setLayout((prev) => {
+      const id = nextPaneId();
+      return {
+        panes: [
+          ...prev.panes,
+          { id, tabs: [{ kind: "home" }], activeKey: "home" },
+        ],
+        paneSizes: { ...prev.paneSizes, [id]: 1 },
+        focusedPaneId: id,
+      };
+    });
+  };
+
+  const closeTab = (paneId: PaneId, key: string) => {
+    setLayout((prev) => {
+      const updated = prev.panes.map((p) =>
+        p.id === paneId ? removeTabFromPane(p, key) : p,
+      );
+      return compactLayout(prev, updated);
+    });
+  };
+
+  const closePane = (paneId: PaneId) => {
+    setLayout((prev) => {
+      if (prev.panes.length === 1) return prev;
+      const next = prev.panes.filter((p) => p.id !== paneId);
+      return compactLayout(prev, next);
+    });
+  };
+
+  const moveTab = (fromPaneId: PaneId, key: string, toPaneId: PaneId) => {
+    if (fromPaneId === toPaneId) return;
+    setLayout((prev) => {
+      const from = prev.panes.find((p) => p.id === fromPaneId);
+      const route = from?.tabs.find((t) => routeKey(t) === key);
+      if (!from || !route) return prev;
+      const updated = prev.panes.map((p) => {
+        if (p.id === fromPaneId) return removeTabFromPane(p, key);
+        if (p.id === toPaneId) {
+          if (p.tabs.some((t) => routeKey(t) === key))
+            return { ...p, activeKey: key };
+          return { ...p, tabs: [...p.tabs, route], activeKey: key };
+        }
+        return p;
+      });
+      const next = compactLayout(prev, updated);
+      return {
+        ...next,
+        focusedPaneId: next.panes.some((p) => p.id === toPaneId)
+          ? toPaneId
+          : next.focusedPaneId,
+      };
+    });
+  };
+
+  const moveTabToNewPane = (fromPaneId: PaneId, key: string) => {
+    setLayout((prev) => {
+      const from = prev.panes.find((p) => p.id === fromPaneId);
+      const route = from?.tabs.find((t) => routeKey(t) === key);
+      if (!from || !route) return prev;
+      const newId = nextPaneId();
+      const updated = prev.panes.map((p) =>
+        p.id === fromPaneId ? removeTabFromPane(p, key) : p,
+      );
+      const compacted = compactLayout(prev, updated);
+      return {
+        panes: [...compacted.panes, { id: newId, tabs: [route], activeKey: key }],
+        paneSizes: { ...compacted.paneSizes, [newId]: 1 },
+        focusedPaneId: newId,
+      };
+    });
+  };
+
+  const onDividerMouseDown = (
+    e: React.MouseEvent<HTMLDivElement>,
+    leftId: PaneId,
+    rightId: PaneId,
+  ) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const cw = containerRef.current?.getBoundingClientRect().width ?? 1;
+    const totalWeight = Object.values(layout.paneSizes).reduce(
+      (a, b) => a + b,
+      0,
+    );
+    const startLeft = layout.paneSizes[leftId] ?? 1;
+    const startRight = layout.paneSizes[rightId] ?? 1;
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const dxWeight = (dx / cw) * totalWeight;
+      setLayout((prev) => ({
+        ...prev,
+        paneSizes: {
+          ...prev.paneSizes,
+          [leftId]: Math.max(0.15, startLeft + dxWeight),
+          [rightId]: Math.max(0.15, startRight - dxWeight),
+        },
+      }));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  // Loaders for app threads — register the thread in `threads[]` and return its id.
+  // The AppViewer keeps its own nested-tab state for which threads to show in its side panel.
+  const resolveExistingAppThread = async (
+    appId: string,
+  ): Promise<string | null> => {
+    try {
+      const pt = await invoke<ProjectThread>("read_app_thread", { appId });
+      setThreads((prev) => upsertThread(prev, fromProjectThread(pt)));
+      return pt.thread.meta.id;
+    } catch (e) {
+      console.error("[reflex] read_app_thread failed", e);
+      return null;
+    }
+  };
+
+  const resolveNewAppThread = async (
+    appId: string,
+  ): Promise<string | null> => {
+    try {
+      const pt = await invoke<ProjectThread>("create_app_thread", { appId });
+      setThreads((prev) => upsertThread(prev, fromProjectThread(pt)));
+      return pt.thread.meta.id;
+    } catch (e) {
+      console.error("[reflex] create_app_thread failed", e);
+      return null;
+    }
+  };
+
+  // Used by Inspector and Auto-error-fix: dispatch a revise with a prebuilt prompt.
+  // Backend continues the latest app thread; we return its id so AppViewer can attach it.
+  const applyAppRevise = async (
+    appId: string,
+    instruction: string,
+  ): Promise<string | null> => {
+    try {
+      const res = await invoke<{ thread_id: string }>("app_revise", {
+        appId,
+        instruction,
+      });
+      // Make sure the topic is loaded into `threads[]` so TopicScreen can render it.
+      try {
+        const pt = await invoke<ProjectThread>("read_app_thread", { appId });
+        setThreads((prev) => upsertThread(prev, fromProjectThread(pt)));
+      } catch {}
+      return res.thread_id;
+    } catch (e) {
+      console.error("[reflex] app_revise failed", e);
+      return null;
+    }
+  };
+
+  const createNewProject = async () => {
+    try {
+      const path = await invoke<string | null>("pick_directory", {
+        title: "Выбор папки проекта",
+      });
+      if (!path) return;
+      const p = await invoke<Project>("create_project", { root: path });
+      setProjects((prev) => {
+        const idx = prev.findIndex((x) => x.id === p.id);
+        if (idx === -1) return [...prev, p];
+        const copy = [...prev];
+        copy[idx] = p;
+        return copy;
+      });
+      navigate({ kind: "project", project_id: p.id });
+    } catch (e) {
+      console.error("[reflex] create project failed", e);
+    }
+  };
+
+  const createNewTopic = async (
+    projectId: string,
+    prompt: string,
+    planMode: boolean,
+  ) => {
+    const project = projects.find((p) => p.id === projectId);
+    const ctx = {
+      frontmost_app: null as string | null,
+      finder_target: project?.root ?? null,
+    };
+    await invoke("submit_quick", {
+      prompt,
+      ctx,
+      projectId,
+      planMode,
+    });
+    // backend emits reflex://thread-created which our listener will route into the focused pane.
+  };
+
+  const focusedPane =
+    layout.panes.find((p) => p.id === layout.focusedPaneId) ?? layout.panes[0];
+  const currentRoute: Route =
+    focusedPane.tabs.find((r) => routeKey(r) === focusedPane.activeKey) ??
+    focusedPane.tabs[0] ?? { kind: "home" };
+
+  useEffect(() => {
+    let mounted = true;
+
+    const refreshProjects = () => {
+      invoke<Project[]>("list_projects")
+        .then((p) => {
+          if (mounted) setProjects(p);
+        })
+        .catch((e) => console.error("[reflex] list_projects failed", e));
+    };
+
+    refreshProjects();
+
+    invoke<ProjectThread[]>("list_threads")
+      .then((stored) => {
+        if (!mounted) return;
+        setThreads((prev) => {
+          let next = prev;
+          for (const s of stored) {
+            next = upsertThread(next, fromProjectThread(s));
+          }
+          next = next.slice().sort((a, b) => a.created_at_ms - b.created_at_ms);
+          return next;
+        });
+      })
+      .catch((e) => console.error("[reflex] list_threads failed", e));
+
+    const created = listen<ThreadCreated>("reflex://thread-created", (e) => {
+      const t: Thread = {
+        ...e.payload,
+        events: [],
+        exit_code: undefined,
+        done: false,
+        session_id: null,
+        title: null,
+        goal: null,
+        pending_questions: [],
+        plan_mode: !!e.payload.plan_mode,
+        plan_confirmed: false,
+      };
+      setThreads((prev) => upsertThread(prev, t));
+      // refresh project list (project may have just been created) and jump to topic
+      refreshProjects();
+      navigate({ kind: "topic", thread_id: t.id });
+    });
+    const metaUpdated = listen<ThreadMetaUpdated>(
+      "reflex://thread-meta-updated",
+      (e) => {
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.id === e.payload.thread_id
+              ? { ...t, title: e.payload.title, goal: e.payload.goal }
+              : t,
+          ),
+        );
+      },
+    );
+    const question = listen<ThreadQuestion>("reflex://thread-question", (e) => {
+      const q = e.payload;
+      if (!q.thread_id) {
+        console.warn("[reflex] question without thread_id", q);
+        return;
+      }
+      const tid = q.thread_id;
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === tid
+            ? { ...t, pending_questions: [...(t.pending_questions ?? []), q] }
+            : t,
+        ),
+      );
+      navigate({ kind: "topic", thread_id: tid });
+    });
+    const evt = listen<CodexEventPayload>("reflex://codex-event", (e) => {
+      const ev: ThreadEvent = {
+        seq: e.payload.seq,
+        stream: e.payload.stream,
+        raw: e.payload.raw,
+        parsed: tryParse(e.payload.raw),
+      };
+      setThreads((prev) => appendEvent(prev, e.payload.thread_id, ev));
+    });
+    const end = listen<CodexEndPayload>("reflex://codex-end", (e) => {
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === e.payload.thread_id
+            ? { ...t, exit_code: e.payload.exit_code, done: true }
+            : t,
+        ),
+      );
+    });
+    const running = listen<ThreadRunningPayload>(
+      "reflex://thread-running",
+      (e) => {
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.id === e.payload.thread_id
+              ? { ...t, done: false, exit_code: undefined }
+              : t,
+          ),
+        );
+      },
+    );
+
+    const onResolved = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        thread_id: string;
+        question_id: string;
+      };
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === detail.thread_id
+            ? {
+                ...t,
+                pending_questions: (t.pending_questions ?? []).filter(
+                  (q) => q.question_id !== detail.question_id,
+                ),
+              }
+            : t,
+        ),
+      );
+    };
+    window.addEventListener("reflex-question-resolved", onResolved);
+
+    return () => {
+      mounted = false;
+      created.then((u) => u());
+      evt.then((u) => u());
+      end.then((u) => u());
+      running.then((u) => u());
+      metaUpdated.then((u) => u());
+      question.then((u) => u());
+      window.removeEventListener("reflex-question-resolved", onResolved);
+    };
+  }, []);
+
+  const onProjectUpdated = (p: Project) =>
+    setProjects((prev) => {
+      const idx = prev.findIndex((x) => x.id === p.id);
+      if (idx === -1) return [...prev, p];
+      const copy = [...prev];
+      copy[idx] = p;
+      return copy;
+    });
+
+  const openAppIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const pane of layout.panes) {
+      for (const tab of pane.tabs) {
+        if (tab.kind === "app") ids.add(tab.app_id);
+      }
+    }
+    return ids;
+  }, [layout.panes]);
+
+  const renderRoute = (r: Route) => {
+    switch (r.kind) {
+      case "home":
+        return (
+          <HomeScreen
+            projects={projects}
+            threads={threads}
+            openAppIds={openAppIds}
+            onSelectProject={(id) =>
+              navigate({ kind: "project", project_id: id })
+            }
+            onSelectTopic={(id) => navigate({ kind: "topic", thread_id: id })}
+            onSelectApp={(id) => navigate({ kind: "app", app_id: id })}
+            onOpenApps={() => navigate({ kind: "apps" })}
+            onCreateProject={() => void createNewProject()}
+          />
+        );
+      case "project":
+        return (
+          <ProjectScreen
+            projectId={r.project_id}
+            projects={projects}
+            threads={threads}
+            onSelectTopic={(id) => navigate({ kind: "topic", thread_id: id })}
+            onProjectUpdated={onProjectUpdated}
+            onCreateTopic={(prompt, planMode) =>
+              createNewTopic(r.project_id, prompt, planMode)
+            }
+          />
+        );
+      case "topic":
+        return <TopicScreen thread_id={r.thread_id} threads={threads} />;
+      case "apps":
+        return (
+          <AppsScreen
+            onOpenApp={(id) => navigate({ kind: "app", app_id: id })}
+            onOpenTopic={(id) => navigate({ kind: "topic", thread_id: id })}
+          />
+        );
+      case "app":
+        return (
+          <AppViewer
+            appId={r.app_id}
+            threads={threads}
+            onResolveExistingThread={() => resolveExistingAppThread(r.app_id)}
+            onResolveNewThread={() => resolveNewAppThread(r.app_id)}
+            onApplyRevise={(instr) => applyAppRevise(r.app_id, instr)}
+          />
+        );
+    }
+  };
+
+  return (
+    <div className="chat-root">
+      <Header
+        route={currentRoute}
+        threads={threads}
+        projects={projects}
+        onNavigate={navigate}
+        onAddPane={addPane}
+        onCreateProject={() => void createNewProject()}
+      />
+      <div className="panes-container" ref={containerRef}>
+        {layout.panes.map((pane, idx) => (
+          <Fragment key={pane.id}>
+            {idx > 0 && (
+              <div
+                className="pane-divider"
+                onMouseDown={(e) =>
+                  onDividerMouseDown(e, layout.panes[idx - 1].id, pane.id)
+                }
+              />
+            )}
+            <PaneView
+              pane={pane}
+              size={layout.paneSizes[pane.id] ?? 1}
+              focused={pane.id === layout.focusedPaneId}
+              canClose={layout.panes.length > 1}
+              projects={projects}
+              threads={threads}
+              renderRoute={renderRoute}
+              onActivateTab={(key) => activateTab(pane.id, key)}
+              onCloseTab={(key) => closeTab(pane.id, key)}
+              onClosePane={() => closePane(pane.id)}
+              onFocus={() => focusPane(pane.id)}
+              onTabDragStart={() => setDraggingTab(true)}
+              onTabDragEnd={() => setDraggingTab(false)}
+              onTabDrop={(fromPaneId, key) =>
+                moveTab(fromPaneId, key, pane.id)
+              }
+            />
+          </Fragment>
+        ))}
+        <NewPaneDropZone
+          active={draggingTab}
+          onDrop={(fromPaneId, key) => {
+            setDraggingTab(false);
+            moveTabToNewPane(fromPaneId, key);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Header({
+  route,
+  threads,
+  projects,
+  onNavigate,
+  onAddPane,
+  onCreateProject,
+}: {
+  route: Route;
+  threads: Thread[];
+  projects: Project[];
+  onNavigate: (r: Route) => void;
+  onAddPane: () => void;
+  onCreateProject: () => void;
+}) {
+  const crumbs: { label: string; route: Route | null }[] = [
+    { label: "Reflex", route: { kind: "home" } },
+  ];
+  if (route.kind === "project") {
+    const p = projects.find((x) => x.id === route.project_id);
+    crumbs.push({ label: p?.name ?? route.project_id, route: null });
+  } else if (route.kind === "topic") {
+    const t = threads.find((x) => x.id === route.thread_id);
+    if (t) {
+      crumbs.push({
+        label: t.project_name,
+        route: { kind: "project", project_id: t.project_id },
+      });
+      crumbs.push({ label: t.id, route: null });
+    } else {
+      crumbs.push({ label: route.thread_id, route: null });
+    }
+  } else if (route.kind === "apps") {
+    crumbs.push({ label: "Apps", route: null });
+  } else if (route.kind === "app") {
+    crumbs.push({ label: "Apps", route: { kind: "apps" } });
+    crumbs.push({ label: route.app_id, route: null });
+  }
+
+  return (
+    <header className="chat-header">
+      <nav className="chat-breadcrumbs">
+        {crumbs.map((c, i) => (
+          <span key={i} className="chat-crumb">
+            {c.route ? (
+              <button
+                className="chat-crumb-link"
+                onClick={() => onNavigate(c.route!)}
+              >
+                {c.label}
+              </button>
+            ) : (
+              <span className="chat-crumb-current">{c.label}</span>
+            )}
+            {i < crumbs.length - 1 && <span className="chat-crumb-sep">›</span>}
+          </span>
+        ))}
+      </nav>
+      <div className="chat-header-actions">
+        <button
+          className="header-tab"
+          onClick={onCreateProject}
+          title="Новый проект"
+        >
+          + Project
+        </button>
+        <button
+          className="header-tab"
+          onClick={onAddPane}
+          title="Добавить панель"
+        >
+          + Pane
+        </button>
+        <button
+          className={`header-tab ${route.kind === "apps" || route.kind === "app" ? "active" : ""}`}
+          onClick={() => onNavigate({ kind: "apps" })}
+        >
+          Apps
+        </button>
+        <span className="chat-subtitle">
+          {threads.length} thread{threads.length === 1 ? "" : "s"} ·{" "}
+          {projects.length} project{projects.length === 1 ? "" : "s"}
+        </span>
+      </div>
+    </header>
+  );
+}
+
+function PaneView({
+  pane,
+  size,
+  focused,
+  canClose,
+  projects,
+  threads,
+  renderRoute,
+  onActivateTab,
+  onCloseTab,
+  onClosePane,
+  onFocus,
+  onTabDragStart,
+  onTabDragEnd,
+  onTabDrop,
+}: {
+  pane: Pane;
+  size: number;
+  focused: boolean;
+  canClose: boolean;
+  projects: Project[];
+  threads: Thread[];
+  renderRoute: (r: Route) => React.ReactNode;
+  onActivateTab: (key: string) => void;
+  onCloseTab: (key: string) => void;
+  onClosePane: () => void;
+  onFocus: () => void;
+  onTabDragStart: () => void;
+  onTabDragEnd: () => void;
+  onTabDrop: (fromPaneId: PaneId, key: string) => void;
+}) {
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes(TAB_DRAG_TYPE)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    }
+  };
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    const data = e.dataTransfer.getData(TAB_DRAG_TYPE);
+    if (!data) return;
+    e.preventDefault();
+    try {
+      const { paneId, key } = JSON.parse(data);
+      onTabDrop(paneId, key);
+    } catch {}
+  };
+  return (
+    <div
+      className={`pane ${focused ? "pane-focused" : ""}`}
+      style={{ flex: size }}
+      onMouseDownCapture={onFocus}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      <PaneTabsRow
+        paneId={pane.id}
+        tabs={pane.tabs}
+        activeKey={pane.activeKey}
+        projects={projects}
+        threads={threads}
+        canClosePane={canClose}
+        onActivate={onActivateTab}
+        onClose={onCloseTab}
+        onClosePane={onClosePane}
+        onTabDragStart={onTabDragStart}
+        onTabDragEnd={onTabDragEnd}
+      />
+      <main className="pane-body">
+        {pane.tabs.map((r) => {
+          const k = routeKey(r);
+          return (
+            <div key={k} className="route-pane" hidden={k !== pane.activeKey}>
+              {renderRoute(r)}
+            </div>
+          );
+        })}
+      </main>
+    </div>
+  );
+}
+
+function PaneTabsRow({
+  paneId,
+  tabs,
+  activeKey,
+  projects,
+  threads,
+  canClosePane,
+  onActivate,
+  onClose,
+  onClosePane,
+  onTabDragStart,
+  onTabDragEnd,
+}: {
+  paneId: PaneId;
+  tabs: Route[];
+  activeKey: string;
+  projects: Project[];
+  threads: Thread[];
+  canClosePane: boolean;
+  onActivate: (key: string) => void;
+  onClose: (key: string) => void;
+  onClosePane: () => void;
+  onTabDragStart: () => void;
+  onTabDragEnd: () => void;
+}) {
+  return (
+    <nav className="tabs-row">
+      {tabs.map((r) => {
+        const k = routeKey(r);
+        const active = k === activeKey;
+        const label = tabLabel(r, projects, threads);
+        return (
+          <div
+            key={k}
+            className={`tab ${active ? "active" : ""}`}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(
+                TAB_DRAG_TYPE,
+                JSON.stringify({ paneId, key: k }),
+              );
+              e.dataTransfer.effectAllowed = "move";
+              onTabDragStart();
+            }}
+            onDragEnd={onTabDragEnd}
+            onClick={() => onActivate(k)}
+            onMouseDown={(e) => {
+              if (e.button === 1) {
+                e.preventDefault();
+                onClose(k);
+              }
+            }}
+            title={label}
+          >
+            <span className="tab-icon">{tabIcon(r)}</span>
+            <span className="tab-label">{label}</span>
+            <button
+              className="tab-close"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose(k);
+              }}
+              title="Закрыть"
+              aria-label="Закрыть таб"
+            >
+              ×
+            </button>
+          </div>
+        );
+      })}
+      {canClosePane && (
+        <button
+          className="pane-close-btn"
+          onClick={onClosePane}
+          title="Закрыть панель"
+          aria-label="Закрыть панель"
+        >
+          ⨯
+        </button>
+      )}
+    </nav>
+  );
+}
+
+function NewPaneDropZone({
+  active,
+  onDrop,
+}: {
+  active: boolean;
+  onDrop: (fromPaneId: PaneId, key: string) => void;
+}) {
+  const [over, setOver] = useState(false);
+  return (
+    <div
+      className={`pane-newzone ${active ? "armed" : ""} ${over ? "over" : ""}`}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes(TAB_DRAG_TYPE)) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (!over) setOver(true);
+        }
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        const data = e.dataTransfer.getData(TAB_DRAG_TYPE);
+        setOver(false);
+        if (!data) return;
+        e.preventDefault();
+        try {
+          const { paneId, key } = JSON.parse(data);
+          onDrop(paneId, key);
+        } catch {}
+      }}
+    />
+  );
+}
+
+const TEMPLATES: {
+  id: string;
+  icon: string;
+  name: string;
+  description: string;
+  placeholder: string;
+}[] = [
+  {
+    id: "blank",
+    icon: "📄",
+    name: "Blank",
+    description: "Пустой app, codex решает структуру",
+    placeholder:
+      "Например: счётчик с кнопкой сохранения в storage; виджет погоды; …",
+  },
+  {
+    id: "chat",
+    icon: "💬",
+    name: "Chat utility",
+    description: "Чат с агентом, стриминг ответа",
+    placeholder:
+      "Например: ассистент по моему календарю; помощник с переводом; …",
+  },
+  {
+    id: "dashboard",
+    icon: "📊",
+    name: "Dashboard",
+    description: "Данные через agent.task в виде таблицы/карточек",
+    placeholder:
+      "Например: статус всех проектов из ~/projects; список последних коммитов; …",
+  },
+  {
+    id: "form",
+    icon: "📝",
+    name: "Form tool",
+    description: "Поля → Run → результат через agent.task",
+    placeholder:
+      "Например: переписать текст в нужном стиле; сгенерить regex по описанию; …",
+  },
+  {
+    id: "api-client",
+    icon: "🌐",
+    name: "API client",
+    description: "Запросы к внешнему API через net.fetch",
+    placeholder:
+      "Например: показать issues из github.com/owner/repo; конвертер валют через open.er-api.com; …",
+  },
+  {
+    id: "node-server",
+    icon: "🚀",
+    name: "Node server",
+    description: "runtime=server: своё backend на Node.js stdlib",
+    placeholder:
+      "Например: WebSocket-чат комната; sqlite-просмотрщик; превью markdown; …",
+  },
+];
+
+function AppsScreen({
+  onOpenApp,
+  onOpenTopic,
+}: {
+  onOpenApp: (id: string) => void;
+  onOpenTopic: (id: string) => void;
+}) {
+  const [items, setItems] = useState<AppManifest[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [step, setStep] = useState<"template" | "describe">("template");
+  const [template, setTemplate] = useState<string>("blank");
+  const [description, setDescription] = useState("");
+
+  async function importBundle() {
+    if (importing) return;
+    setImporting(true);
+    setError(null);
+    try {
+      const path = await invoke<string | null>("pick_open_file", {
+        title: "Импорт .reflexapp",
+        filterName: "Reflex App",
+        filterExtensions: ["reflexapp", "zip"],
+      });
+      if (!path) return;
+      const manifest = await invoke<AppManifest>("app_import", {
+        zipPath: path,
+      });
+      setShowModal(false);
+      setTimeout(() => void refresh(), 500);
+      onOpenApp(manifest.id);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function refresh() {
+    try {
+      const list = await invoke<AppManifest[]>("list_apps");
+      setItems(list);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const tick = () => {
+      invoke<AppManifest[]>("list_apps")
+        .then((list) => {
+          if (!alive) return;
+          setItems(list);
+          // poll until everything is ready
+          const stillCreating = list.some((a) => a.ready === false);
+          if (!stillCreating && timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+        })
+        .catch((e) => alive && setError(String(e)));
+    };
+    tick();
+    timer = setInterval(tick, 3000);
+    return () => {
+      alive = false;
+      if (timer) clearInterval(timer);
+    };
+  }, []);
+
+  async function submitCreate() {
+    const text = description.trim();
+    if (!text || creating) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const res = await invoke<{ app_id: string; thread_id: string }>(
+        "create_app",
+        { description: text, template },
+      );
+      setShowModal(false);
+      setDescription("");
+      setStep("template");
+      setTemplate("blank");
+      // refresh list a bit later (codex still working)
+      setTimeout(() => void refresh(), 1500);
+      // navigate to creation thread so user sees codex working
+      onOpenTopic(res.thread_id);
+    } catch (e) {
+      console.error("[reflex] create_app failed", e);
+      setError(String(e));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="apps-root">
+      <header className="apps-header">
+        <div className="apps-header-row">
+          <h1 className="section-title">Apps</h1>
+          <button
+            className="apps-create-btn"
+            onClick={() => setShowModal(true)}
+          >
+            + New App
+          </button>
+        </div>
+        <p className="apps-hint">
+          Утилиты, общающиеся с агентом через мост Reflex. Опиши что хочешь —
+          codex напишет.
+        </p>
+      </header>
+      {error && <div className="apps-error">{error}</div>}
+      {items.length === 0 ? (
+        <div className="chat-empty">
+          <p>Apps пока нет.</p>
+        </div>
+      ) : (
+        <div className="apps-grid">
+          {items.map((a) => {
+            const isReady = a.ready !== false;
+            return (
+              <button
+                key={a.id}
+                className={`apps-card ${isReady ? "" : "apps-card-creating"}`}
+                disabled={!isReady}
+                onClick={() => isReady && onOpenApp(a.id)}
+                title={isReady ? "Открыть" : "Codex ещё пишет файлы…"}
+              >
+                <div className="apps-card-icon">{a.icon ?? "🧩"}</div>
+                <div className="apps-card-name">
+                  {a.name}
+                  {!isReady && (
+                    <span className="apps-card-badge">creating…</span>
+                  )}
+                </div>
+                {a.description && (
+                  <div className="apps-card-desc">{a.description}</div>
+                )}
+                {a.permissions.length > 0 && (
+                  <div className="apps-card-perms">
+                    {a.permissions.map((p) => (
+                      <span key={p} className="apps-perm">
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {showModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => !creating && setShowModal(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            {step === "template" ? (
+              <>
+                <h2 className="modal-title">Новый Reflex app</h2>
+                <p className="modal-hint">Выбери шаблон под задачу.</p>
+                <div className="template-grid">
+                  {TEMPLATES.map((t) => (
+                    <button
+                      key={t.id}
+                      className={`template-card ${template === t.id ? "active" : ""}`}
+                      onClick={() => setTemplate(t.id)}
+                    >
+                      <div className="template-icon">{t.icon}</div>
+                      <div className="template-name">{t.name}</div>
+                      <div className="template-desc">{t.description}</div>
+                    </button>
+                  ))}
+                </div>
+                <div className="modal-actions">
+                  <button
+                    className="modal-btn"
+                    onClick={() => setShowModal(false)}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    className="modal-btn"
+                    onClick={() => void importBundle()}
+                    disabled={importing}
+                    title="Импортировать .reflexapp бандл"
+                  >
+                    {importing ? "…" : "📥 Import .reflexapp"}
+                  </button>
+                  <button
+                    className="modal-btn modal-btn-primary"
+                    onClick={() => setStep("describe")}
+                  >
+                    Дальше →
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="modal-title">
+                  {TEMPLATES.find((t) => t.id === template)?.icon}{" "}
+                  {TEMPLATES.find((t) => t.id === template)?.name}
+                </h2>
+                <p className="modal-hint">
+                  Опиши что должен делать app. Codex напишет файлы в фоне.
+                </p>
+                <textarea
+                  className="modal-input"
+                  placeholder={
+                    TEMPLATES.find((t) => t.id === template)?.placeholder ?? ""
+                  }
+                  value={description}
+                  onChange={(e) => setDescription(e.currentTarget.value)}
+                  autoFocus
+                  rows={5}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      void submitCreate();
+                    }
+                  }}
+                />
+                <div className="modal-actions">
+                  <button
+                    className="modal-btn"
+                    disabled={creating}
+                    onClick={() => setStep("template")}
+                  >
+                    ← Назад
+                  </button>
+                  <button
+                    className="modal-btn"
+                    disabled={creating}
+                    onClick={() => setShowModal(false)}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    className="modal-btn modal-btn-primary"
+                    disabled={creating || !description.trim()}
+                    onClick={() => void submitCreate()}
+                  >
+                    {creating ? "Создаю…" : "Создать (⌘↵)"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type AppStatus = {
+  has_changes: boolean;
+  revision: number;
+  last_commit_message: string | null;
+  entry_exists: boolean;
+};
+
+type InspectorPick = {
+  selector: string;
+  tagName: string;
+  id: string | null;
+  classes: string[];
+  text: string;
+  outerHTML: string;
+  computedStyle: Record<string, string>;
+};
+
+type RuntimeErrorPayload = {
+  message: string;
+  filename: string;
+  lineno: number;
+  colno: number;
+  stack: string;
+};
+
+function AppViewer({
+  appId,
+  threads,
+  onResolveExistingThread,
+  onResolveNewThread,
+  onApplyRevise,
+}: {
+  appId: string;
+  threads: Thread[];
+  onResolveExistingThread: () => Promise<string | null>;
+  onResolveNewThread: () => Promise<string | null>;
+  onApplyRevise: (instruction: string) => Promise<string | null>;
+}) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState<AppStatus | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [busy, setBusy] = useState<null | "save" | "revert" | "restart">(null);
+  const [error, setError] = useState<string | null>(null);
+  const prevHasChangesRef = useRef(false);
+  const [manifest, setManifest] = useState<AppManifest | null>(null);
+  const [serverPort, setServerPort] = useState<number | null>(null);
+  const [serverState, setServerState] = useState<
+    "idle" | "starting" | "running" | "failed" | "crashed"
+  >("idle");
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [logs, setLogs] = useState<ServerLogLine[]>([]);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const isServerRuntimeRef = useRef(false);
+
+  // Nested tabs (threads attached inside this app's view).
+  const [nestedTabs, setNestedTabs] = useState<string[]>([]);
+  const [activeNested, setActiveNested] = useState<string | null>(null);
+  const [nestedFraction, setNestedFraction] = useState(0.45);
+  const [openingNested, setOpeningNested] = useState<"edit" | "new" | null>(null);
+  const [showDiff, setShowDiff] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [inspecting, setInspecting] = useState(false);
+  const [pick, setPick] = useState<InspectorPick | null>(null);
+  const [pickInstruction, setPickInstruction] = useState("");
+  const [lastError, setLastError] = useState<RuntimeErrorPayload | null>(null);
+  const [reviseBusy, setReviseBusy] = useState(false);
+
+  const isServerRuntime = manifest?.runtime === "server";
+  isServerRuntimeRef.current = isServerRuntime;
+
+  const attachNested = (tid: string) => {
+    setNestedTabs((prev) => (prev.includes(tid) ? prev : [...prev, tid]));
+    setActiveNested(tid);
+  };
+
+  const closeNested = (tid: string) => {
+    setNestedTabs((prev) => {
+      const idx = prev.indexOf(tid);
+      if (idx === -1) return prev;
+      const next = prev.filter((t) => t !== tid);
+      if (activeNested === tid) {
+        setActiveNested(next[idx] ?? next[idx - 1] ?? next[0] ?? null);
+      }
+      return next;
+    });
+  };
+
+  const handleEditClick = async () => {
+    if (openingNested) return;
+    setOpeningNested("edit");
+    try {
+      const tid = await onResolveExistingThread();
+      if (tid) attachNested(tid);
+    } finally {
+      setOpeningNested(null);
+    }
+  };
+
+  const handleNewThreadClick = async () => {
+    if (openingNested) return;
+    setOpeningNested("new");
+    try {
+      const tid = await onResolveNewThread();
+      if (tid) attachNested(tid);
+    } finally {
+      setOpeningNested(null);
+    }
+  };
+
+  const toggleInspecting = () => {
+    const next = !inspecting;
+    setInspecting(next);
+    iframeRef.current?.contentWindow?.postMessage(
+      { source: "reflex", type: "inspector.toggle", on: next },
+      "*",
+    );
+  };
+
+  const dispatchRevise = async (instruction: string) => {
+    if (reviseBusy) return;
+    setReviseBusy(true);
+    try {
+      const tid = await onApplyRevise(instruction);
+      if (tid) attachNested(tid);
+    } finally {
+      setReviseBusy(false);
+    }
+  };
+
+  const submitInspectorPick = async () => {
+    if (!pick) return;
+    const text = pickInstruction.trim();
+    if (!text) return;
+    const summary = `Доработай элемент по селектору \`${pick.selector || pick.tagName}\`.\n\nКонтекст:\n\`\`\`html\n${pick.outerHTML}\n\`\`\`\n\nИЗМЕНЕНИЕ: ${text}`;
+    await dispatchRevise(summary);
+    setPick(null);
+    setPickInstruction("");
+  };
+
+  const submitErrorFix = async () => {
+    if (!lastError) return;
+    const summary = `App упал с ошибкой:\n\nMessage: ${lastError.message}\nLocation: ${lastError.filename}:${lastError.lineno}:${lastError.colno}\nStack:\n\`\`\`\n${lastError.stack || "(no stack)"}\n\`\`\`\n\nПочини этот баг.`;
+    await dispatchRevise(summary);
+    setLastError(null);
+  };
+
+  const onNestedDividerMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const cw = rootRef.current?.getBoundingClientRect().width ?? 1;
+    const startFraction = nestedFraction;
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      // dragging right shrinks the nested panel (which is on the right)
+      const next = Math.max(0.18, Math.min(0.82, startFraction - dx / cw));
+      setNestedFraction(next);
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const hasNested = nestedTabs.length > 0;
+
+  useEffect(() => {
+    let alive = true;
+    invoke<AppManifest>("read_app_manifest", { appId })
+      .then((m) => {
+        if (alive) setManifest(m);
+      })
+      .catch((e) => {
+        if (alive) setServerError(String(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [appId]);
+
+  // Start/stop server-runtime app while this AppViewer is mounted.
+  useEffect(() => {
+    if (manifest?.runtime !== "server") return;
+    let cancelled = false;
+    setServerState("starting");
+    setServerError(null);
+    invoke<number>("app_server_start", { appId })
+      .then(async (port) => {
+        if (cancelled) {
+          void invoke("app_server_stop", { appId }).catch(() => {});
+          return;
+        }
+        setServerPort(port);
+        setServerState("running");
+        // catchup logs from buffer
+        try {
+          const snap = await invoke<{ lines: ServerLogLine[] }>(
+            "app_server_logs",
+            { appId },
+          );
+          setLogs(snap.lines);
+        } catch {}
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setServerError(String(e));
+        setServerState("failed");
+      });
+    return () => {
+      cancelled = true;
+      void invoke("app_server_stop", { appId }).catch(() => {});
+    };
+  }, [appId, manifest?.runtime]);
+
+  // Proxy agent.stream events into iframe via postMessage.
+  useEffect(() => {
+    const sendToIframe = (data: any) => {
+      iframeRef.current?.contentWindow?.postMessage(data, "*");
+    };
+    const tokenUn = listen<{
+      stream_id: string;
+      app_id: string;
+      token: string;
+    }>("reflex://app-stream-token", (e) => {
+      if (e.payload.app_id !== appId) return;
+      sendToIframe({
+        source: "reflex",
+        type: "stream.token",
+        streamId: e.payload.stream_id,
+        token: e.payload.token,
+      });
+    });
+    const doneUn = listen<{
+      stream_id: string;
+      app_id: string;
+      result: string | null;
+    }>("reflex://app-stream-done", (e) => {
+      if (e.payload.app_id !== appId) return;
+      sendToIframe({
+        source: "reflex",
+        type: "stream.done",
+        streamId: e.payload.stream_id,
+        result: e.payload.result,
+      });
+    });
+    return () => {
+      tokenUn.then((u) => u());
+      doneUn.then((u) => u());
+    };
+  }, [appId]);
+
+  // Stream server logs (live).
+  useEffect(() => {
+    if (manifest?.runtime !== "server") return;
+    const unlisten = listen<{
+      app_id: string;
+      stream: ServerLogLine["stream"];
+      seq: number;
+      line: string;
+      ts_ms: number;
+    }>("reflex://app-server-log", (e) => {
+      if (e.payload.app_id !== appId) return;
+      setLogs((prev) => {
+        const next = [...prev, e.payload];
+        if (next.length > 500) next.splice(0, next.length - 500);
+        return next;
+      });
+    });
+    return () => {
+      unlisten.then((u) => u());
+    };
+  }, [appId, manifest?.runtime]);
+
+  // Healthcheck: poll server status; flip to "crashed" if process died.
+  useEffect(() => {
+    if (manifest?.runtime !== "server") return;
+    let alive = true;
+    const tick = async () => {
+      try {
+        const s = await invoke<{
+          running: boolean;
+          port: number | null;
+          exit_code: number | null;
+        }>("app_server_status", { appId });
+        if (!alive) return;
+        if (!s.running && (serverState === "running" || serverState === "starting")) {
+          setServerState("crashed");
+          setServerError(
+            s.exit_code != null ? `exit code ${s.exit_code}` : "process exited",
+          );
+        } else if (s.running && serverState === "crashed") {
+          setServerState("running");
+          setServerError(null);
+        }
+      } catch {}
+    };
+    const timer = setInterval(tick, 3000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [appId, manifest?.runtime, serverState]);
+
+  async function restartServer() {
+    if (busy) return;
+    setBusy("restart");
+    setServerError(null);
+    try {
+      const port = await invoke<number>("app_server_restart", { appId });
+      setServerPort(port);
+      setServerState("running");
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setServerError(String(e));
+      setServerState("failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function refreshStatus() {
+    try {
+      const s = await invoke<AppStatus>("app_status", { appId });
+      setStatus(s);
+      // detect false → true transition (codex finished writing changes)
+      if (s.has_changes && !prevHasChangesRef.current) {
+        if (isServerRuntimeRef.current) {
+          // server runtime — restart the process so the new code is picked up
+          void restartServer();
+        } else {
+          setReloadKey((k) => k + 1);
+        }
+      }
+      prevHasChangesRef.current = s.has_changes;
+      return s;
+    } catch (e) {
+      console.error("[reflex] app_status", e);
+      return null;
+    }
+  }
+
+  useEffect(() => {
+    let alive = true;
+    refreshStatus();
+    // Lower-frequency status polling for git revision/last commit msg.
+    // Critical-path reloads come via the file watcher below.
+    const timer = setInterval(() => {
+      if (alive) void refreshStatus();
+    }, 5000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [appId]);
+
+  // File watcher: reload iframe (static) or restart server when files change.
+  useEffect(() => {
+    let alive = true;
+    void invoke("app_watch_start", { appId }).catch((e) =>
+      console.error("[reflex] app_watch_start", e),
+    );
+    const unlisten = listen<{ app_id: string; paths: string[] }>(
+      "reflex://app-files-changed",
+      (e) => {
+        if (!alive) return;
+        if (e.payload.app_id !== appId) return;
+        if (isServerRuntimeRef.current) {
+          void restartServer();
+        } else {
+          setReloadKey((k) => k + 1);
+        }
+        // refresh status immediately so has_changes/revision update
+        void refreshStatus();
+      },
+    );
+    return () => {
+      alive = false;
+      void invoke("app_watch_stop", { appId }).catch(() => {});
+      unlisten.then((u) => u());
+    };
+  }, [appId]);
+
+  useEffect(() => {
+    const onMessage = async (ev: MessageEvent) => {
+      const msg = ev.data;
+      if (!msg || msg.source !== "reflex-app") return;
+      if (msg.type === "inspector.pick") {
+        setPick(msg.payload as InspectorPick);
+        setPickInstruction("");
+        setInspecting(false);
+        return;
+      }
+      if (msg.type === "runtime.error") {
+        const payload = msg.payload as RuntimeErrorPayload;
+        // dedupe: don't replace if same message
+        setLastError((prev) =>
+          prev && prev.message === payload.message && prev.stack === payload.stack
+            ? prev
+            : payload,
+        );
+        return;
+      }
+      if (msg.type === "request") {
+        const { id, method, params } = msg as {
+          id: number;
+          method: string;
+          params: any;
+        };
+        try {
+          const result = await invoke("app_invoke", {
+            appId,
+            method,
+            params: params ?? {},
+          });
+          iframeRef.current?.contentWindow?.postMessage(
+            { source: "reflex", type: "response", id, result },
+            "*",
+          );
+        } catch (e) {
+          iframeRef.current?.contentWindow?.postMessage(
+            { source: "reflex", type: "response", id, error: String(e) },
+            "*",
+          );
+        }
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [appId]);
+
+  async function exportApp() {
+    if (exporting) return;
+    setExporting(true);
+    setError(null);
+    try {
+      const target = await invoke<string | null>("pick_save_file", {
+        title: "Сохранить .reflexapp",
+        defaultName: `${appId}.reflexapp`,
+        filterName: "Reflex App",
+        filterExtensions: ["reflexapp", "zip"],
+      });
+      if (!target) return;
+      await invoke("app_export", { appId, targetPath: target });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function save() {
+    if (busy) return;
+    setBusy("save");
+    setError(null);
+    try {
+      const msg = window.prompt("Сообщение для commit:", "revision") ?? "revision";
+      await invoke("app_save", { appId, message: msg });
+      await refreshStatus();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function revert() {
+    if (busy) return;
+    if (!window.confirm("Откатиться к предыдущей версии? Несохранённые изменения будут потеряны.")) return;
+    setBusy("revert");
+    setError(null);
+    try {
+      await invoke("app_revert", { appId });
+      await refreshStatus();
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const entry = manifest?.entry ?? "index.html";
+  const src = isServerRuntime
+    ? serverPort
+      ? `http://localhost:${serverPort}/`
+      : null
+    : `reflexapp://localhost/${encodeURIComponent(appId)}/${entry}`;
+  const sandbox = isServerRuntime
+    ? "allow-scripts allow-forms allow-same-origin"
+    : "allow-scripts allow-forms";
+
+  return (
+    <div
+      ref={rootRef}
+      className={`appviewer-root ${hasNested ? "appviewer-with-nested" : ""}`}
+    >
+      <div
+        className="appviewer-main"
+        style={hasNested ? { flexBasis: `${(1 - nestedFraction) * 100}%` } : undefined}
+      >
+      <header className="appviewer-header">
+        <div className="appviewer-title">
+          {appId}
+          {status && (
+            <span className="appviewer-rev">rev {status.revision}</span>
+          )}
+        </div>
+        <div className="appviewer-actions">
+          {isServerRuntime && (
+            <button
+              className="appviewer-btn"
+              onClick={() => void restartServer()}
+              disabled={busy !== null}
+              title="Перезапустить сервер"
+            >
+              {busy === "restart" ? "…" : "↻ Restart"}
+            </button>
+          )}
+          {isServerRuntime && (
+            <button
+              className="appviewer-btn"
+              onClick={() => setLogsOpen((v) => !v)}
+              title="Показать логи сервера"
+            >
+              {logsOpen ? "▾ Logs" : "▸ Logs"}
+            </button>
+          )}
+          {!isServerRuntime && (
+            <button
+              className={`appviewer-btn ${inspecting ? "appviewer-btn-primary" : ""}`}
+              onClick={toggleInspecting}
+              disabled={busy !== null || reviseBusy}
+              title="Кликни по элементу в app и опиши что изменить"
+            >
+              {inspecting ? "✕ Inspect" : "🎯 Inspect"}
+            </button>
+          )}
+          <button
+            className="appviewer-btn"
+            onClick={() => void handleEditClick()}
+            disabled={busy !== null || openingNested !== null}
+            title="Открыть существующий тред для доработки (привяжется к этому app)"
+          >
+            {openingNested === "edit" ? "…" : "✏️ Edit"}
+          </button>
+          <button
+            className="appviewer-btn"
+            onClick={() => void handleNewThreadClick()}
+            disabled={busy !== null || openingNested !== null}
+            title="Создать новый тред для изолированных изменений"
+          >
+            {openingNested === "new" ? "…" : "🆕 New thread"}
+          </button>
+          <button
+            className="appviewer-btn"
+            onClick={() => void exportApp()}
+            disabled={busy !== null || exporting}
+            title="Экспортировать app в .reflexapp файл"
+          >
+            {exporting ? "…" : "📤 Export"}
+          </button>
+        </div>
+      </header>
+
+      {status?.has_changes && (
+        <div className="appviewer-banner appviewer-banner-warn">
+          <span>Есть несохранённые изменения.</span>
+          <div className="appviewer-banner-actions">
+            <button
+              className="appviewer-btn"
+              onClick={() => setShowDiff(true)}
+              disabled={busy !== null}
+              title="Посмотреть diff и применить выборочно"
+            >
+              🔍 Diff
+            </button>
+            <button
+              className="appviewer-btn appviewer-btn-primary"
+              onClick={() => void save()}
+              disabled={busy !== null}
+            >
+              Save
+            </button>
+            <button
+              className="appviewer-btn appviewer-btn-danger"
+              onClick={() => void revert()}
+              disabled={busy !== null}
+            >
+              Revert
+            </button>
+            <button
+              className="appviewer-btn"
+              onClick={() => setReloadKey((k) => k + 1)}
+              disabled={busy !== null}
+            >
+              Reload
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showDiff && (
+        <DiffPanel
+          appId={appId}
+          onClose={() => setShowDiff(false)}
+          onApplied={() => {
+            setShowDiff(false);
+            void refreshStatus();
+          }}
+        />
+      )}
+
+      {lastError && (
+        <div className="appviewer-banner appviewer-banner-warn">
+          <div className="appviewer-error-summary">
+            <strong>App упал:</strong> {lastError.message}
+            {lastError.filename && (
+              <span className="appviewer-error-loc">
+                {" · "}
+                {lastError.filename.split("/").pop()}:{lastError.lineno}
+              </span>
+            )}
+          </div>
+          <div className="appviewer-banner-actions">
+            <button
+              className="appviewer-btn appviewer-btn-primary"
+              onClick={() => void submitErrorFix()}
+              disabled={reviseBusy}
+              title="Отправить ошибку codex'у с просьбой починить"
+            >
+              {reviseBusy ? "…" : "✨ Fix"}
+            </button>
+            <button
+              className="appviewer-btn"
+              onClick={() => setLastError(null)}
+              disabled={reviseBusy}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {pick && (
+        <div className="inspector-card">
+          <header className="inspector-card-header">
+            <span className="inspector-card-tag">🎯 selected</span>
+            <code className="inspector-card-selector">
+              {pick.selector || pick.tagName}
+            </code>
+            <button
+              className="inspector-card-close"
+              onClick={() => setPick(null)}
+              aria-label="Закрыть"
+            >
+              ×
+            </button>
+          </header>
+          {pick.text && (
+            <div className="inspector-card-preview">
+              "{pick.text.slice(0, 80)}
+              {pick.text.length > 80 ? "…" : ""}"
+            </div>
+          )}
+          <textarea
+            className="inspector-card-input"
+            placeholder="Что изменить в этом элементе? (Cmd+Enter)"
+            autoFocus
+            rows={3}
+            value={pickInstruction}
+            onChange={(e) => setPickInstruction(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void submitInspectorPick();
+              }
+            }}
+          />
+          <div className="inspector-card-actions">
+            <button
+              className="appviewer-btn appviewer-btn-primary"
+              onClick={() => void submitInspectorPick()}
+              disabled={reviseBusy || !pickInstruction.trim()}
+            >
+              {reviseBusy ? "Применяю…" : "Apply (⌘↵)"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && <div className="apps-error">{error}</div>}
+
+      {isServerRuntime && serverState !== "running" && (
+        <div
+          className={`appviewer-banner ${serverState === "failed" || serverState === "crashed" ? "appviewer-banner-warn" : "appviewer-banner-info"}`}
+        >
+          {serverState === "starting" && (
+            <span>Запускаю локальный сервер app…</span>
+          )}
+          {serverState === "failed" && (
+            <span>Сервер не стартовал: {serverError}</span>
+          )}
+          {serverState === "crashed" && (
+            <span>Сервер упал: {serverError ?? "process exited"}</span>
+          )}
+          {(serverState === "failed" || serverState === "crashed") && (
+            <div className="appviewer-banner-actions">
+              <button
+                className="appviewer-btn"
+                onClick={() => void restartServer()}
+                disabled={busy !== null}
+              >
+                Restart
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {src ? (
+        <iframe
+          ref={iframeRef}
+          key={`${reloadKey}:${serverPort ?? "static"}`}
+          className="app-iframe"
+          src={src}
+          sandbox={sandbox}
+          title={appId}
+        />
+      ) : (
+        <div className="app-iframe-placeholder" />
+      )}
+
+      {isServerRuntime && logsOpen && (
+        <div className="server-logs">
+          <div className="server-logs-header">
+            <span>
+              server logs
+              {serverPort != null && (
+                <span className="server-logs-port"> · :{serverPort}</span>
+              )}
+            </span>
+            <button
+              className="server-logs-clear"
+              onClick={() => setLogs([])}
+              title="Очистить локальный буфер логов"
+            >
+              clear
+            </button>
+          </div>
+          <div className="server-logs-body">
+            {logs.length === 0 ? (
+              <div className="server-logs-empty">пусто</div>
+            ) : (
+              logs.map((l) => (
+                <div
+                  key={`${l.stream}-${l.seq}-${l.ts_ms}`}
+                  className={`server-log-line server-log-${l.stream}`}
+                >
+                  {l.line}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+      </div>
+
+      {hasNested && (
+        <>
+          <div
+            className="appviewer-nested-divider"
+            onMouseDown={onNestedDividerMouseDown}
+          />
+          <div
+            className="appviewer-nested"
+            style={{ flexBasis: `${nestedFraction * 100}%` }}
+          >
+            <nav className="nested-tabs">
+              {nestedTabs.map((tid) => {
+                const t = threads.find((x) => x.id === tid);
+                const label =
+                  t?.title ?? t?.prompt?.slice(0, 32) ?? tid;
+                const active = activeNested === tid;
+                return (
+                  <div
+                    key={tid}
+                    className={`nested-tab ${active ? "active" : ""}`}
+                    onClick={() => setActiveNested(tid)}
+                    title={label}
+                  >
+                    <span className="nested-tab-label">💬 {label}</span>
+                    <button
+                      className="nested-tab-close"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeNested(tid);
+                      }}
+                      aria-label="Закрыть"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </nav>
+            <div className="nested-body">
+              {activeNested ? (
+                <TopicScreen thread_id={activeNested} threads={threads} />
+              ) : (
+                <div className="chat-empty">
+                  <p>Выбери тред слева.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function HomeScreen({
+  projects,
+  threads,
+  openAppIds,
+  onSelectProject,
+  onSelectTopic,
+  onSelectApp,
+  onOpenApps,
+  onCreateProject,
+}: {
+  projects: Project[];
+  threads: Thread[];
+  openAppIds: Set<string>;
+  onSelectProject: (id: string) => void;
+  onSelectTopic: (id: string) => void;
+  onSelectApp: (id: string) => void;
+  onOpenApps: () => void;
+  onCreateProject: () => void;
+}) {
+  const recent = threads
+    .slice()
+    .sort((a, b) => b.created_at_ms - a.created_at_ms)
+    .slice(0, 5);
+
+  return (
+    <div className="home-root">
+      <HomeAppsSection
+        openAppIds={openAppIds}
+        onSelectApp={onSelectApp}
+        onOpenApps={onOpenApps}
+      />
+      <section>
+        <div className="section-head">
+          <h2 className="section-title">Projects</h2>
+          <button className="apps-create-btn" onClick={onCreateProject}>
+            + New Project
+          </button>
+        </div>
+        {projects.length === 0 ? (
+          <div className="home-empty-panel">
+            <p>
+              Создай первый проект кнопкой выше или открой Quick-панель (
+              <kbd>⌘⇧Space</kbd>) поверх любой папки.
+            </p>
+          </div>
+        ) : (
+          <div className="project-grid">
+            {projects.map((p) => {
+              const projectThreads = threads.filter(
+                (t) => t.project_id === p.id,
+              );
+              const count = projectThreads.length;
+              const running = projectThreads.filter((t) => !t.done).length;
+              return (
+                <button
+                  key={p.id}
+                  className="project-card"
+                  onClick={() => onSelectProject(p.id)}
+                >
+                  <div className="project-card-icon">📁</div>
+                  <div className="project-card-name">
+                    {p.name}
+                    {running > 0 && (
+                      <span className="project-card-running">
+                        <span className="status-dot status-dot-running" />
+                        {running}
+                      </span>
+                    )}
+                  </div>
+                  <div className="project-card-path" title={p.root}>
+                    {p.root}
+                  </div>
+                  <div className="project-card-meta">
+                    {count} topic{count === 1 ? "" : "s"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+      {recent.length > 0 && (
+        <section>
+          <h2 className="section-title">Recent</h2>
+          <ul className="topic-list">
+            {recent.map((t) => (
+              <li key={t.id}>
+                <button
+                  className="topic-row topic-row-with-status"
+                  onClick={() => onSelectTopic(t.id)}
+                >
+                  <StatusDot done={t.done} ok={t.exit_code === 0} />
+                  <div className="topic-row-body">
+                    <span className="topic-row-prompt">
+                      {t.title ?? t.prompt}
+                    </span>
+                    <span className="topic-row-meta">
+                      📁 {t.project_name} ·{" "}
+                      {new Date(t.created_at_ms).toLocaleString()}
+                    </span>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function HomeAppsSection({
+  openAppIds,
+  onSelectApp,
+  onOpenApps,
+}: {
+  openAppIds: Set<string>;
+  onSelectApp: (id: string) => void;
+  onOpenApps: () => void;
+}) {
+  const [items, setItems] = useState<AppManifest[]>([]);
+  const [statuses, setStatuses] = useState<Record<string, AppServerStatus>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    const tick = async () => {
+      try {
+        const list = await invoke<AppManifest[]>("list_apps");
+        const serverEntries = await Promise.all(
+          list
+            .filter((app) => app.ready !== false && app.runtime === "server")
+            .map(async (app) => {
+              try {
+                const status = await invoke<AppServerStatus>(
+                  "app_server_status",
+                  { appId: app.id },
+                );
+                return [app.id, status] as const;
+              } catch {
+                return [
+                  app.id,
+                  { running: false, port: null, exit_code: null },
+                ] as const;
+              }
+            }),
+        );
+        if (!alive) return;
+        setItems(list);
+        setStatuses(Object.fromEntries(serverEntries));
+        setError(null);
+        setLoaded(true);
+      } catch (e) {
+        if (alive) {
+          setError(String(e));
+          setLoaded(true);
+        }
+      }
+    };
+
+    void tick();
+    const timer = setInterval(() => void tick(), 3000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const readyCount = items.filter((app) => app.ready !== false).length;
+  const runningCount = items.filter((app) =>
+    isHomeAppRunning(app, statuses, openAppIds),
+  ).length;
+
+  return (
+    <section>
+      <div className="section-head">
+        <h2 className="section-title">
+          Apps
+          {runningCount > 0 && (
+            <span className="section-badge running">
+              {runningCount} running
+            </span>
+          )}
+        </h2>
+        <button className="apps-create-btn" onClick={onOpenApps}>
+          Manage Apps
+        </button>
+      </div>
+      {error && <div className="apps-error">{error}</div>}
+      {!loaded ? (
+        <div className="home-empty-panel">
+          <p>Загружаю apps…</p>
+        </div>
+      ) : items.length === 0 ? (
+        <div className="home-empty-panel">
+          <p>Apps пока нет.</p>
+          <button className="home-inline-action" onClick={onOpenApps}>
+            Open Apps
+          </button>
+        </div>
+      ) : (
+        <div className="home-apps-grid">
+          {items.map((app) => {
+            const isReady = app.ready !== false;
+            const isRunning = isHomeAppRunning(app, statuses, openAppIds);
+            const statusLabel = !isReady
+              ? "создаётся"
+              : isRunning
+                ? "запущено"
+                : "не запущено";
+            return (
+              <button
+                key={app.id}
+                className={`home-app-card ${isReady ? "" : "home-app-card-disabled"}`}
+                disabled={!isReady}
+                onClick={() => isReady && onSelectApp(app.id)}
+                title={isReady ? "Открыть app" : "Codex ещё пишет файлы…"}
+              >
+                <div className="home-app-card-top">
+                  <span className="home-app-icon">{app.icon ?? "🧩"}</span>
+                  <span
+                    className={`home-app-status-dot ${isRunning ? "running" : ""}`}
+                    aria-label={statusLabel}
+                  />
+                </div>
+                <div className="home-app-name">{app.name}</div>
+                {app.description && (
+                  <div className="home-app-desc">{app.description}</div>
+                )}
+                <div className="home-app-meta">
+                  <span>{statusLabel}</span>
+                  {app.runtime === "server" && statuses[app.id]?.port && (
+                    <span>:{statuses[app.id].port}</span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {items.length > 0 && (
+        <div className="home-apps-summary">
+          {readyCount} ready · {runningCount} running
+        </div>
+      )}
+    </section>
+  );
+}
+
+function isHomeAppRunning(
+  app: AppManifest,
+  statuses: Record<string, AppServerStatus>,
+  openAppIds: Set<string>,
+) {
+  if (app.ready === false) return false;
+  if (app.runtime === "server") return statuses[app.id]?.running ?? false;
+  return openAppIds.has(app.id);
+}
+
+type DirEntry = {
+  name: string;
+  path: string;
+  kind: "file" | "directory" | "symlink";
+  size: number | null;
+  modified_ms: number | null;
+  is_hidden: boolean;
+};
+
+function ProjectScreen({
+  projectId,
+  projects,
+  threads,
+  onSelectTopic,
+  onProjectUpdated,
+  onCreateTopic,
+}: {
+  projectId: string;
+  projects: Project[];
+  threads: Thread[];
+  onSelectTopic: (id: string) => void;
+  onProjectUpdated: (p: Project) => void;
+  onCreateTopic: (prompt: string, planMode: boolean) => Promise<void>;
+}) {
+  const project = projects.find((p) => p.id === projectId);
+  const [entries, setEntries] = useState<DirEntry[]>([]);
+  const [showHidden, setShowHidden] = useState(false);
+  const [showNewTopic, setShowNewTopic] = useState(false);
+  const [newTopicPrompt, setNewTopicPrompt] = useState("");
+  const [newTopicPlanMode, setNewTopicPlanMode] = useState(false);
+  const [creatingTopic, setCreatingTopic] = useState(false);
+  const [topicError, setTopicError] = useState<string | null>(null);
+
+  async function submitNewTopic() {
+    const text = newTopicPrompt.trim();
+    if (!text || creatingTopic) return;
+    setCreatingTopic(true);
+    setTopicError(null);
+    try {
+      await onCreateTopic(text, newTopicPlanMode);
+      setShowNewTopic(false);
+      setNewTopicPrompt("");
+    } catch (e) {
+      setTopicError(String(e));
+    } finally {
+      setCreatingTopic(false);
+    }
+  }
+
+  const topics = useMemo(
+    () =>
+      threads
+        .filter((t) => t.project_id === projectId)
+        .sort((a, b) => b.created_at_ms - a.created_at_ms),
+    [threads, projectId],
+  );
+
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    invoke<DirEntry[]>("list_directory", { path: project.root })
+      .then((list) => {
+        if (alive) setEntries(list);
+      })
+      .catch((e) => console.error("[reflex] list_directory failed", e));
+    return () => {
+      alive = false;
+    };
+  }, [project?.root]);
+
+  const visibleEntries = entries.filter(
+    (e) => (showHidden || !e.is_hidden) && e.name !== ".reflex",
+  );
+  const runningCount = topics.filter((t) => !t.done).length;
+
+  function openExternal(path: string) {
+    invoke("reveal_in_finder", { path }).catch((e) =>
+      console.error("[reflex] reveal_in_finder", e),
+    );
+  }
+
+  const sandbox = project?.sandbox ?? "workspace-write";
+  const browserOn = !!project?.mcp_servers?.playwright;
+
+  async function setSandbox(value: string) {
+    if (!project) return;
+    try {
+      const updated = await invoke<Project>("update_project_sandbox", {
+        projectId: project.id,
+        sandbox: value,
+      });
+      onProjectUpdated(updated);
+    } catch (e) {
+      console.error("[reflex] update_project_sandbox failed", e);
+    }
+  }
+
+  async function setBrowser(enabled: boolean) {
+    if (!project) return;
+    try {
+      const updated = await invoke<Project>("update_project_browser", {
+        projectId: project.id,
+        enabled,
+      });
+      onProjectUpdated(updated);
+    } catch (e) {
+      console.error("[reflex] update_project_browser failed", e);
+    }
+  }
+
+  return (
+    <div className="project-root">
+      <header className="project-header">
+        <h1 className="project-title">📁 {project?.name ?? projectId}</h1>
+        {project && (
+          <div className="project-path">
+            <button
+              className="project-path-link"
+              onClick={() => project && openExternal(project.root)}
+              title="Открыть в Finder"
+            >
+              {project.root}
+            </button>
+          </div>
+        )}
+      </header>
+
+      {project && (
+        <section className="project-settings">
+          <div className="setting-row">
+            <label className="setting-label">Sandbox</label>
+            <select
+              className="setting-select"
+              value={sandbox}
+              onChange={(e) => void setSandbox(e.currentTarget.value)}
+            >
+              <option value="read-only">read-only (безопасно)</option>
+              <option value="workspace-write">
+                workspace-write (по умолчанию)
+              </option>
+              <option value="danger-full-access">
+                danger-full-access ⚠️
+              </option>
+            </select>
+            {sandbox === "danger-full-access" && (
+              <span className="setting-hint setting-hint-warn">
+                Агент работает без macOS Seatbelt — полные права доступа.
+              </span>
+            )}
+          </div>
+          <div className="setting-row">
+            <label className="setting-label">Browser (Playwright MCP)</label>
+            <label className="setting-toggle">
+              <input
+                type="checkbox"
+                checked={browserOn}
+                onChange={(e) => void setBrowser(e.currentTarget.checked)}
+              />
+              {browserOn ? "включен" : "выключен"}
+            </label>
+            {browserOn && (
+              <span className="setting-hint">
+                npx -y @playwright/mcp@latest подключится при следующем
+                старте/resume треда.
+              </span>
+            )}
+          </div>
+        </section>
+      )}
+
+      <section>
+        <div className="section-head">
+          <h2 className="section-title">
+            Topics
+            {runningCount > 0 && (
+              <span className="section-badge running">
+                {runningCount} running
+              </span>
+            )}
+          </h2>
+          <button
+            className="apps-create-btn"
+            onClick={() => setShowNewTopic(true)}
+          >
+            + New Topic
+          </button>
+        </div>
+        {topics.length === 0 ? (
+          <div className="section-empty">
+            Топиков пока нет. Нажми <b>+ New Topic</b> или открой Quick-панель (
+            <kbd>⌘⇧Space</kbd>) поверх этой папки.
+          </div>
+        ) : (
+          <ul className="topic-list">
+            {topics.map((t) => (
+              <li key={t.id}>
+                <button
+                  className="topic-row topic-row-with-status"
+                  onClick={() => onSelectTopic(t.id)}
+                >
+                  <StatusDot
+                    done={t.done}
+                    ok={t.exit_code === 0}
+                  />
+                  <div className="topic-row-body">
+                    <span className="topic-row-prompt">
+                      {t.title ?? t.prompt}
+                    </span>
+                    <span className="topic-row-meta">
+                      {t.done
+                        ? t.exit_code === 0
+                          ? "done"
+                          : `exit ${t.exit_code ?? "?"}`
+                        : "running"}
+                      {" · "}
+                      {new Date(t.created_at_ms).toLocaleString()}
+                    </span>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <div className="section-head">
+          <h2 className="section-title">Files</h2>
+          <label className="section-toggle">
+            <input
+              type="checkbox"
+              checked={showHidden}
+              onChange={(e) => setShowHidden(e.currentTarget.checked)}
+            />
+            показать скрытые
+          </label>
+        </div>
+        {visibleEntries.length === 0 ? (
+          <div className="section-empty">Папка пуста.</div>
+        ) : (
+          <ul className="file-list">
+            {visibleEntries.map((e) => (
+              <li key={e.path}>
+                <button
+                  className="file-row"
+                  onClick={() => openExternal(e.path)}
+                  title={e.path}
+                >
+                  <span className="file-icon">
+                    {e.kind === "directory"
+                      ? "📁"
+                      : e.kind === "symlink"
+                        ? "🔗"
+                        : "📄"}
+                  </span>
+                  <span className="file-name">{e.name}</span>
+                  {e.modified_ms != null && (
+                    <span className="file-meta">
+                      {new Date(e.modified_ms).toLocaleDateString()}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {showNewTopic && (
+        <div
+          className="modal-backdrop"
+          onClick={() => !creatingTopic && setShowNewTopic(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">Новый топик в проекте</h2>
+            <p className="modal-hint">
+              Опиши задачу. Codex стартует тред в текущей папке проекта.
+            </p>
+            <textarea
+              className="modal-input"
+              placeholder="Например: добавь поддержку dark mode в config; проверь lints; перепиши парсер на nom…"
+              value={newTopicPrompt}
+              onChange={(e) => setNewTopicPrompt(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void submitNewTopic();
+                }
+              }}
+              autoFocus
+              rows={5}
+            />
+            {topicError && <div className="apps-error">{topicError}</div>}
+            <label className="plan-toggle">
+              <input
+                type="checkbox"
+                checked={newTopicPlanMode}
+                onChange={(e) => setNewTopicPlanMode(e.currentTarget.checked)}
+              />
+              <span>📋 Сначала план (codex составит план, ты подтвердишь)</span>
+            </label>
+            <div className="modal-actions">
+              <button
+                className="modal-btn"
+                disabled={creatingTopic}
+                onClick={() => setShowNewTopic(false)}
+              >
+                Отмена
+              </button>
+              <button
+                className="modal-btn modal-btn-primary"
+                disabled={creatingTopic || !newTopicPrompt.trim()}
+                onClick={() => void submitNewTopic()}
+              >
+                {creatingTopic ? "Запускаю…" : "Создать (⌘↵)"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusDot({ done, ok }: { done: boolean; ok: boolean }) {
+  if (!done) return <span className="status-dot status-dot-running" />;
+  if (ok) return <span className="status-dot status-dot-ok" />;
+  return <span className="status-dot status-dot-fail" />;
+}
+
+function TopicScreen({ thread_id, threads }: { thread_id: string; threads: Thread[] }) {
+  const thread = threads.find((t) => t.id === thread_id);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom on initial mount / when switching to this thread.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [thread_id]);
+
+  if (!thread) {
+    return (
+      <div className="chat-empty">
+        <p>Тред не найден или ещё грузится…</p>
+      </div>
+    );
+  }
+  return (
+    <ol className="chat-list">
+      <ThreadCard thread={thread} />
+      <div ref={bottomRef} />
+    </ol>
+  );
+}
+
+function ThreadCard({ thread }: { thread: Thread }) {
+  const [followup, setFollowup] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [planConfirmed, setPlanConfirmed] = useState(false);
+
+  // Banner появляется только когда у треда уже есть выдача агента (план написан)
+  // и тред в done-состоянии. На пустом или ещё работающем треде — скрыт.
+  const hasAgentOutput = thread.events.some((ev) => {
+    if (ev.stream !== "stdout") return false;
+    const msg = ev.parsed?.msg ?? ev.parsed ?? {};
+    const t: string = msg.type ?? ev.parsed?.type ?? "";
+    if (t === "item.agentMessage.delta" || t === "agent_message_delta") return true;
+    if (t === "agent_message") return true;
+    if (t === "item.completed") {
+      const item = msg.item ?? ev.parsed?.item ?? {};
+      const it: string = (item.type ?? item.kind ?? "").toString().toLowerCase();
+      if (it.includes("agentmessage") || it.includes("agent_message")) return true;
+      if (it === "assistant" || it.includes("assistantmessage")) return true;
+    }
+    return false;
+  });
+  const showPlanBanner =
+    thread.plan_mode &&
+    !planConfirmed &&
+    !thread.plan_confirmed &&
+    thread.done &&
+    hasAgentOutput;
+
+  const status = thread.done
+    ? thread.exit_code === 0
+      ? "done"
+      : `exit ${thread.exit_code ?? "?"}`
+    : "running";
+
+  const followupDisabled = submitting || !thread.done;
+
+  async function sendFollowup() {
+    const text = followup.trim();
+    if (!text || followupDisabled) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await invoke("continue_thread", {
+        projectId: thread.project_id,
+        threadId: thread.id,
+        prompt: text,
+      });
+      setFollowup("");
+      // Any followup after a plan implies the user moved past it.
+      if (thread.plan_mode) setPlanConfirmed(true);
+    } catch (e) {
+      console.error("[reflex] continue_thread failed", e);
+      setError(String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function confirmPlan() {
+    if (!thread.done || submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await invoke("continue_thread", {
+        projectId: thread.project_id,
+        threadId: thread.id,
+        prompt: "go — выполняй план как описал.",
+      });
+      setPlanConfirmed(true);
+    } catch (e) {
+      console.error("[reflex] confirmPlan failed", e);
+      setError(String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function stopThread() {
+    if (stopping) return;
+    setError(null);
+    setStopping(true);
+    try {
+      await invoke("stop_thread", { threadId: thread.id });
+    } catch (e) {
+      console.error("[reflex] stop_thread failed", e);
+      setError(String(e));
+    } finally {
+      setStopping(false);
+    }
+  }
+
+  return (
+    <li className="chat-item">
+      <header className="chat-item-header">
+        <span className="chat-item-id">{thread.id}</span>
+        <span
+          className={`chat-status chat-status-${thread.done ? (thread.exit_code === 0 ? "ok" : "fail") : "running"}`}
+        >
+          {status}
+        </span>
+        <time className="chat-item-time">
+          {new Date(thread.created_at_ms).toLocaleTimeString()}
+        </time>
+      </header>
+      {thread.title && <h2 className="chat-item-title">{thread.title}</h2>}
+      {thread.goal && <p className="chat-item-goal">🎯 {thread.goal}</p>}
+      <p className="chat-item-prompt">{thread.prompt}</p>
+      {(thread.ctx.frontmost_app || thread.cwd) && (
+        <div className="chat-item-ctx">
+          {thread.ctx.frontmost_app && (
+            <span className="chat-chip">{thread.ctx.frontmost_app}</span>
+          )}
+          <span className="chat-chip chat-chip-path" title={thread.cwd}>
+            cwd: {thread.cwd}
+          </span>
+        </div>
+      )}
+      <ul className="chat-events">
+        {groupEvents(thread.events).map((it) => (
+          <RenderRow key={`${it.kind}:${it.seq}`} item={it} />
+        ))}
+        {!thread.done && (thread.pending_questions ?? []).length === 0 && (
+          <li className="chat-event chat-event-spinner">…</li>
+        )}
+      </ul>
+      {(thread.pending_questions ?? []).map((q) => (
+        <QuestionCard
+          key={q.question_id}
+          question={q}
+          onResolved={(qid) => {
+            // local removal
+            // setThreads not available here; emit via window event or callback
+            const ev = new CustomEvent("reflex-question-resolved", {
+              detail: { thread_id: thread.id, question_id: qid },
+            });
+            window.dispatchEvent(ev);
+          }}
+        />
+      ))}
+      {showPlanBanner && (
+        <div className="plan-banner">
+          <div className="plan-banner-text">
+            📋 <strong>Plan mode.</strong> Codex составил план — проверь и
+            подтверди, или напиши в поле ниже что поправить.
+          </div>
+          <button
+            className="appviewer-btn appviewer-btn-primary"
+            disabled={submitting}
+            onClick={() => void confirmPlan()}
+          >
+            {submitting ? "…" : "✓ Confirm & run"}
+          </button>
+        </div>
+      )}
+      <div className="chat-followup">
+        {thread.done ? (
+          <>
+            <input
+              className="chat-followup-input"
+              type="text"
+              placeholder={
+                showPlanBanner
+                  ? "Поправь план или напиши `go`…"
+                  : "Продолжить тред…"
+              }
+              value={followup}
+              onChange={(e) => setFollowup(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void sendFollowup();
+                }
+              }}
+              disabled={followupDisabled}
+            />
+            <button
+              className="chat-followup-button"
+              onClick={() => void sendFollowup()}
+              disabled={followupDisabled || !followup.trim()}
+            >
+              ↵
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="chat-followup-running">Codex работает…</span>
+            <button
+              className="chat-followup-button chat-followup-stop"
+              onClick={() => void stopThread()}
+              disabled={stopping}
+            >
+              {stopping ? "…" : "Stop"}
+            </button>
+          </>
+        )}
+      </div>
+      {error && <div className="chat-followup-error">{error}</div>}
+    </li>
+  );
+}
+
+const APPROVAL_METHODS = new Set([
+  "applyPatchApproval",
+  "execCommandApproval",
+  "item/commandExecution/requestApproval",
+  "item/fileChange/requestApproval",
+  "item/permissions/requestApproval",
+]);
+
+const INPUT_METHODS = new Set([
+  "item/tool/requestUserInput",
+  "mcpServer/elicitation/request",
+]);
+
+function QuestionCard({
+  question,
+  onResolved,
+}: {
+  question: ThreadQuestion;
+  onResolved: (id: string) => void;
+}) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isInput = INPUT_METHODS.has(question.method);
+  const isApproval = APPROVAL_METHODS.has(question.method);
+
+  async function respond(decision: string) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await invoke("respond_to_question", {
+        questionId: question.question_id,
+        decision,
+        text: text || null,
+      });
+      onResolved(question.question_id);
+    } catch (e) {
+      console.error("[reflex] respond_to_question failed", e);
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const params = question.params ?? {};
+  const reason: string | undefined = params.reason ?? undefined;
+  const command = params.command;
+  const cwd: string | undefined = params.cwd ?? undefined;
+  const fileChanges = params.fileChanges;
+  const grantRoot: string | undefined = params.grantRoot ?? undefined;
+  const questions = params.questions;
+
+  return (
+    <div className="question-card">
+      <header className="question-header">
+        <span className="question-icon">❓</span>
+        <span className="question-method">{question.method}</span>
+      </header>
+      {reason && <p className="question-reason">{reason}</p>}
+      {command && (
+        <div className="question-detail">
+          <span className="question-detail-label">command</span>
+          <code className="question-detail-cmd">
+            {Array.isArray(command) ? command.join(" ") : String(command)}
+          </code>
+        </div>
+      )}
+      {cwd && (
+        <div className="question-detail">
+          <span className="question-detail-label">cwd</span>
+          <code className="question-detail-cmd">{cwd}</code>
+        </div>
+      )}
+      {fileChanges && (
+        <div className="question-detail">
+          <span className="question-detail-label">files</span>
+          <code className="question-detail-cmd">
+            {Object.keys(fileChanges).join(", ")}
+          </code>
+        </div>
+      )}
+      {grantRoot && (
+        <div className="question-detail">
+          <span className="question-detail-label">grant root</span>
+          <code className="question-detail-cmd">{grantRoot}</code>
+        </div>
+      )}
+      {Array.isArray(questions) && questions.length > 0 && (
+        <ul className="question-list">
+          {questions.map((q: any, i: number) => (
+            <li key={i} className="question-detail">
+              <span className="question-detail-label">q{i + 1}</span>
+              <span>{q?.question ?? q?.prompt ?? JSON.stringify(q)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {isInput && (
+        <textarea
+          className="question-input"
+          rows={3}
+          placeholder="Ответ агенту…"
+          value={text}
+          onChange={(e) => setText(e.currentTarget.value)}
+        />
+      )}
+      <div className="question-actions">
+        {isApproval && (
+          <>
+            <button
+              className="question-btn question-btn-approve"
+              disabled={busy}
+              onClick={() => void respond("approved")}
+            >
+              Approve
+            </button>
+            <button
+              className="question-btn"
+              disabled={busy}
+              onClick={() => void respond("approved_for_session")}
+            >
+              Approve for session
+            </button>
+            <button
+              className="question-btn question-btn-deny"
+              disabled={busy}
+              onClick={() => void respond("denied")}
+            >
+              Deny
+            </button>
+          </>
+        )}
+        {isInput && (
+          <button
+            className="question-btn question-btn-approve"
+            disabled={busy || !text.trim()}
+            onClick={() => void respond("approved")}
+          >
+            Send
+          </button>
+        )}
+        {!isApproval && !isInput && (
+          <button
+            className="question-btn question-btn-approve"
+            disabled={busy}
+            onClick={() => void respond("approved")}
+          >
+            Approve
+          </button>
+        )}
+      </div>
+      {error && <div className="question-error">{error}</div>}
+    </div>
+  );
+}
+
+const STDERR_NOISE = [
+  "Reading additional input from stdin",
+  "ERROR codex_core::session: failed to record rollout items",
+];
+
+const NOISE_MSG_TYPES = new Set([
+  "thread.started",
+  "turn.started",
+  "session_configured",
+  "task_started",
+  "item.started",
+  "agent_reasoning_delta",
+  "agent_reasoning",
+]);
+
+type RenderItem =
+  | { kind: "user"; seq: number; text: string }
+  | { kind: "agent"; seq: number; text: string; partial: boolean }
+  | {
+      kind: "exec";
+      seq: number;
+      command: any;
+      exitCode?: number | null;
+      cwd?: string;
+    }
+  | { kind: "error"; seq: number; text: string };
+
+function extractText(v: any): string | null {
+  if (v == null) return null;
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) {
+    const parts = v.map(extractText).filter((x): x is string => !!x);
+    return parts.length ? parts.join("\n") : null;
+  }
+  if (typeof v === "object") {
+    return (
+      extractText(v.text) ??
+      extractText(v.content) ??
+      extractText(v.message) ??
+      null
+    );
+  }
+  return String(v);
+}
+
+function lowerType(item: any): string {
+  return (item?.type ?? item?.kind ?? "").toString().toLowerCase();
+}
+
+function isReasoningItem(item: any): boolean {
+  return lowerType(item).includes("reasoning");
+}
+
+function isAgentMessageItem(item: any): boolean {
+  const t = lowerType(item);
+  // codex app-server: "agentMessage" → "agentmessage"; legacy: "agent_message"
+  return (
+    t.includes("agentmessage") ||
+    t.includes("agent_message") ||
+    t.includes("assistantmessage") ||
+    t.includes("assistant_message") ||
+    t === "assistant" ||
+    t === "agent"
+  );
+}
+
+function isCommandItem(item: any): boolean {
+  const t = lowerType(item);
+  return (
+    t.includes("commandexecution") ||
+    t.includes("command_execution") ||
+    t.includes("exec") ||
+    t === "shell"
+  );
+}
+
+function isFileChangeItem(item: any): boolean {
+  const t = lowerType(item);
+  return t.includes("filechange") || t.includes("file_change");
+}
+
+function groupEvents(events: ThreadEvent[]): RenderItem[] {
+  const out: RenderItem[] = [];
+  let deltaBuffer: { seq: number; text: string } | null = null;
+
+  const flushDelta = () => {
+    if (deltaBuffer && deltaBuffer.text.trim()) {
+      out.push({
+        kind: "agent",
+        seq: deltaBuffer.seq,
+        text: deltaBuffer.text,
+        partial: true,
+      });
+    }
+    deltaBuffer = null;
+  };
+
+  for (const ev of events) {
+    if (ev.stream === "user") {
+      flushDelta();
+      let text = ev.raw;
+      try {
+        const parsed = JSON.parse(ev.raw);
+        text = parsed?.text ?? parsed?.message ?? ev.raw;
+      } catch {}
+      out.push({ kind: "user", seq: ev.seq, text });
+      continue;
+    }
+    if (ev.stream === "stderr" || ev.stream === "error") {
+      if (STDERR_NOISE.some((n) => ev.raw.includes(n))) continue;
+      flushDelta();
+      out.push({ kind: "error", seq: ev.seq, text: ev.raw });
+      continue;
+    }
+
+    const parsed = ev.parsed;
+    const msg = parsed?.msg ?? parsed ?? {};
+    const msgType: string = msg.type ?? parsed?.type ?? "event";
+
+    if (NOISE_MSG_TYPES.has(msgType)) continue;
+
+    // Agent text streaming: codex app-server emits "item.agentMessage.delta",
+    // legacy codex exec emits "agent_message_delta".
+    if (
+      (msgType === "item.agentMessage.delta" ||
+        msgType === "agent_message_delta") &&
+      msg.delta != null
+    ) {
+      const piece = extractText(msg.delta) ?? "";
+      if (deltaBuffer) deltaBuffer.text += piece;
+      else deltaBuffer = { seq: ev.seq, text: piece };
+      continue;
+    }
+    if (msgType === "agent_message" && msg.message) {
+      deltaBuffer = null;
+      const text = extractText(msg.message) ?? "";
+      if (text.trim())
+        out.push({ kind: "agent", seq: ev.seq, text, partial: false });
+      continue;
+    }
+    if (msgType === "item.completed") {
+      const item = msg.item ?? parsed?.item ?? {};
+      if (isReasoningItem(item)) continue;
+      if (isAgentMessageItem(item)) {
+        deltaBuffer = null;
+        const text = extractText(item) ?? "";
+        if (text.trim())
+          out.push({ kind: "agent", seq: ev.seq, text, partial: false });
+        continue;
+      }
+      if (isCommandItem(item)) {
+        flushDelta();
+        out.push({
+          kind: "exec",
+          seq: ev.seq,
+          command: item.command ?? item.cmd,
+          exitCode: item.exit_code ?? item.exitCode ?? null,
+          cwd: item.cwd,
+        });
+        continue;
+      }
+      if (isFileChangeItem(item)) {
+        flushDelta();
+        const changes =
+          item.changes ?? item.files ?? item.fileChanges ?? null;
+        const filesText = Array.isArray(changes)
+          ? changes
+              .map((c: any) =>
+                typeof c === "string" ? c : c?.path ?? c?.file ?? JSON.stringify(c),
+              )
+              .join(", ")
+          : changes && typeof changes === "object"
+            ? Object.keys(changes).join(", ")
+            : extractText(item) ?? "(file change)";
+        out.push({
+          kind: "agent",
+          seq: ev.seq,
+          text: `📝 _patched:_ ${filesText}`,
+          partial: false,
+        });
+        continue;
+      }
+      // any other item.completed types — skip silently
+      continue;
+    }
+    if (msgType === "exec_command_begin") {
+      flushDelta();
+      out.push({
+        kind: "exec",
+        seq: ev.seq,
+        command: msg.command ?? msg.cmd,
+        cwd: msg.cwd,
+      });
+      continue;
+    }
+    if (msgType === "exec_command_end") {
+      for (let i = out.length - 1; i >= 0; i--) {
+        const it = out[i];
+        if (it.kind === "exec" && it.exitCode == null) {
+          it.exitCode = msg.exit_code ?? null;
+          break;
+        }
+      }
+      continue;
+    }
+    if (msgType === "turn.completed" || msgType === "task_complete") {
+      flushDelta();
+      const turnObj = msg.turn ?? msg;
+      const tail =
+        turnObj.last_agent_message ??
+        turnObj.lastAgentMessage ??
+        msg.summary ??
+        null;
+      if (tail) {
+        const text = extractText(tail) ?? String(tail);
+        // Only emit if we don't already have any agent block from this turn.
+        // Otherwise it duplicates.
+        const sameSeq = out.some(
+          (it) => it.kind === "agent" && Math.abs(it.seq - ev.seq) < 3,
+        );
+        if (text.trim() && !sameSeq)
+          out.push({ kind: "agent", seq: ev.seq, text, partial: false });
+      }
+      continue;
+    }
+    // Everything else — quietly drop. Add to NOISE_MSG_TYPES if it's spammy.
+  }
+  flushDelta();
+  return out;
+}
+
+const MD_COMPONENTS = {
+  // links open externally; iframe sandbox would block anyway.
+  a: ({ href, children }: any) => (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  ),
+};
+
+function MarkdownText({ text }: { text: string }) {
+  return (
+    <div className="md">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function RenderRow({ item }: { item: RenderItem }) {
+  if (item.kind === "user") {
+    return (
+      <li className="chat-event chat-event-user">
+        <span className="chat-event-label">user</span>
+        <div className="chat-event-text">{item.text}</div>
+      </li>
+    );
+  }
+  if (item.kind === "agent") {
+    return (
+      <li
+        className={`chat-event chat-event-message ${item.partial ? "chat-event-partial" : ""}`}
+      >
+        <span className="chat-event-label">
+          agent{item.partial ? " · streaming" : ""}
+        </span>
+        <div className="chat-event-text">
+          <MarkdownText text={item.text} />
+        </div>
+      </li>
+    );
+  }
+  if (item.kind === "exec") {
+    const cmd = item.command;
+    const cmdStr = Array.isArray(cmd)
+      ? cmd.join(" ")
+      : cmd != null
+        ? String(cmd)
+        : "(no command)";
+    const ec = item.exitCode;
+    const ecKnown = ec != null && ec !== undefined;
+    return (
+      <li className="chat-event chat-event-exec">
+        <span className="chat-event-label">▶ exec</span>
+        <code className="chat-event-cmd">{cmdStr}</code>
+        {ecKnown && (
+          <span className={ec === 0 ? "chat-event-ok" : "chat-event-fail"}>
+            exit {String(ec)}
+          </span>
+        )}
+      </li>
+    );
+  }
+  if (item.kind === "error") {
+    return (
+      <li className="chat-event chat-event-err">
+        <pre>{item.text}</pre>
+      </li>
+    );
+  }
+  return null;
+}

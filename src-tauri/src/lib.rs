@@ -1,0 +1,2143 @@
+mod app_runtime;
+mod app_server;
+mod app_watcher;
+mod apps;
+mod codex;
+mod context;
+mod project;
+mod storage;
+
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+
+const QUICK_WINDOW: &str = "quick";
+const MAIN_WINDOW: &str = "main";
+const QUICK_OPEN_EVENT: &str = "reflex://quick-open";
+const THREAD_CREATED_EVENT: &str = "reflex://thread-created";
+
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct QuickContext {
+    pub frontmost_app: Option<String>,
+    pub finder_target: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+struct QuickOpenPayload {
+    ctx: QuickContext,
+    project: Option<project::Project>,
+    candidate_root: Option<String>,
+    nearest: Vec<project::Project>,
+}
+
+#[derive(Clone, Serialize)]
+struct ThreadCreated {
+    id: String,
+    project_id: String,
+    project_name: String,
+    prompt: String,
+    cwd: String,
+    ctx: QuickContext,
+    created_at_ms: u128,
+    #[serde(default)]
+    plan_mode: bool,
+}
+
+#[derive(Serialize, Clone)]
+struct ProjectThread {
+    project: project::Project,
+    thread: storage::StoredThread,
+}
+
+#[tauri::command]
+async fn capture_context(app: AppHandle) -> QuickContext {
+    context::capture(&app).await
+}
+
+#[tauri::command]
+fn list_projects(app: AppHandle) -> Result<Vec<project::Project>, String> {
+    let apps_root = apps::apps_dir(&app)
+        .ok()
+        .and_then(|p| p.canonicalize().ok());
+    let all = project::list_registered(&app).map_err(|e| e.to_string())?;
+    Ok(all
+        .into_iter()
+        .filter(|p| {
+            if let Some(apps_root) = &apps_root {
+                if let Ok(c) = std::path::PathBuf::from(&p.root).canonicalize() {
+                    return !c.starts_with(apps_root);
+                }
+            }
+            true
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn list_apps(app: AppHandle) -> Result<Vec<apps::AppListing>, String> {
+    apps::list_apps(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_app_html(app: AppHandle, app_id: String) -> Result<String, String> {
+    apps::read_app_html(&app, &app_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn app_invoke(
+    app: AppHandle,
+    app_id: String,
+    method: String,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    eprintln!("[reflex] app_invoke app={app_id} method={method}");
+    match method.as_str() {
+        "agent.ask" => {
+            let prompt = params
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .ok_or("missing prompt")?;
+            let answer = ask_agent_oneshot(&app, prompt)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({"answer": answer}))
+        }
+        "agent.startTopic" => {
+            let prompt = params
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .ok_or("missing prompt")?;
+            let project_id = params
+                .get("projectId")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let ctx = QuickContext::default();
+            let thread_id = submit_quick(app.clone(), prompt.into(), ctx, project_id, None)?;
+            Ok(serde_json::json!({"threadId": thread_id}))
+        }
+        "storage.get" => {
+            let key = params
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or("missing key")?;
+            let store = apps::read_storage(&app, &app_id).map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({
+                "value": store.get(key).cloned().unwrap_or(serde_json::Value::Null),
+            }))
+        }
+        "storage.set" => {
+            let key = params
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or("missing key")?;
+            let value = params
+                .get("value")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            let mut store = apps::read_storage(&app, &app_id).map_err(|e| e.to_string())?;
+            if let Some(obj) = store.as_object_mut() {
+                obj.insert(key.to_string(), value);
+            }
+            apps::write_storage(&app, &app_id, &store).map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({"ok": true}))
+        }
+        "fs.read" => {
+            let path = params
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or("missing path")?;
+            let bytes = apps::read_app_file(&app, &app_id, path).map_err(|e| e.to_string())?;
+            let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({"content": text}))
+        }
+        "fs.write" => {
+            let path = params
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or("missing path")?;
+            let content = params
+                .get("content")
+                .and_then(|v| v.as_str())
+                .ok_or("missing content")?;
+            apps::write_app_file(&app, &app_id, path, content.as_bytes())
+                .map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({"ok": true}))
+        }
+        "notify.show" => {
+            let title = params
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Reflex App");
+            let body = params
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            use tauri_plugin_notification::NotificationExt;
+            app.notification()
+                .builder()
+                .title(title)
+                .body(body)
+                .show()
+                .map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({"ok": true}))
+        }
+        "dialog.openDirectory" => {
+            use tauri_plugin_dialog::DialogExt;
+            let title = params
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Выбор папки")
+                .to_string();
+            let mut builder = app.dialog().file().set_title(&title);
+            if let Some(default_path) = params.get("defaultPath").and_then(|v| v.as_str()) {
+                builder = builder.set_directory(std::path::PathBuf::from(default_path));
+            }
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            builder.pick_folder(move |path| {
+                let _ = tx.send(path);
+            });
+            let picked = rx.await.map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({
+                "path": picked.map(|p| p.to_string()),
+            }))
+        }
+        "dialog.openFile" => {
+            use tauri_plugin_dialog::DialogExt;
+            let title = params
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Выбор файла")
+                .to_string();
+            let multiple = params
+                .get("multiple")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let mut builder = app.dialog().file().set_title(&title);
+            if let Some(default_path) = params.get("defaultPath").and_then(|v| v.as_str()) {
+                builder = builder.set_directory(std::path::PathBuf::from(default_path));
+            }
+            if let Some(filters) = params.get("filters").and_then(|v| v.as_array()) {
+                for f in filters {
+                    let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("filter");
+                    let exts: Vec<&str> = f
+                        .get("extensions")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.iter().filter_map(|s| s.as_str()).collect())
+                        .unwrap_or_default();
+                    builder = builder.add_filter(name, &exts);
+                }
+            }
+            if multiple {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                builder.pick_files(move |paths| {
+                    let _ = tx.send(paths);
+                });
+                let picked = rx.await.map_err(|e| e.to_string())?;
+                let paths: Vec<String> = picked
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect();
+                Ok(serde_json::json!({"paths": paths}))
+            } else {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                builder.pick_file(move |path| {
+                    let _ = tx.send(path);
+                });
+                let picked = rx.await.map_err(|e| e.to_string())?;
+                Ok(serde_json::json!({
+                    "path": picked.map(|p| p.to_string()),
+                }))
+            }
+        }
+        "dialog.saveFile" => {
+            use tauri_plugin_dialog::DialogExt;
+            let title = params
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Сохранить как")
+                .to_string();
+            let mut builder = app.dialog().file().set_title(&title);
+            if let Some(default_path) = params.get("defaultPath").and_then(|v| v.as_str()) {
+                let pb = std::path::PathBuf::from(default_path);
+                if let Some(parent) = pb.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        builder = builder.set_directory(parent);
+                    }
+                }
+                if let Some(name) = pb.file_name().and_then(|n| n.to_str()) {
+                    builder = builder.set_file_name(name);
+                }
+            }
+            if let Some(filters) = params.get("filters").and_then(|v| v.as_array()) {
+                for f in filters {
+                    let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("filter");
+                    let exts: Vec<&str> = f
+                        .get("extensions")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.iter().filter_map(|s| s.as_str()).collect())
+                        .unwrap_or_default();
+                    builder = builder.add_filter(name, &exts);
+                }
+            }
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            builder.save_file(move |path| {
+                let _ = tx.send(path);
+            });
+            let picked = rx.await.map_err(|e| e.to_string())?;
+            let path_str = picked.as_ref().map(|p| p.to_string());
+            // optional content: write the file at chosen path
+            if let (Some(p), Some(content)) =
+                (picked.as_ref(), params.get("content").and_then(|v| v.as_str()))
+            {
+                if let Some(fs_path) = p.as_path() {
+                    std::fs::write(fs_path, content).map_err(|e| e.to_string())?;
+                } else {
+                    return Err("save target not a local path".into());
+                }
+            }
+            Ok(serde_json::json!({"path": path_str}))
+        }
+        "agent.stream" => {
+            let prompt = params
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .ok_or("missing prompt")?
+                .to_string();
+            let sandbox = params
+                .get("sandbox")
+                .and_then(|v| v.as_str())
+                .unwrap_or("read-only")
+                .to_string();
+            let cwd_str = params.get("cwd").and_then(|v| v.as_str());
+            let cwd_path = match cwd_str {
+                Some(p) => PathBuf::from(p),
+                None => apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?,
+            };
+
+            let handle = app.state::<app_server::AppServerHandle>();
+            let server = handle.wait().await;
+            let app_thread_id = server
+                .thread_start(&cwd_path, &sandbox, None)
+                .await
+                .map_err(|e| format!("thread_start: {e}"))?;
+
+            let mut rx = server.subscribe_stream(&app_thread_id);
+            let stream_id = format!("s_{}_{}", app_id, uuid_like());
+            let app_emit = app.clone();
+            let stream_id_for_task = stream_id.clone();
+            let app_id_for_task = app_id.clone();
+            let app_thread_id_for_task = app_thread_id.clone();
+            let server_for_task = server.clone();
+            tauri::async_runtime::spawn(async move {
+                while let Some(ev) = rx.recv().await {
+                    match ev {
+                        app_server::StreamEvent::Delta(token) => {
+                            let _ = app_emit.emit(
+                                "reflex://app-stream-token",
+                                &serde_json::json!({
+                                    "stream_id": stream_id_for_task,
+                                    "app_id": app_id_for_task,
+                                    "token": token,
+                                }),
+                            );
+                        }
+                        app_server::StreamEvent::Done(full) => {
+                            let _ = app_emit.emit(
+                                "reflex://app-stream-done",
+                                &serde_json::json!({
+                                    "stream_id": stream_id_for_task,
+                                    "app_id": app_id_for_task,
+                                    "result": full,
+                                }),
+                            );
+                            break;
+                        }
+                    }
+                }
+                server_for_task.unsubscribe_stream(&app_thread_id_for_task);
+            });
+
+            // kick off the turn (don't await — events flow via the listener)
+            let server_kick = server.clone();
+            let thread_for_kick = app_thread_id.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = server_kick.turn_start(&thread_for_kick, &prompt).await {
+                    eprintln!("[reflex] agent.stream turn_start failed: {e:?}");
+                }
+            });
+
+            Ok(serde_json::json!({
+                "streamId": stream_id,
+                "threadId": app_thread_id,
+            }))
+        }
+        "agent.streamAbort" => {
+            let stream_thread = params
+                .get("threadId")
+                .and_then(|v| v.as_str())
+                .ok_or("missing threadId")?;
+            let handle = app.state::<app_server::AppServerHandle>();
+            let server = handle.wait().await;
+            server.unsubscribe_stream(stream_thread);
+            Ok(serde_json::json!({"ok": true}))
+        }
+        "agent.task" => {
+            let prompt = params
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .ok_or("missing prompt")?;
+            let sandbox = params
+                .get("sandbox")
+                .and_then(|v| v.as_str())
+                .unwrap_or("read-only")
+                .to_string();
+            let cwd_str = params.get("cwd").and_then(|v| v.as_str());
+            let cwd_path = match cwd_str {
+                Some(p) => PathBuf::from(p),
+                None => apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?,
+            };
+
+            let handle = app.state::<app_server::AppServerHandle>();
+            let server = handle.wait().await;
+            let app_thread_id = server
+                .thread_start(&cwd_path, &sandbox, None)
+                .await
+                .map_err(|e| format!("thread_start: {e}"))?;
+            let _ = server.turn_start(&app_thread_id, prompt).await;
+            let turn = server.wait_for_turn(&app_thread_id).await;
+            let result_text = turn
+                .as_ref()
+                .and_then(|t| {
+                    t.get("lastAgentMessage")
+                        .or_else(|| t.get("last_agent_message"))
+                })
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            Ok(serde_json::json!({
+                "threadId": app_thread_id,
+                "result": result_text,
+            }))
+        }
+        "net.fetch" => {
+            let url_str = params
+                .get("url")
+                .and_then(|v| v.as_str())
+                .ok_or("missing url")?;
+            let parsed_url = reqwest::Url::parse(url_str)
+                .map_err(|e| format!("invalid url: {e}"))?;
+            let host = parsed_url
+                .host_str()
+                .ok_or("url has no host")?
+                .to_string();
+
+            let manifest = apps::read_manifest(&app, &app_id).map_err(|e| e.to_string())?;
+            let policy = manifest
+                .network
+                .ok_or_else(|| "manifest.network is missing — declare allowed_hosts".to_string())?;
+            if !policy.allows_host(&host) {
+                return Err(format!(
+                    "host '{host}' not in manifest.network.allowed_hosts"
+                ));
+            }
+
+            let method_str = params
+                .get("method")
+                .and_then(|v| v.as_str())
+                .unwrap_or("GET")
+                .to_uppercase();
+            let method = reqwest::Method::from_bytes(method_str.as_bytes())
+                .map_err(|e| format!("invalid method: {e}"))?;
+            let timeout_ms = params
+                .get("timeoutMs")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(30_000);
+
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_millis(timeout_ms))
+                .build()
+                .map_err(|e| format!("client build: {e}"))?;
+            let mut req = client.request(method, parsed_url);
+
+            if let Some(headers) = params.get("headers").and_then(|v| v.as_object()) {
+                let mut header_map = reqwest::header::HeaderMap::new();
+                for (k, v) in headers {
+                    let val = v.as_str().ok_or("header value must be string")?;
+                    let name = reqwest::header::HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|e| format!("invalid header {k}: {e}"))?;
+                    let value = reqwest::header::HeaderValue::from_str(val)
+                        .map_err(|e| format!("invalid header value for {k}: {e}"))?;
+                    header_map.insert(name, value);
+                }
+                req = req.headers(header_map);
+            }
+
+            if let Some(body) = params.get("body") {
+                if let Some(s) = body.as_str() {
+                    req = req.body(s.to_string());
+                } else if !body.is_null() {
+                    let json = serde_json::to_string(body).map_err(|e| e.to_string())?;
+                    req = req.header("content-type", "application/json").body(json);
+                }
+            }
+
+            let resp = req.send().await.map_err(|e| format!("fetch failed: {e}"))?;
+            let status_code = resp.status().as_u16();
+            let mut headers_out = serde_json::Map::new();
+            for (k, v) in resp.headers().iter() {
+                if let Ok(s) = v.to_str() {
+                    headers_out.insert(k.as_str().to_string(), serde_json::Value::String(s.into()));
+                }
+            }
+            let bytes = resp
+                .bytes()
+                .await
+                .map_err(|e| format!("read body: {e}"))?;
+            const MAX_BODY: usize = 10 * 1024 * 1024;
+            if bytes.len() > MAX_BODY {
+                return Err(format!(
+                    "response too large: {} bytes (limit 10MB)",
+                    bytes.len()
+                ));
+            }
+            let (body_value, encoding) = match std::str::from_utf8(&bytes) {
+                Ok(s) => (serde_json::Value::String(s.to_string()), "utf8"),
+                Err(_) => {
+                    use base64::Engine;
+                    let b64 =
+                        base64::engine::general_purpose::STANDARD.encode(&bytes);
+                    (serde_json::Value::String(b64), "base64")
+                }
+            };
+            Ok(serde_json::json!({
+                "status": status_code,
+                "headers": headers_out,
+                "body": body_value,
+                "encoding": encoding,
+            }))
+        }
+        other => Err(format!("unknown method: {other}")),
+    }
+}
+
+#[tauri::command]
+fn app_status(app: AppHandle, app_id: String) -> Result<serde_json::Value, String> {
+    let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
+    apps::git_init_if_needed(&dir).map_err(|e| e.to_string())?;
+    let manifest = apps::read_manifest(&app, &app_id).ok();
+    let entry_exists = manifest
+        .as_ref()
+        .map(|m| dir.join(&m.entry).exists())
+        .unwrap_or(false);
+    let mut status = apps::git_status(&dir).map_err(|e| e.to_string())?;
+    if status.revision == 0 && entry_exists {
+        let _ = apps::git_commit_all(&dir, "initial");
+        status = apps::git_status(&dir).map_err(|e| e.to_string())?;
+    }
+    Ok(serde_json::json!({
+        "has_changes": status.has_changes,
+        "revision": status.revision,
+        "last_commit_message": status.last_commit_message,
+        "entry_exists": entry_exists,
+    }))
+}
+
+#[tauri::command]
+fn app_save(
+    app: AppHandle,
+    app_id: String,
+    message: Option<String>,
+) -> Result<(), String> {
+    let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
+    let msg = message
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "revision".to_string());
+    apps::git_commit_all(&dir, &msg).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn app_revert(app: AppHandle, app_id: String) -> Result<(), String> {
+    let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
+    apps::git_revert_all(&dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn app_diff(app: AppHandle, app_id: String) -> Result<String, String> {
+    let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
+    apps::git_diff(&dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn app_save_partial(
+    app: AppHandle,
+    app_id: String,
+    patch: String,
+    message: Option<String>,
+) -> Result<(), String> {
+    let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
+    let msg = message
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "partial revision".to_string());
+    apps::git_apply_partial(&dir, &patch, &msg).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn app_server_start(app: AppHandle, app_id: String) -> Result<u16, String> {
+    let runtimes = app.state::<app_runtime::AppRuntimes>();
+    app_runtime::start(&runtimes, &app, &app_id).await
+}
+
+#[tauri::command]
+async fn app_server_stop(app: AppHandle, app_id: String) -> Result<(), String> {
+    let runtimes = app.state::<app_runtime::AppRuntimes>();
+    app_runtime::stop(&runtimes, &app_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn app_server_restart(app: AppHandle, app_id: String) -> Result<u16, String> {
+    let runtimes = app.state::<app_runtime::AppRuntimes>();
+    app_runtime::restart(&runtimes, &app, &app_id).await
+}
+
+#[tauri::command]
+async fn app_server_status(
+    app: AppHandle,
+    app_id: String,
+) -> Result<app_runtime::ServerStatus, String> {
+    let runtimes = app.state::<app_runtime::AppRuntimes>();
+    Ok(app_runtime::status(&runtimes, &app_id).await)
+}
+
+#[tauri::command]
+async fn app_server_logs(
+    app: AppHandle,
+    app_id: String,
+) -> Result<app_runtime::LogsSnapshot, String> {
+    let runtimes = app.state::<app_runtime::AppRuntimes>();
+    Ok(app_runtime::logs(&runtimes, &app_id).await)
+}
+
+#[tauri::command]
+fn app_watch_start(app: AppHandle, app_id: String) -> Result<(), String> {
+    let watchers = app.state::<app_watcher::AppWatchers>();
+    app_watcher::start(&watchers, &app, &app_id)
+}
+
+#[tauri::command]
+fn app_watch_stop(app: AppHandle, app_id: String) -> Result<(), String> {
+    let watchers = app.state::<app_watcher::AppWatchers>();
+    app_watcher::stop(&watchers, &app_id);
+    Ok(())
+}
+
+
+#[tauri::command]
+fn app_export(app: AppHandle, app_id: String, target_path: String) -> Result<(), String> {
+    apps::export_app(&app, &app_id, std::path::Path::new(&target_path))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn app_import(app: AppHandle, zip_path: String) -> Result<apps::AppManifest, String> {
+    apps::import_app(&app, std::path::Path::new(&zip_path)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_app_manifest(app: AppHandle, app_id: String) -> Result<apps::AppManifest, String> {
+    apps::read_manifest(&app, &app_id).map_err(|e| e.to_string())
+}
+
+fn ensure_app_project(app: &AppHandle, app_id: &str) -> Result<project::Project, String> {
+    let dir = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
+    if let Some(p) = project::find_project_for(&dir) {
+        return Ok(p);
+    }
+    let manifest = apps::read_manifest(app, app_id).ok();
+    let proj_name = manifest
+        .as_ref()
+        .map(|m| format!("App · {}", m.name))
+        .unwrap_or_else(|| format!("App · {app_id}"));
+    project::create_project(app, &dir, Some(proj_name)).map_err(|e| e.to_string())
+}
+
+fn build_empty_app_thread(
+    app: &AppHandle,
+    app_id: &str,
+    project: &project::Project,
+) -> Result<ProjectThread, String> {
+    let dir = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let thread_id = format!("t_{now_ms}");
+    let manifest = apps::read_manifest(app, app_id).ok();
+    let label = manifest
+        .as_ref()
+        .map(|m| m.name.clone())
+        .unwrap_or_else(|| app_id.to_string());
+    let meta = storage::ThreadMeta {
+        id: thread_id.clone(),
+        project_id: Some(project.id.clone()),
+        prompt: format!("Доработка app: {label}"),
+        cwd: project.root.clone(),
+        frontmost_app: None,
+        finder_target: None,
+        created_at_ms: now_ms,
+        exit_code: Some(0),
+        done: true,
+        session_id: None,
+        title: Some(format!("App · {label}")),
+        goal: Some("Доработка утилиты".into()),
+        plan_mode: true,
+    };
+    storage::write_meta(&dir, &meta).map_err(|e| e.to_string())?;
+
+    let payload = ThreadCreated {
+        id: thread_id.clone(),
+        project_id: project.id.clone(),
+        project_name: project.name.clone(),
+        prompt: meta.prompt.clone(),
+        cwd: project.root.clone(),
+        ctx: QuickContext::default(),
+        created_at_ms: now_ms,
+        plan_mode: meta.plan_mode,
+    };
+    let _ = app.emit(THREAD_CREATED_EVENT, &payload);
+
+    Ok(ProjectThread {
+        project: project.clone(),
+        thread: storage::StoredThread {
+            meta,
+            events: vec![],
+        },
+    })
+}
+
+#[tauri::command]
+fn create_app_thread(app: AppHandle, app_id: String) -> Result<ProjectThread, String> {
+    let project = ensure_app_project(&app, &app_id)?;
+    build_empty_app_thread(&app, &app_id, &project)
+}
+
+#[tauri::command]
+async fn pick_directory(
+    app: AppHandle,
+    title: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let title = title.unwrap_or_else(|| "Выбор папки".to_string());
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().set_title(&title).pick_folder(move |p| {
+        let _ = tx.send(p);
+    });
+    let picked = rx.await.map_err(|e| e.to_string())?;
+    Ok(picked.map(|p| p.to_string()))
+}
+
+#[tauri::command]
+async fn pick_open_file(
+    app: AppHandle,
+    title: Option<String>,
+    filter_name: Option<String>,
+    filter_extensions: Option<Vec<String>>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let title = title.unwrap_or_else(|| "Открыть файл".to_string());
+    let mut builder = app.dialog().file().set_title(&title);
+    if let (Some(name), Some(exts)) = (filter_name, filter_extensions) {
+        let exts_ref: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+        builder = builder.add_filter(&name, &exts_ref);
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    builder.pick_file(move |p| {
+        let _ = tx.send(p);
+    });
+    let picked = rx.await.map_err(|e| e.to_string())?;
+    Ok(picked.map(|p| p.to_string()))
+}
+
+#[tauri::command]
+async fn pick_save_file(
+    app: AppHandle,
+    title: Option<String>,
+    default_name: Option<String>,
+    filter_name: Option<String>,
+    filter_extensions: Option<Vec<String>>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let title = title.unwrap_or_else(|| "Сохранить как".to_string());
+    let mut builder = app.dialog().file().set_title(&title);
+    if let Some(name) = default_name {
+        builder = builder.set_file_name(&name);
+    }
+    if let (Some(name), Some(exts)) = (filter_name, filter_extensions) {
+        let exts_ref: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+        builder = builder.add_filter(&name, &exts_ref);
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    builder.save_file(move |p| {
+        let _ = tx.send(p);
+    });
+    let picked = rx.await.map_err(|e| e.to_string())?;
+    Ok(picked.map(|p| p.to_string()))
+}
+
+#[tauri::command]
+async fn read_app_thread(
+    app: AppHandle,
+    app_id: String,
+) -> Result<ProjectThread, String> {
+    let project = ensure_app_project(&app, &app_id)?;
+    let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
+
+    // Existing thread? Return latest.
+    let threads = storage::read_all_threads(&dir).map_err(|e| e.to_string())?;
+    if let Some(latest) = threads.into_iter().max_by_key(|t| t.meta.created_at_ms) {
+        return Ok(ProjectThread {
+            project,
+            thread: latest,
+        });
+    }
+
+    // No thread yet — create an empty one ready for followup. continue_thread
+    // will start the codex session lazily on the user's first followup.
+    build_empty_app_thread(&app, &app_id, &project)
+}
+
+#[tauri::command]
+fn app_revise(
+    app: AppHandle,
+    app_id: String,
+    instruction: String,
+) -> Result<serde_json::Value, String> {
+    let trimmed = instruction.trim();
+    if trimmed.is_empty() {
+        return Err("empty instruction".into());
+    }
+    let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
+    let project = project::find_project_for(&dir)
+        .ok_or_else(|| "app project not found".to_string())?;
+    let threads = storage::read_all_threads(&dir).map_err(|e| e.to_string())?;
+    let latest = threads
+        .into_iter()
+        .max_by_key(|t| t.meta.created_at_ms)
+        .ok_or_else(|| "no thread for this app".to_string())?;
+    let prompt = format!(
+        "Доработай Reflex app в текущей рабочей папке.\n\n\
+ИЗМЕНЕНИЯ: {trimmed}\n\n\
+ПАМЯТКА (актуальный bridge / runtime):\n\
+- Можно использовать любую структуру: index.html + style.css + app.js + assets/. Reflex отдаёт всё через reflexapp:// scheme c правильным mime.\n\
+- Два runtime: static (default) или server (manifest.runtime=\"server\" + manifest.server.command — node/python stdlib, listen на process.env.PORT).\n\
+- Bridge через window.parent.postMessage({{source:'reflex-app', type:'request', id, method, params}}). Доступные методы:\n\
+  • agent.ask({{prompt}}) → {{answer}}\n\
+  • agent.task({{prompt, sandbox?, cwd?}}) → {{threadId, result}} — изолированный sub-агент\n\
+  • agent.stream({{prompt}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}\n\
+  • storage.get/set, fs.read/write (в app-папке)\n\
+  • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
+  • notify.show — macOS push\n\
+  • net.fetch({{url, method?, headers?, body?}}) — требует manifest.network.allowed_hosts (поддержка \"*.foo.com\")\n\
+- iframe sandbox=\"allow-scripts allow-forms\" (для server runtime + allow-same-origin). Никаких внешних CDN — только inline или локальные файлы.\n\
+- Reflex автоматически инжектит overlay-скрипт в HTML: ловит window.onerror/unhandledrejection (юзер увидит ✨Fix), и режим Inspector (юзер кликает → ты получишь selector + outerHTML). Не пиши свой обработчик с теми же типами событий.\n\
+- После твоих правок iframe перезагрузится сам (file watcher), для server runtime — процесс перезапустится. Не требуй ручного reload.\n\
+- Не трогай .reflex/, .git/, storage.json. Manifest можно обновлять (permissions, network.allowed_hosts, runtime, server)."
+    );
+    let wrapped = wrap_with_plan_mode(&prompt);
+    continue_thread(app, project.id, latest.meta.id.clone(), wrapped)?;
+    Ok(serde_json::json!({"thread_id": latest.meta.id}))
+}
+
+#[tauri::command]
+async fn create_app(
+    app: AppHandle,
+    description: String,
+    template: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let trimmed = description.trim();
+    if trimmed.is_empty() {
+        return Err("empty description".into());
+    }
+    let template = template.unwrap_or_else(|| "blank".to_string());
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let app_id = format!("app_{now_ms}");
+
+    let apps_root = apps::apps_dir(&app).map_err(|e| e.to_string())?;
+    let dir = apps_root.join(&app_id);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let label = short_label(trimmed);
+    let proj_name = format!("App · {label}");
+    let project = project::create_project(&app, &dir, Some(proj_name.clone()))
+        .map_err(|e| e.to_string())?;
+
+    let manifest = apps::AppManifest {
+        id: app_id.clone(),
+        name: label.clone(),
+        icon: Some("🧩".into()),
+        description: Some(trimmed.to_string()),
+        entry: "index.html".into(),
+        permissions: vec![],
+        kind: "panel".into(),
+        created_at_ms: now_ms,
+        runtime: None,
+        server: None,
+        network: None,
+    };
+    apps::write_manifest(&app, &app_id, &manifest).map_err(|e| e.to_string())?;
+
+    let thread_id = format!("t_{now_ms}");
+    let project_root = dir.clone();
+    let prompt = build_app_creation_prompt(trimmed, &template);
+
+    let meta = storage::ThreadMeta {
+        id: thread_id.clone(),
+        project_id: Some(project.id.clone()),
+        prompt: prompt.clone(),
+        cwd: project.root.clone(),
+        frontmost_app: None,
+        finder_target: None,
+        created_at_ms: now_ms,
+        exit_code: None,
+        done: false,
+        session_id: None,
+        title: Some(format!("Создание app: {label}")),
+        goal: Some(format!("Написать Reflex app: {trimmed}")),
+        plan_mode: true,
+    };
+    let _ = storage::write_meta(&project_root, &meta);
+
+    let payload = ThreadCreated {
+        id: thread_id.clone(),
+        project_id: project.id.clone(),
+        project_name: project.name.clone(),
+        prompt: prompt.clone(),
+        cwd: project.root.clone(),
+        ctx: QuickContext::default(),
+        created_at_ms: now_ms,
+        plan_mode: meta.plan_mode,
+    };
+    let _ = app.emit(THREAD_CREATED_EVENT, &payload);
+
+    let app_handle = app.clone();
+    let reflex_id = thread_id.clone();
+    let root_for_task = project_root.clone();
+    let project_id_for_task = project.id.clone();
+    let prompt_for_task = wrap_with_plan_mode(&prompt);
+    tauri::async_runtime::spawn(async move {
+        let handle = app_handle.state::<app_server::AppServerHandle>();
+        let server = handle.wait().await;
+        let proj_now = project::get_by_id(&app_handle, &project_id_for_task)
+            .ok()
+            .flatten();
+        let sandbox = proj_now
+            .as_ref()
+            .map(|p| p.sandbox.clone())
+            .unwrap_or_else(|| "workspace-write".into());
+        let mcp = proj_now.as_ref().and_then(|p| p.mcp_servers.clone());
+        let app_thread_id = match server
+            .thread_start(&root_for_task, &sandbox, mcp.as_ref())
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("[reflex] create_app thread_start failed: {e}");
+                return;
+            }
+        };
+        server.register_thread(
+            app_thread_id.clone(),
+            reflex_id.clone(),
+            root_for_task.clone(),
+            0,
+        );
+        if let Ok(mut m) = storage::read_meta(&root_for_task, &reflex_id) {
+            m.session_id = Some(app_thread_id.clone());
+            let _ = storage::write_meta(&root_for_task, &m);
+        }
+        if let Err(e) = server.turn_start(&app_thread_id, &prompt_for_task).await {
+            eprintln!("[reflex] create_app turn_start failed: {e}");
+        }
+    });
+
+    Ok(serde_json::json!({
+        "app_id": app_id,
+        "thread_id": thread_id,
+        "project_id": project.id,
+    }))
+}
+
+fn short_label(s: &str) -> String {
+    let mut iter = s.chars();
+    let truncated: String = iter.by_ref().take(48).collect();
+    truncated.trim().trim_end_matches('.').to_string()
+}
+
+fn wrap_with_plan_mode(prompt: &str) -> String {
+    format!(
+        "⚠️ РЕЖИМ ПЛАНИРОВАНИЯ — ПЕРВЫМ ХОДОМ НИЧЕГО НЕ ДЕЛАЙ\n\n\
+Тщательно продумай задачу, представь полную логику решения, и составь подробный план. \
+НЕ модифицируй файлы и не запускай команды на этом ходу.\n\n\
+План должен включать:\n\
+1) Краткое резюме того, что я (агент) понял из задачи.\n\
+2) Пошаговый список действий: какие файлы создашь/изменишь и зачем, какие команды собираешься запустить.\n\
+3) Ключевые технические решения (структура, API, библиотеки) — с обоснованием почему именно так.\n\
+4) Открытые вопросы, если задача неоднозначна — задай их явно. Не делай предположений в важных местах.\n\n\
+В конце ОБЯЗАТЕЛЬНО:\n\
+«Жду подтверждения. Напиши `go` чтобы я выполнил план как есть, или скажи что поправить — я перепланирую и снова покажу.»\n\n\
+ЗАДАЧА:\n{prompt}"
+    )
+}
+
+fn template_skeleton(template: &str) -> Option<&'static str> {
+    match template {
+        "chat" => Some(
+            "Шаблон CHAT-UTILITY:\n\
+- Layout: список сообщений сверху + textarea + кнопка Send снизу.\n\
+- Использовать `agent.stream({prompt})` для стриминга ответа. Ловить window 'message' с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done'.\n\
+- Хранить историю сообщений в storage.json (key=\"messages\").\n\
+- Сообщения user/agent визуально разные. Streaming-сообщение растёт по токенам.\n",
+        ),
+        "dashboard" => Some(
+            "Шаблон DASHBOARD:\n\
+- Кнопка \"Refresh\" вызывает `agent.task({prompt: \"...запрос за данными...\"})` и парсит JSON-ответ.\n\
+- Показывать данные в таблице или как summary-карточки.\n\
+- Кэшировать последний результат в storage.json.\n",
+        ),
+        "form" => Some(
+            "Шаблон FORM-TOOL:\n\
+- Несколько input-полей сверху, кнопка \"Run\" снизу.\n\
+- На submit собрать значения, дёрнуть `agent.task({prompt: \"...на основе значений...\"})`, показать результат.\n\
+- Сохранять последний submit в storage.json для preset'а.\n",
+        ),
+        "api-client" => Some(
+            "Шаблон API-CLIENT:\n\
+- Используй `net.fetch` к указанному API. ОБЯЗАТЕЛЬНО добавь в manifest:\n  \"network\": { \"allowed_hosts\": [\"<host>\"] }\n\
+- Кнопка для запроса, отображение результата (JSON pretty-print).\n\
+- Если нужны секреты — спроси у пользователя через input-field, храни в storage.json.\n",
+        ),
+        "node-server" => Some(
+            "Шаблон NODE-SERVER:\n\
+- runtime=server, command=[\"node\", \"server.js\"].\n\
+- В server.js — Node.js stdlib `http`, слушать `process.env.PORT`.\n\
+- Базовые маршруты: GET / → index.html (через fs.readFileSync), GET /api/... → JSON.\n\
+- index.html обращается к /api через fetch (same-origin благодаря allow-same-origin sandbox).\n",
+        ),
+        _ => None,
+    }
+}
+
+fn build_app_creation_prompt(description: &str, template: &str) -> String {
+    let mut p = String::new();
+    p.push_str("Ты создаёшь Reflex app в текущей рабочей папке.\n\n");
+    p.push_str("ВАЖНО — КОНТЕКСТ:\n");
+    p.push_str("- Тот, кто описывает задачу, НЕ программист. Он не знает терминов, библиотек, edge-cases. Он формулирует на бытовом языке.\n");
+    p.push_str("- Ты — помощник, а не коллега-разработчик. Вся техническая логика — на тебе. Не задавай вопросов «какой стек выбрать» / «как назвать функцию» / «что вернуть из API» — это твои решения.\n");
+    p.push_str("- Технические решения выбирай самые оптимальные и подходящие для задачи: предпочитай stdlib и минимум зависимостей где это уместно, но не упрощай в ущерб результату. Никакой over-engineering и никакого недо-engineering.\n");
+    p.push_str("- Досконально продумывай логику ДО написания кода: edge-cases, ошибки, пустые состояния, кому что показывать. Лучше 5 минут думать чем переписывать после ревизии.\n");
+    p.push_str("- ЗАДАВАЙ ВОПРОСЫ юзеру если что-то про САМУ задачу неясно: \"какие именно поля нужно показывать\", \"что должно происходить при пустом списке\", \"какой источник данных брать\". НЕ задавай технические вопросы — на них отвечай сам.\n");
+    p.push_str("- Делай работу только когда уверен, что понял задачу правильно. Если есть существенная неоднозначность — лучше спроси.\n\n");
+    p.push_str("ФАЙЛЫ:\n");
+    p.push_str("- manifest.json уже есть с заглушкой. Обнови поля: name, icon (один emoji), description (1 предложение), permissions (массив API-методов).\n");
+    p.push_str("- Можно использовать любую файловую структуру: index.html + style.css + app.js + assets/, modules, и т.д. Reflex отдаёт все файлы из папки app по mime-type автоматически.\n");
+    p.push_str("- Тёмная тема: color #f5f5f7 на transparent background. Чистый минимальный UI.\n\n");
+    p.push_str("ДВА RUNTIME:\n");
+    p.push_str("1) static (по умолчанию): чистый front-end. iframe смотрит на reflexapp://localhost/<id>/<entry>. Нет своего бэкенда.\n");
+    p.push_str("   - manifest: { runtime: \"static\", entry: \"index.html\" }  (либо просто опусти runtime).\n");
+    p.push_str("   - Не подключай внешние CDN — только локальные файлы или inline.\n");
+    p.push_str("2) server: при открытии Reflex поднимает локальный веб-сервер из manifest.server.command, передавая порт через env REFLEX_PORT и PORT. iframe смотрит на http://localhost:PORT/.\n");
+    p.push_str("   - manifest: { runtime: \"server\", server: { command: [\"node\", \"server.js\"], ready_timeout_ms: 15000 } }\n");
+    p.push_str("   - cwd процесса = папка app. Сервер ОБЯЗАН слушать на process.env.PORT (или REFLEX_PORT).\n");
+    p.push_str("   - Все зависимости (npm/pip и т.д.) должны быть либо vendored в app-папке, либо stdlib. Не предполагай глобальные npm install — пиши на чистом Node.js stdlib (http/fs/path) или Python stdlib (http.server/socketserver).\n");
+    p.push_str("   - entry в манифесте можно не задавать — это для server-режима не используется.\n\n");
+    p.push_str("BRIDGE (общение с Reflex через window.parent.postMessage):\n");
+    p.push_str("Запрос:  window.parent.postMessage({source:'reflex-app', type:'request', id, method, params}, '*');\n");
+    p.push_str("Ответ:   window.addEventListener('message', e => {\n");
+    p.push_str("           if (e.data?.source==='reflex' && e.data.type==='response' && e.data.id===id) ...\n");
+    p.push_str("         });\n\n");
+    p.push_str("ДОСТУПНЫЕ МЕТОДЫ:\n");
+    p.push_str("  agent.ask({prompt}) -> {answer}                       — короткий one-shot вопрос агенту\n");
+    p.push_str("  agent.startTopic({prompt, projectId?}) -> {threadId}   — создать полноценный тред\n");
+    p.push_str("  agent.task({prompt, sandbox?, cwd?}) -> {threadId, result}  — sub-агент изолированно; sandbox: read-only|workspace-write; ждёт turn.completed и возвращает финальный текст\n");
+    p.push_str("  agent.stream({prompt, sandbox?, cwd?}) -> {streamId, threadId}  — стрим токенов: app слушает window 'message' от parent с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done' с {streamId, result}. По завершении вызывай agent.streamAbort({threadId}) при размонтаже.\n");
+    p.push_str("  storage.get({key}) -> {value}                         — persist в storage.json\n");
+    p.push_str("  storage.set({key, value}) -> {ok}\n");
+    p.push_str("  fs.read({path}) -> {content}                          — читать файл в app-папке\n");
+    p.push_str("  fs.write({path, content}) -> {ok}                     — писать файл в app-папке\n");
+    p.push_str("  notify.show({title, body}) -> {ok}                    — macOS push\n");
+    p.push_str("  dialog.openDirectory({title?, defaultPath?}) -> {path|null}                          — нативное окно выбора папки (path = null если отмена)\n");
+    p.push_str("  dialog.openFile({title?, defaultPath?, filters?, multiple?}) -> {path|null} или {paths:[]}  — нативное окно выбора файла. filters: [{name, extensions:[\"txt\",...]}]\n");
+    p.push_str("  dialog.saveFile({title?, defaultPath?, filters?, content?}) -> {path|null}            — окно \"сохранить как\". Если передан content (string) — файл сразу записывается на выбранный путь\n");
+    p.push_str("  net.fetch({url, method?, headers?, body?, timeoutMs?}) -> {status, headers, body, encoding}  — HTTP-запрос. Хост ОБЯЗАН быть в manifest.network.allowed_hosts (поддержка \"*.example.com\"). Body — string, либо JSON (auto-serialize). encoding=\"utf8\"|\"base64\".\n\n");
+    p.push_str("MANIFEST.network (для net.fetch):\n");
+    p.push_str("  { \"network\": { \"allowed_hosts\": [\"api.example.com\", \"*.foo.com\"] } }\n\n");
+    p.push_str("ОГРАНИЧЕНИЯ:\n");
+    p.push_str("- iframe sandbox=\"allow-scripts allow-forms\" (для server-runtime добавляется allow-same-origin). Сетевые fetch к произвольным внешним URL могут не работать — для динамических данных используй agent.ask или свой server-runtime.\n\n");
+    if let Some(skeleton) = template_skeleton(template) {
+        p.push_str("ШАБЛОН:\n");
+        p.push_str(skeleton);
+        p.push('\n');
+    }
+    p.push_str("ЗАДАЧА: ");
+    p.push_str(description);
+    p.push_str("\n\nВ конце: рабочие файлы + обновлённый manifest.json. Не трогай .reflex/.\n");
+    p
+}
+
+async fn ask_agent_oneshot(app: &AppHandle, prompt: &str) -> std::io::Result<String> {
+    use std::process::Stdio;
+    use tokio::process::Command as TokioCommand;
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let scratch = base.join("scratch");
+    std::fs::create_dir_all(&scratch)?;
+    let out_path = scratch.join(format!("oneshot-{}.txt", uuid_like()));
+    let cwd_str = scratch.to_string_lossy().into_owned();
+    let out_str = out_path.to_string_lossy().into_owned();
+
+    let result = TokioCommand::new("codex")
+        .args([
+            "exec",
+            "--json",
+            "--skip-git-repo-check",
+            "-s",
+            "read-only",
+            "--output-last-message",
+            &out_str,
+            "-C",
+            &cwd_str,
+            "--",
+            prompt,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .output()
+        .await?;
+    if !result.status.success() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("codex exit: {}", result.status),
+        ));
+    }
+    let text = std::fs::read_to_string(&out_path)?;
+    let _ = std::fs::remove_file(&out_path);
+    Ok(text.trim().to_string())
+}
+
+fn uuid_like() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{now}")
+}
+
+#[tauri::command]
+fn create_project(
+    app: AppHandle,
+    root: String,
+    name: Option<String>,
+) -> Result<project::Project, String> {
+    let path = PathBuf::from(&root);
+    if !path.is_dir() {
+        return Err(format!("not a directory: {root}"));
+    }
+    project::create_project(&app, &path, name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn find_project_for_path(path: String) -> Option<project::Project> {
+    project::find_project_for(&PathBuf::from(path))
+}
+
+#[tauri::command]
+fn update_project_sandbox(
+    app: AppHandle,
+    project_id: String,
+    sandbox: String,
+) -> Result<project::Project, String> {
+    let mut p = project::get_by_id(&app, &project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    if !["read-only", "workspace-write", "danger-full-access"].contains(&sandbox.as_str()) {
+        return Err(format!("invalid sandbox: {sandbox}"));
+    }
+    p.sandbox = sandbox;
+    project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
+    project::register(&app, &p).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+
+#[tauri::command]
+fn update_project_browser(
+    app: AppHandle,
+    project_id: String,
+    enabled: bool,
+) -> Result<project::Project, String> {
+    let mut p = project::get_by_id(&app, &project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    let mut servers = p
+        .mcp_servers
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(obj) = servers.as_object_mut() {
+        if enabled {
+            obj.insert(
+                "playwright".to_string(),
+                serde_json::json!({
+                    "command": "npx",
+                    "args": ["-y", "@playwright/mcp@latest"],
+                }),
+            );
+        } else {
+            obj.remove("playwright");
+        }
+    }
+    p.mcp_servers = if servers
+        .as_object()
+        .map(|o| o.is_empty())
+        .unwrap_or(true)
+    {
+        None
+    } else {
+        Some(servers)
+    };
+    project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
+    project::register(&app, &p).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+
+#[derive(Serialize)]
+struct DirEntry {
+    name: String,
+    path: String,
+    kind: &'static str,
+    size: Option<u64>,
+    modified_ms: Option<u128>,
+    is_hidden: bool,
+}
+
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
+    let p = PathBuf::from(&path);
+    if !p.is_dir() {
+        return Err(format!("not a directory: {path}"));
+    }
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(&p).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let file_type = metadata.file_type();
+        let kind: &'static str = if file_type.is_symlink() {
+            "symlink"
+        } else if file_type.is_dir() {
+            "directory"
+        } else {
+            "file"
+        };
+        let modified_ms = metadata.modified().ok().and_then(|m| {
+            m.duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_millis())
+        });
+        let size = if file_type.is_file() {
+            Some(metadata.len())
+        } else {
+            None
+        };
+        let is_hidden = name.starts_with('.');
+        out.push(DirEntry {
+            name,
+            path: entry.path().to_string_lossy().into_owned(),
+            kind,
+            size,
+            modified_ms,
+            is_hidden,
+        });
+    }
+    out.sort_by(|a, b| {
+        let dir_a = a.kind == "directory";
+        let dir_b = b.kind == "directory";
+        if dir_a != dir_b {
+            return if dir_a {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            };
+        }
+        a.name.to_lowercase().cmp(&b.name.to_lowercase())
+    });
+    Ok(out)
+}
+
+#[tauri::command]
+fn list_threads(app: AppHandle) -> Result<Vec<ProjectThread>, String> {
+    let apps_root = apps::apps_dir(&app)
+        .ok()
+        .and_then(|p| p.canonicalize().ok());
+    let projects = project::list_registered(&app).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for p in projects {
+        if let Some(root) = &apps_root {
+            if let Ok(c) = std::path::PathBuf::from(&p.root).canonicalize() {
+                if c.starts_with(root) {
+                    continue;
+                }
+            }
+        }
+        let root = PathBuf::from(&p.root);
+        let threads = match storage::read_all_threads(&root) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("[reflex] read_all_threads({}): {e}", p.root);
+                continue;
+            }
+        };
+        for t in threads {
+            out.push(ProjectThread {
+                project: p.clone(),
+                thread: t,
+            });
+        }
+    }
+    out.sort_by_key(|pt| pt.thread.meta.created_at_ms);
+    Ok(out)
+}
+
+#[tauri::command]
+fn respond_to_question(
+    app: AppHandle,
+    question_id: String,
+    decision: String,
+    text: Option<String>,
+) -> Result<(), String> {
+    eprintln!(
+        "[reflex] respond_to_question: q={question_id} decision={decision} text_len={}",
+        text.as_deref().map(|s| s.len()).unwrap_or(0)
+    );
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let handle = app_handle.state::<app_server::AppServerHandle>();
+        let server = handle.wait().await;
+        let q = match server.take_question(&question_id) {
+            Some(q) => q,
+            None => {
+                eprintln!("[reflex] respond: question {question_id} not pending");
+                return;
+            }
+        };
+        let result = build_response(&q.method, &decision, text.as_deref());
+        if let Err(e) = server.send_response(q.request_id, result).await {
+            eprintln!("[reflex] send_response err: {e}");
+        }
+    });
+    Ok(())
+}
+
+fn build_response(method: &str, decision: &str, text: Option<&str>) -> serde_json::Value {
+    let normalized = match decision {
+        "approve" | "approved" => "approved",
+        "approve_for_session" | "approved_for_session" => "approved_for_session",
+        "deny" | "denied" => "denied",
+        "abort" => "abort",
+        other => other,
+    };
+    match method {
+        // legacy v1 approvals
+        "applyPatchApproval" | "execCommandApproval" => serde_json::json!({
+            "decision": normalized,
+        }),
+        // v2 named approvals
+        "item/commandExecution/requestApproval"
+        | "item/fileChange/requestApproval"
+        | "item/permissions/requestApproval" => serde_json::json!({
+            "decision": normalized,
+        }),
+        // free-form text input
+        "item/tool/requestUserInput" | "mcpServer/elicitation/request" => serde_json::json!({
+            "answer": text.unwrap_or(""),
+        }),
+        _ => serde_json::json!({
+            "decision": normalized,
+            "answer": text.unwrap_or(""),
+        }),
+    }
+}
+
+#[tauri::command]
+fn stop_thread(app: AppHandle, thread_id: String) -> Result<(), String> {
+    eprintln!("[reflex] stop_thread: thread={thread_id}");
+    let app_handle = app.clone();
+    let id = thread_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let handle = app_handle.state::<app_server::AppServerHandle>();
+        let server = handle.wait().await;
+        match server.current_turn_id(&id) {
+            Some((app_thread_id, turn_id)) => {
+                if let Err(e) = server.turn_interrupt(&app_thread_id, &turn_id).await {
+                    eprintln!("[reflex] turn_interrupt err: {e}");
+                }
+            }
+            None => {
+                eprintln!("[reflex] stop_thread: no active turn for {id}");
+            }
+        }
+    });
+    Ok(())
+}
+
+fn candidate_root(ctx: &QuickContext) -> Option<PathBuf> {
+    if let Some(target) = &ctx.finder_target {
+        let path = PathBuf::from(target);
+        if path.is_dir() {
+            return Some(path);
+        }
+        if let Some(parent) = path.parent() {
+            return Some(parent.to_path_buf());
+        }
+    }
+    None
+}
+
+fn resolve_project(
+    app: &AppHandle,
+    project_id: Option<&str>,
+    ctx: &QuickContext,
+) -> Result<project::Project, String> {
+    if let Some(id) = project_id {
+        return project::get_by_id(app, id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("project not found: {id}"));
+    }
+    if let Some(root) = candidate_root(ctx) {
+        if let Some(p) = project::find_project_for(&root) {
+            return Ok(p);
+        }
+    }
+    Err("no project resolved (provide project_id or open Finder in a Reflex project)".into())
+}
+
+#[tauri::command]
+fn submit_quick(
+    app: AppHandle,
+    prompt: String,
+    ctx: QuickContext,
+    project_id: Option<String>,
+    plan_mode: Option<bool>,
+) -> Result<String, String> {
+    let plan_mode = plan_mode.unwrap_or(false);
+    eprintln!(
+        "[reflex] submit_quick: prompt_len={} project_id={:?} ctx={:?}/{:?}",
+        prompt.len(),
+        project_id,
+        ctx.frontmost_app,
+        ctx.finder_target
+    );
+
+    let project = resolve_project(&app, project_id.as_deref(), &ctx)?;
+    let project_root = PathBuf::from(&project.root);
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let thread_id = format!("t_{now_ms}");
+    eprintln!(
+        "[reflex] thread_id={thread_id} project={} root={}",
+        project.name, project.root
+    );
+
+    let meta = storage::ThreadMeta {
+        id: thread_id.clone(),
+        project_id: Some(project.id.clone()),
+        prompt: prompt.clone(),
+        cwd: project.root.clone(),
+        frontmost_app: ctx.frontmost_app.clone(),
+        finder_target: ctx.finder_target.clone(),
+        created_at_ms: now_ms,
+        exit_code: None,
+        done: false,
+        session_id: None,
+        title: None,
+        goal: None,
+        plan_mode,
+    };
+    if let Err(e) = storage::write_meta(&project_root, &meta) {
+        eprintln!("[reflex] write_meta failed: {e}");
+    }
+
+    if let Some(quick) = app.get_webview_window(QUICK_WINDOW) {
+        let _ = quick.hide();
+    }
+    if let Some(main) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = main.show();
+        let _ = main.unminimize();
+        let _ = main.set_focus();
+    }
+
+    let payload = ThreadCreated {
+        id: thread_id.clone(),
+        project_id: project.id.clone(),
+        project_name: project.name.clone(),
+        prompt: prompt.clone(),
+        cwd: project.root.clone(),
+        ctx,
+        created_at_ms: now_ms,
+        plan_mode,
+    };
+    if let Err(e) = app.emit(THREAD_CREATED_EVENT, &payload) {
+        eprintln!("[reflex] emit thread-created failed: {e}");
+    }
+
+    {
+        let app_meta = app.clone();
+        let root_meta = project_root.clone();
+        let id_meta = thread_id.clone();
+        let prompt_meta = prompt.clone();
+        tauri::async_runtime::spawn(async move {
+            codex::generate_topic_meta(app_meta, root_meta, id_meta, prompt_meta).await;
+        });
+    }
+
+    let codex_prompt = if plan_mode {
+        wrap_with_plan_mode(&prompt)
+    } else {
+        prompt.clone()
+    };
+    let app_handle = app.clone();
+    let reflex_id = thread_id.clone();
+    let root_for_task = project_root.clone();
+    let project_id_for_task = project.id.clone();
+    tauri::async_runtime::spawn(async move {
+        let handle = app_handle.state::<app_server::AppServerHandle>();
+        let server = handle.wait().await;
+        let project_now = project::get_by_id(&app_handle, &project_id_for_task)
+            .ok()
+            .flatten();
+        let sandbox = project_now
+            .as_ref()
+            .map(|p| p.sandbox.clone())
+            .unwrap_or_else(|| "workspace-write".into());
+        let mcp_servers = project_now.as_ref().and_then(|p| p.mcp_servers.clone());
+        let app_thread_id = match server
+            .thread_start(&root_for_task, &sandbox, mcp_servers.as_ref())
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("[reflex] thread_start failed: {e}");
+                let _ = app_handle.emit(
+                    "reflex://codex-event",
+                    &serde_json::json!({
+                        "thread_id": reflex_id,
+                        "seq": 0,
+                        "raw": format!("[reflex] thread_start failed: {e}"),
+                        "stream": "error",
+                    }),
+                );
+                let _ = storage::finalize_thread(&root_for_task, &reflex_id, Some(-1), None);
+                let _ = app_handle.emit(
+                    "reflex://codex-end",
+                    &serde_json::json!({"thread_id": reflex_id, "exit_code": -1}),
+                );
+                return;
+            }
+        };
+        eprintln!("[reflex] app_thread_id={app_thread_id} reflex={reflex_id}");
+        server.register_thread(
+            app_thread_id.clone(),
+            reflex_id.clone(),
+            root_for_task.clone(),
+            0,
+        );
+        if let Ok(mut meta) = storage::read_meta(&root_for_task, &reflex_id) {
+            meta.session_id = Some(app_thread_id.clone());
+            let _ = storage::write_meta(&root_for_task, &meta);
+        }
+        if let Err(e) = server.turn_start(&app_thread_id, &codex_prompt).await {
+            eprintln!("[reflex] turn_start failed: {e}");
+        }
+    });
+
+    Ok(thread_id)
+}
+
+#[tauri::command]
+fn continue_thread(
+    app: AppHandle,
+    project_id: String,
+    thread_id: String,
+    prompt: String,
+) -> Result<(), String> {
+    eprintln!(
+        "[reflex] continue_thread: project={project_id} thread={thread_id} prompt_len={}",
+        prompt.len()
+    );
+    let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return Err("empty prompt".into());
+    }
+
+    let project = project::get_by_id(&app, &project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    let project_root = PathBuf::from(&project.root);
+
+    let mut meta = storage::read_meta(&project_root, &thread_id).map_err(|e| e.to_string())?;
+    let app_thread_id_opt: Option<String> = match meta.session_id.clone() {
+        Some(sid) => Some(sid),
+        None => {
+            let events =
+                storage::read_stored_events(&project_root, &thread_id).map_err(|e| e.to_string())?;
+            let extracted = events.iter().find_map(|ev| {
+                if ev.stream != "stdout" {
+                    return None;
+                }
+                let parsed: serde_json::Value = serde_json::from_str(&ev.raw).ok()?;
+                codex::find_session_id(&parsed)
+            });
+            if let Some(ref sid) = extracted {
+                meta.session_id = Some(sid.clone());
+                if let Err(e) = storage::write_meta(&project_root, &meta) {
+                    eprintln!("[reflex] backfill write_meta failed: {e}");
+                }
+            }
+            extracted
+        }
+    };
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+
+    let last_seq =
+        storage::count_events(&project_root, &thread_id).map_err(|e| e.to_string())?;
+    let user_seq = last_seq + 1;
+    let user_raw = serde_json::to_string(&serde_json::json!({
+        "type": "user_message",
+        "text": trimmed,
+    }))
+    .map_err(|e| e.to_string())?;
+    let user_event = storage::StoredEvent {
+        seq: user_seq,
+        stream: "user".into(),
+        ts_ms: now_ms,
+        raw: user_raw.clone(),
+    };
+    storage::append_event_oneshot(&project_root, &thread_id, &user_event)
+        .map_err(|e| e.to_string())?;
+    if let Err(e) = storage::reopen_thread(&project_root, &thread_id) {
+        eprintln!("[reflex] reopen_thread failed: {e}");
+    }
+
+    let _ = app.emit(
+        "reflex://thread-running",
+        &serde_json::json!({ "thread_id": thread_id }),
+    );
+
+    let _ = app.emit(
+        "reflex://codex-event",
+        &serde_json::json!({
+            "thread_id": thread_id,
+            "seq": user_seq,
+            "raw": user_raw,
+            "stream": "user",
+        }),
+    );
+
+    let app_handle = app.clone();
+    let id_for_task = thread_id.clone();
+    let prompt_owned = trimmed.to_string();
+    let root_for_task = project_root.clone();
+    let project_id_for_task = project_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let handle = app_handle.state::<app_server::AppServerHandle>();
+        let server = handle.wait().await;
+        let initial_seq = storage::count_events(&root_for_task, &id_for_task).unwrap_or(0);
+
+        let proj_now = project::get_by_id(&app_handle, &project_id_for_task)
+            .ok()
+            .flatten();
+        let sandbox = proj_now
+            .as_ref()
+            .map(|p| p.sandbox.clone())
+            .unwrap_or_else(|| "workspace-write".into());
+        let mcp = proj_now.as_ref().and_then(|p| p.mcp_servers.clone());
+
+        // Ensure we have an app-server session — start one lazily if needed.
+        let mut sid: String = match app_thread_id_opt {
+            Some(s) => s,
+            None => match server
+                .thread_start(&root_for_task, &sandbox, mcp.as_ref())
+                .await
+            {
+                Ok(s) => {
+                    if let Ok(mut m) = storage::read_meta(&root_for_task, &id_for_task) {
+                        m.session_id = Some(s.clone());
+                        let _ = storage::write_meta(&root_for_task, &m);
+                    }
+                    s
+                }
+                Err(e) => {
+                    eprintln!("[reflex] thread_start (continue) failed: {e}");
+                    let _ = app_handle.emit(
+                        "reflex://codex-event",
+                        &serde_json::json!({
+                            "thread_id": id_for_task,
+                            "seq": initial_seq + 1,
+                            "raw": format!("[reflex] thread_start failed: {e}"),
+                            "stream": "error",
+                        }),
+                    );
+                    let _ = storage::finalize_thread(&root_for_task, &id_for_task, Some(-1), None);
+                    let _ = app_handle.emit(
+                        "reflex://codex-end",
+                        &serde_json::json!({"thread_id": id_for_task, "exit_code": -1}),
+                    );
+                    return;
+                }
+            },
+        };
+
+        server.register_thread(
+            sid.clone(),
+            id_for_task.clone(),
+            root_for_task.clone(),
+            initial_seq,
+        );
+
+        let mut turn_result = server.turn_start(&sid, &prompt_owned).await;
+
+        // If app-server forgot the thread (e.g. fresh process), start a new session and retry.
+        let lost = matches!(&turn_result, Err(e) if e.get("message").and_then(|m| m.as_str()).map(|s| s.contains("thread not found")).unwrap_or(false));
+        if lost {
+            eprintln!("[reflex] turn_start said thread not found — starting fresh session");
+            match server
+                .thread_start(&root_for_task, &sandbox, mcp.as_ref())
+                .await
+            {
+                Ok(new_sid) => {
+                    if let Ok(mut m) = storage::read_meta(&root_for_task, &id_for_task) {
+                        m.session_id = Some(new_sid.clone());
+                        let _ = storage::write_meta(&root_for_task, &m);
+                    }
+                    server.register_thread(
+                        new_sid.clone(),
+                        id_for_task.clone(),
+                        root_for_task.clone(),
+                        initial_seq,
+                    );
+                    sid = new_sid;
+                    turn_result = server.turn_start(&sid, &prompt_owned).await;
+                }
+                Err(e) => {
+                    eprintln!("[reflex] thread_start retry failed: {e}");
+                }
+            }
+        }
+        let _ = sid;
+
+        if let Err(e) = turn_result {
+            eprintln!("[reflex] turn_start (continue) failed: {e}");
+            let _ = app_handle.emit(
+                "reflex://codex-event",
+                &serde_json::json!({
+                    "thread_id": id_for_task,
+                    "seq": initial_seq + 1,
+                    "raw": format!("[reflex] turn_start failed: {e}"),
+                    "stream": "error",
+                }),
+            );
+            let _ = storage::finalize_thread(&root_for_task, &id_for_task, Some(-1), None);
+            let _ = app_handle.emit(
+                "reflex://codex-end",
+                &serde_json::json!({"thread_id": id_for_task, "exit_code": -1}),
+            );
+        }
+    });
+
+    Ok(())
+}
+
+async fn show_quick_panel(app: &AppHandle) {
+    let ctx = context::capture(app).await;
+    let candidate = candidate_root(&ctx);
+    let project = candidate
+        .as_deref()
+        .and_then(|p: &Path| project::find_project_for(p));
+    let nearest = if project.is_none() {
+        if let Some(root) = candidate.as_deref() {
+            project::nearest_registered(app, root).unwrap_or_default()
+        } else {
+            project::list_registered(app).unwrap_or_default()
+        }
+    } else {
+        Vec::new()
+    };
+    let candidate_root_str = candidate
+        .as_ref()
+        .map(|p| p.to_string_lossy().into_owned());
+
+    let payload = QuickOpenPayload {
+        ctx,
+        project,
+        candidate_root: candidate_root_str,
+        nearest,
+    };
+
+    let Some(window) = app.get_webview_window(QUICK_WINDOW) else {
+        return;
+    };
+    let _ = window.emit(QUICK_OPEN_EVENT, &payload);
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+fn show_main_window(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
+        return;
+    };
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+}
+
+fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{MenuBuilder, MenuItem};
+    use tauri::tray::TrayIconBuilder;
+
+    let open_item = MenuItem::with_id(app, "open", "Open Reflex", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit Reflex", true, Some("Cmd+Q"))?;
+    let menu = MenuBuilder::new(app)
+        .items(&[&open_item, &quit_item])
+        .build()?;
+
+    let mut builder = TrayIconBuilder::with_id("reflex-tray")
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .tooltip("Reflex")
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "quit" => app.exit(0),
+            "open" => show_main_window(app),
+            _ => {}
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+
+    builder.build(app)?;
+    Ok(())
+}
+
+async fn resume_interrupted_threads(app: AppHandle, server: app_server::AppServerClient) {
+    let projects = match project::list_registered(&app) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[reflex] resume scan: list_registered err: {e}");
+            return;
+        }
+    };
+
+    const RESUME_PROMPT: &str = "⟲ Reflex was restarted. Продолжай с того места, на котором остановился. Если задача уже выполнена — кратко сообщи об этом.";
+
+    for p in projects {
+        let root = PathBuf::from(&p.root);
+        let stored = match storage::read_all_threads(&root) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[reflex] read_all_threads({}): {e}", p.root);
+                continue;
+            }
+        };
+        for st in stored {
+            if st.meta.done {
+                continue;
+            }
+            let reflex_id = st.meta.id.clone();
+            let Some(session_id) = st.meta.session_id.clone() else {
+                eprintln!(
+                    "[reflex] cannot resume {reflex_id}: no session_id; finalizing as failed"
+                );
+                let _ =
+                    storage::finalize_thread(&root, &reflex_id, Some(-2), None);
+                let _ = app.emit(
+                    "reflex://codex-end",
+                    &serde_json::json!({
+                        "thread_id": reflex_id,
+                        "exit_code": -2,
+                    }),
+                );
+                continue;
+            };
+
+            eprintln!("[reflex] auto-resume thread={reflex_id} session={session_id}");
+
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0);
+            let last_seq = storage::count_events(&root, &reflex_id).unwrap_or(0);
+            let user_seq = last_seq + 1;
+            let user_raw = match serde_json::to_string(&serde_json::json!({
+                "type": "user_message",
+                "text": RESUME_PROMPT,
+                "auto_resumed": true,
+            })) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("[reflex] resume json err: {e}");
+                    continue;
+                }
+            };
+            let user_event = storage::StoredEvent {
+                seq: user_seq,
+                stream: "user".into(),
+                ts_ms: now_ms,
+                raw: user_raw.clone(),
+            };
+            let _ = storage::append_event_oneshot(&root, &reflex_id, &user_event);
+            let _ = storage::reopen_thread(&root, &reflex_id);
+
+            let _ = app.emit(
+                "reflex://thread-running",
+                &serde_json::json!({"thread_id": reflex_id}),
+            );
+            let _ = app.emit(
+                "reflex://codex-event",
+                &serde_json::json!({
+                    "thread_id": reflex_id,
+                    "seq": user_seq,
+                    "raw": user_raw,
+                    "stream": "user",
+                }),
+            );
+
+            // load thread on app-server first
+            if let Err(e) = server
+                .thread_resume(&session_id, &p.sandbox, p.mcp_servers.as_ref())
+                .await
+            {
+                eprintln!("[reflex] thread_resume failed for {reflex_id}: {e}");
+                let _ = storage::finalize_thread(&root, &reflex_id, Some(-1), None);
+                let _ = app.emit(
+                    "reflex://codex-end",
+                    &serde_json::json!({"thread_id": reflex_id, "exit_code": -1}),
+                );
+                continue;
+            }
+
+            server.register_thread(
+                session_id.clone(),
+                reflex_id.clone(),
+                root.clone(),
+                user_seq,
+            );
+
+            if let Err(e) = server.turn_start(&session_id, RESUME_PROMPT).await {
+                eprintln!("[reflex] auto-resume turn_start failed for {reflex_id}: {e}");
+                let _ = storage::finalize_thread(&root, &reflex_id, Some(-1), None);
+                let _ = app.emit(
+                    "reflex://codex-end",
+                    &serde_json::json!({"thread_id": reflex_id, "exit_code": -1}),
+                );
+            }
+        }
+    }
+}
+
+#[cfg(desktop)]
+fn quick_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
+    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+    Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space)
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let builder = tauri::Builder::default()
+        .register_uri_scheme_protocol("reflexapp", |ctx, request| -> tauri::http::Response<std::borrow::Cow<'static, [u8]>> {
+            let app = ctx.app_handle();
+            let uri = request.uri();
+            let path = uri.path().trim_start_matches('/').to_string();
+            let mut parts = path.splitn(2, '/');
+            let id = parts.next().unwrap_or("");
+            let rel = parts.next().unwrap_or("index.html");
+            eprintln!("[reflexapp] uri={uri} host={:?} path={path} id={id} rel={rel}", uri.host());
+            if id.is_empty() {
+                return tauri::http::Response::builder()
+                    .status(400)
+                    .body(std::borrow::Cow::Owned(Vec::new()))
+                    .unwrap();
+            }
+            match apps::read_app_file(app, id, rel) {
+                Ok(bytes) => {
+                    eprintln!("[reflexapp] OK {id}/{rel} ({} bytes)", bytes.len());
+                    let mime = apps::guess_mime(rel);
+                    let final_bytes = if mime.starts_with("text/html") {
+                        apps::inject_overlay_into_html(&bytes)
+                    } else {
+                        bytes
+                    };
+                    tauri::http::Response::builder()
+                        .header("content-type", mime)
+                        .body(std::borrow::Cow::Owned(final_bytes))
+                        .unwrap()
+                }
+                Err(e) => {
+                    eprintln!("[reflexapp] ERR {id}/{rel}: {e}");
+                    tauri::http::Response::builder()
+                        .status(404)
+                        .body(std::borrow::Cow::Owned(Vec::new()))
+                        .unwrap()
+                }
+            }
+        })
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(app_server::AppServerHandle::default())
+        .manage(app_runtime::AppRuntimes::default())
+        .manage(app_watcher::AppWatchers::default())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init());
+
+    #[cfg(desktop)]
+    let builder = builder.plugin(
+        tauri_plugin_global_shortcut::Builder::new()
+            .with_handler(|app, shortcut, event| {
+                use tauri_plugin_global_shortcut::ShortcutState;
+                if event.state() != ShortcutState::Pressed {
+                    return;
+                }
+                if shortcut != &quick_shortcut() {
+                    return;
+                }
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    show_quick_panel(&app).await;
+                });
+            })
+            .build(),
+    );
+
+    builder
+        .setup(|app| {
+            setup_tray(app.handle())?;
+            for label in [MAIN_WINDOW, QUICK_WINDOW] {
+                if let Some(window) = app.get_webview_window(label) {
+                    let win_clone = window.clone();
+                    window.on_window_event(move |event| {
+                        if let WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            let _ = win_clone.hide();
+                        }
+                    });
+                }
+            }
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                app.global_shortcut().register(quick_shortcut())?;
+            }
+
+            if let Err(e) = apps::ensure_sample_app(app.handle()) {
+                eprintln!("[reflex] ensure_sample_app failed: {e}");
+            }
+
+            let app_handle_for_server = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match app_server::AppServerClient::start(app_handle_for_server.clone()).await {
+                    Ok(client) => {
+                        match client.initialize().await {
+                            Ok(info) => eprintln!("[app-server] initialized: {info:?}"),
+                            Err(e) => eprintln!("[app-server] initialize failed: {e}"),
+                        }
+                        let handle = app_handle_for_server.state::<app_server::AppServerHandle>();
+                        handle.set(client.clone()).await;
+                        resume_interrupted_threads(app_handle_for_server.clone(), client).await;
+                    }
+                    Err(e) => eprintln!("[app-server] failed to start: {e}"),
+                }
+            });
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            capture_context,
+            submit_quick,
+            list_threads,
+            list_projects,
+            create_project,
+            find_project_for_path,
+            update_project_sandbox,
+            update_project_browser,
+            list_apps,
+            read_app_html,
+            app_invoke,
+            create_app,
+            app_status,
+            app_save,
+            app_revert,
+            app_diff,
+            app_save_partial,
+            app_revise,
+            read_app_thread,
+            create_app_thread,
+            pick_directory,
+            pick_open_file,
+            pick_save_file,
+            read_app_manifest,
+            app_export,
+            app_import,
+            app_server_start,
+            app_server_stop,
+            app_server_restart,
+            app_server_status,
+            app_server_logs,
+            app_watch_start,
+            app_watch_stop,
+            list_directory,
+            reveal_in_finder,
+            continue_thread,
+            stop_thread,
+            respond_to_question
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                let runtimes = app.state::<app_runtime::AppRuntimes>();
+                let runtimes_arc = runtimes.servers.clone();
+                tauri::async_runtime::block_on(async move {
+                    let mut map = runtimes_arc.lock().await;
+                    for (_id, mut entry) in map.drain() {
+                        let _ = entry.child.kill().await;
+                    }
+                });
+            }
+        });
+}
