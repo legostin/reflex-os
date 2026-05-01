@@ -2210,3 +2210,15 @@
   color: #ff8080;
   font-size: 12px;
 }
+
+.chat-item-controls {
+  list-style: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 16px 0;
+}
+
+.chat-recall-wrap {
+  list-style: none;
+  padding: 8px 16px 0;
+}
