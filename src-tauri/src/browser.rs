@@ -169,7 +169,8 @@ async fn read_loop(
                     }
                 } else if let Some(event) = v.get("event").and_then(|x| x.as_str()) {
                     let payload = v.get("params").cloned().unwrap_or(Value::Null);
-                    let event_name = format!("reflex://browser/{event}");
+                    let safe_event = event.replace('.', "-");
+                    let event_name = format!("reflex://browser/{safe_event}");
                     if let Err(e) = app.emit(&event_name, &payload) {
                         eprintln!("[browser] emit {event_name} failed: {e}");
                     }

@@ -107,14 +107,14 @@ export function BrowserScreen() {
   useEffect(() => {
     const subs: Promise<() => void>[] = [];
     subs.push(
-      listen("reflex://browser/tabs.opened", () => void refreshTabs()),
+      listen("reflex://browser/tabs-opened", () => void refreshTabs()),
     );
     subs.push(
-      listen("reflex://browser/tabs.closed", () => void refreshTabs()),
+      listen("reflex://browser/tabs-closed", () => void refreshTabs()),
     );
     subs.push(
       listen<{ tab_id: string; url: string }>(
-        "reflex://browser/tabs.navigated",
+        "reflex://browser/tabs-navigated",
         (ev) => {
           if (!ev.payload?.tab_id) return;
           setTabs((prev) =>
@@ -132,7 +132,7 @@ export function BrowserScreen() {
     );
     subs.push(
       listen<FramePayload>(
-        "reflex://browser/screencast.frame",
+        "reflex://browser/screencast-frame",
         (ev) => {
           if (!ev.payload) return;
           setFramesByTab((prev) => ({
