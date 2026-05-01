@@ -11,6 +11,7 @@ mod project;
 mod project_watcher;
 mod scheduler;
 mod storage;
+mod suggester;
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -2052,6 +2053,7 @@ pub fn run() {
             update_project_description,
             link_app_to_project,
             unlink_app_from_project,
+            suggester::suggest_apps_for_project,
             find_project_for_path,
             update_project_sandbox,
             update_project_browser,

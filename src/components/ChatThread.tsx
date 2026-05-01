@@ -13,6 +13,7 @@ import {
   type PathStatus,
 } from "./files/FileActionsDrawer";
 import { WidgetGrid, type WidgetSource } from "./widgets/WidgetGrid";
+import { SuggesterModal } from "./projects/SuggesterModal";
 import "./ChatThread.css";
 
 type QuickContext = {
@@ -354,6 +355,12 @@ export default function ChatThread() {
   const [newProjectPath, setNewProjectPath] = useState<string | null>(null);
   const [newProjectDescription, setNewProjectDescription] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
+  const [suggesterProjectId, setSuggesterProjectId] = useState<string | null>(
+    null,
+  );
+  const [installedAppsLite, setInstalledAppsLite] = useState<
+    { id: string; name: string; icon?: string | null }[]
+  >([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const focusPane = (paneId: PaneId) =>
@@ -605,6 +612,17 @@ export default function ChatThread() {
       setNewProjectPath(null);
       setNewProjectDescription("");
       navigate({ kind: "project", project_id: p.id });
+      if (description) {
+        try {
+          const apps = await invoke<
+            { id: string; name: string; icon?: string | null }[]
+          >("list_apps");
+          setInstalledAppsLite(apps);
+        } catch (e) {
+          console.warn("[reflex] list_apps for suggester failed", e);
+        }
+        setSuggesterProjectId(p.id);
+      }
     } catch (e) {
       console.error("[reflex] create project failed", e);
     } finally {
@@ -966,6 +984,18 @@ export default function ChatThread() {
             </div>
           </div>
         </div>
+      )}
+      {suggesterProjectId && (
+        <SuggesterModal
+          projectId={suggesterProjectId}
+          installedApps={installedAppsLite}
+          onClose={() => setSuggesterProjectId(null)}
+          onApplied={() => {
+            void invoke<Project[]>("list_projects").then((list) =>
+              setProjects(list),
+            );
+          }}
+        />
       )}
     </div>
   );
