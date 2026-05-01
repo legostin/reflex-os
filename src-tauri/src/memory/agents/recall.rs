@@ -89,33 +89,30 @@ pub async fn run_subagent(
 }
 
 fn compose_markdown(project: &[MemoryNote], topic: &[MemoryNote], rag: &[RagHit]) -> String {
-    let mut out = String::new();
-    out.push_str("## Memory recall\n\n");
+    if project.is_empty() && topic.is_empty() && rag.is_empty() {
+        return String::new();
+    }
 
-    out.push_str("### Project memory\n");
-    if project.is_empty() {
-        out.push_str("- _empty_\n");
-    } else {
+    let mut out = String::from("## Memory recall\n\n");
+
+    if !project.is_empty() {
+        out.push_str("### Project memory\n");
         for n in project {
             append_note_md(&mut out, n);
         }
+        out.push('\n');
     }
-    out.push('\n');
 
-    out.push_str("### Topic memory\n");
-    if topic.is_empty() {
-        out.push_str("- _empty_\n");
-    } else {
+    if !topic.is_empty() {
+        out.push_str("### Topic memory\n");
         for n in topic {
             append_note_md(&mut out, n);
         }
+        out.push('\n');
     }
-    out.push('\n');
 
-    out.push_str("### Code/notes context (RAG)\n");
-    if rag.is_empty() {
-        out.push_str("- _empty_\n");
-    } else {
+    if !rag.is_empty() {
+        out.push_str("### Code/notes context (RAG)\n");
         for h in rag {
             let src = h
                 .source
