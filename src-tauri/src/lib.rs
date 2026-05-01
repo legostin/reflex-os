@@ -5,6 +5,7 @@ mod app_watcher;
 mod apps;
 mod apps_dispatch;
 mod browser;
+mod bus_log;
 mod codex;
 mod context;
 mod logs;
@@ -2059,6 +2060,7 @@ pub fn run() {
                 .inner()
                 .clone();
             let bus = app_for_bus.state::<memory::MemoryState>().bus.clone();
+            bus_log::start(bus.clone(), app_for_bus.clone());
             app_bus::start(bridge, bus, app_for_bus);
 
             Ok(())

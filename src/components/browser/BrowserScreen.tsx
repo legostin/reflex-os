@@ -90,6 +90,11 @@ export function BrowserScreen() {
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
+    void invoke("log_push", {
+      level: "info",
+      source: "frontend-browser",
+      message: "BrowserScreen mounted, bootstrapping",
+    }).catch(() => {});
     void bootstrap();
   }, []);
 
@@ -130,11 +135,20 @@ export function BrowserScreen() {
         },
       ),
     );
+    let frameSeen = 0;
     subs.push(
       listen<FramePayload>(
         "reflex://browser/screencast-frame",
         (ev) => {
           if (!ev.payload) return;
+          frameSeen += 1;
+          if (frameSeen <= 3) {
+            void invoke("log_push", {
+              level: "info",
+              source: "frontend-browser",
+              message: `frame#${frameSeen} for ${ev.payload.tab_id} (b64 ${ev.payload.jpeg_b64?.length || 0})`,
+            }).catch(() => {});
+          }
           setFramesByTab((prev) => ({
             ...prev,
             [ev.payload.tab_id]: {
@@ -145,6 +159,11 @@ export function BrowserScreen() {
         },
       ),
     );
+    void invoke("log_push", {
+      level: "info",
+      source: "frontend-browser",
+      message: "listeners attached",
+    }).catch(() => {});
     return () => {
       subs.forEach((p) => p.then((u) => u()));
     };
