@@ -53,14 +53,50 @@ pub struct NoteFrontmatter {
     pub description: String,
     #[serde(rename = "type")]
     pub kind: MemoryKind,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     #[serde(default)]
     pub created_at_ms: u128,
     #[serde(default)]
     pub updated_at_ms: u128,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+}
+
+impl NoteFrontmatter {
+    pub fn new(name: String, description: String, kind: MemoryKind) -> Self {
+        Self {
+            id: String::new(),
+            name,
+            description,
+            kind,
+            tags: Vec::new(),
+            created_at_ms: 0,
+            updated_at_ms: 0,
+            source: None,
+        }
+    }
+}
+
+pub fn slug(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut prev_dash = true;
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        out.push_str("note");
+    }
+    out
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
