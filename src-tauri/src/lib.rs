@@ -527,6 +527,7 @@ async fn create_app(
         network: None,
         schedules: Vec::new(),
         actions: Vec::new(),
+        widgets: Vec::new(),
     };
     apps::write_manifest(&app, &app_id, &manifest).map_err(|e| e.to_string())?;
 
@@ -807,6 +808,22 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  }\n");
     p.push_str("- Параметры от вызывающего доступны как {{input.X}}.\n");
     p.push_str("- Возврат action — значение последнего шага (или save_as: \"output\" если хочешь явно).\n\n");
+
+    p.push_str("MANIFEST.widgets — мини-страницы для дашборда проекта (компактные, читают/показывают данные).\n");
+    p.push_str("  {\n");
+    p.push_str("    \"widgets\": [{\n");
+    p.push_str("      \"id\": \"today\",\n");
+    p.push_str("      \"name\": \"Сегодня\",\n");
+    p.push_str("      \"entry\": \"widgets/today.html\",\n");
+    p.push_str("      \"size\": \"small\",         // small (1x1), medium (2x1), wide (3x1), large (2x2). Базовая клетка ~180px.\n");
+    p.push_str("      \"description\": \"что показывает виджет\"\n");
+    p.push_str("    }]\n");
+    p.push_str("  }\n");
+    p.push_str("- Каждый widget.entry — отдельный HTML-файл в папке app, обычно `widgets/<id>.html`.\n");
+    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexEventOn/Emit, reflexAppsInvoke).\n");
+    p.push_str("- Виджет компактный: тёмная прозрачная подложка (background:transparent), html/body высотой 100%, padding 12-14px, без своих рамок (рамки рисует grid).\n");
+    p.push_str("- Если данные обновляются часто — сам ставь setInterval на 5-30 сек.\n");
+    p.push_str("- Если виджет читает данные другой утилиты — используй reflexAppsInvoke('<app>','<action>',{...}); НЕ дублируй сбор данных.\n\n");
 
     p.push_str("INTER-APP EVENTS И ВЫЗОВЫ:\n");
     p.push_str("  events.emit({topic, payload})            — публикация события всем подписчикам\n");

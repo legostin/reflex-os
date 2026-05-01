@@ -12,6 +12,7 @@ import {
   type DrawerTarget,
   type PathStatus,
 } from "./files/FileActionsDrawer";
+import { WidgetGrid, type WidgetSource } from "./widgets/WidgetGrid";
 import "./ChatThread.css";
 
 type QuickContext = {
@@ -257,6 +258,14 @@ type ServerLogLine = {
   ts_ms: number;
 };
 
+type AppWidget = {
+  id: string;
+  name: string;
+  entry: string;
+  size?: string;
+  description?: string | null;
+};
+
 type AppManifest = {
   id: string;
   name: string;
@@ -269,6 +278,7 @@ type AppManifest = {
   ready?: boolean;
   runtime?: string | null;
   server?: { command: string[]; ready_timeout_ms?: number | null } | null;
+  widgets?: AppWidget[];
 };
 
 type AppServerStatus = {
@@ -3180,6 +3190,30 @@ function ProjectScreen({
           )}
         </section>
       )}
+
+      {project && (() => {
+        const linkedIds = project.apps ?? [];
+        const sources: WidgetSource[] = [];
+        for (const id of linkedIds) {
+          const app = installedApps.find((a) => a.id === id);
+          if (!app || app.ready === false) continue;
+          for (const w of app.widgets ?? []) {
+            sources.push({
+              appId: app.id,
+              appName: app.name,
+              appIcon: app.icon ?? null,
+              widget: w,
+            });
+          }
+        }
+        if (sources.length === 0 && linkedIds.length === 0) return null;
+        return (
+          <section className="project-dashboard">
+            <h2 className="section-title">Дашборд</h2>
+            <WidgetGrid sources={sources} onOpenApp={onOpenApp} />
+          </section>
+        );
+      })()}
 
       {project && (
         <section className="project-linked">
