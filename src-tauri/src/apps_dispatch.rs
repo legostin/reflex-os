@@ -724,6 +724,7 @@ pub async fn dispatch_app_method(
             scheduler_set_paused_for_app(app, app_id, params).await
         }
         "scheduler.runs" => scheduler_runs_for_app(app, app_id, params),
+        "scheduler.stats" => scheduler_stats_for_app(app, app_id, params),
         "scheduler.runDetail" | "scheduler.run_detail" => {
             scheduler_run_detail_for_app(app, app_id, params)
         }
@@ -1374,6 +1375,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "scheduler.runNow",
                 "scheduler.setPaused",
                 "scheduler.runs",
+                "scheduler.stats",
                 "scheduler.runDetail",
             ],
         ),
@@ -1537,6 +1539,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexSchedulerRunNow",
                 "reflexSchedulerSetPaused",
                 "reflexSchedulerRuns",
+                "reflexSchedulerStats",
                 "reflexSchedulerRunDetail",
                 "reflexAppsList",
                 "reflexAppsCreate",
@@ -5509,6 +5512,89 @@ fn scheduler_runs_for_app(
     }
     runs.truncate(requested_limit);
     serde_json::to_value(runs).map_err(|e| e.to_string())
+}
+
+fn scheduler_stats_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let include_all = bool_param(&params, "include_all", "includeAll").unwrap_or(false);
+    let target_app = string_param(&params, "app_id", "appId");
+    let filter_app = if include_all {
+        None
+    } else {
+        Some(target_app.as_deref().unwrap_or(app_id))
+    };
+
+    if include_all {
+        ensure_scheduler_app_access(app, app_id, "read", "*", None)?;
+    } else if let Some(target) = filter_app {
+        ensure_scheduler_app_access(app, app_id, "read", target, None)?;
+    }
+
+    let mut schedules = scheduler::commands::scheduler_list(app.clone())?;
+    if let Some(target) = filter_app {
+        schedules.retain(|item| item.app_id == target);
+    }
+
+    let recent_limit = bounded_usize_param(&params, "recent_limit", "recentLimit", 50, 500);
+    let fetch_limit = if filter_app.is_some() {
+        500
+    } else {
+        recent_limit
+    };
+    let mut runs = scheduler::commands::scheduler_runs(app.clone(), Some(fetch_limit), None)?;
+    if let Some(target) = filter_app {
+        runs.retain(|run| run.app_id == target);
+    }
+    runs.truncate(recent_limit);
+
+    let total = schedules.len();
+    let enabled = schedules.iter().filter(|item| item.enabled).count();
+    let paused = schedules.iter().filter(|item| item.paused).count();
+    let invalid = schedules.iter().filter(|item| !item.valid).count();
+    let active = schedules
+        .iter()
+        .filter(|item| item.enabled && item.valid && !item.paused)
+        .count();
+    let next_fire_ms = schedules
+        .iter()
+        .filter(|item| item.enabled && item.valid && !item.paused)
+        .filter_map(|item| item.next_fire_ms)
+        .min();
+    let ok_runs = runs.iter().filter(|run| run.status == "ok").count();
+    let error_runs = runs.iter().filter(|run| run.status == "error").count();
+    let last_error = runs
+        .iter()
+        .find(|run| run.status == "error")
+        .map(|run| {
+            serde_json::json!({
+                "run_id": run.run_id,
+                "app_id": run.app_id,
+                "schedule_id": run.schedule_id,
+                "action_id": run.action_id,
+                "started_ms": run.started_ms,
+                "error_preview": run.error_preview,
+            })
+        });
+
+    Ok(serde_json::json!({
+        "schedules": {
+            "total": total,
+            "enabled": enabled,
+            "active": active,
+            "paused": paused,
+            "invalid": invalid,
+            "next_fire_ms": next_fire_ms,
+        },
+        "recent_runs": {
+            "sample": runs.len(),
+            "ok": ok_runs,
+            "error": error_runs,
+            "last_error": last_error,
+        },
+    }))
 }
 
 fn scheduler_run_detail_for_app(

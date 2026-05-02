@@ -1403,6 +1403,9 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexSchedulerRuns = function(params) {
     return reflexInvokeRaw('scheduler.runs', params || {});
   };
+  window.reflexSchedulerStats = function(params) {
+    return reflexInvokeRaw('scheduler.stats', params || {});
+  };
   window.reflexSchedulerRunDetail = function(runIdOrParams) {
     var params = (typeof runIdOrParams === 'string') ? {runId: runIdOrParams} : (runIdOrParams || {});
     return reflexInvokeRaw('scheduler.runDetail', params);

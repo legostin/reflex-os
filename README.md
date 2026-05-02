@@ -136,6 +136,7 @@ The injected runtime overlay provides:
 - `window.reflexSchedulerRunNow(scheduleId)`
 - `window.reflexSchedulerSetPaused(scheduleId, paused)`
 - `window.reflexSchedulerRuns(params)`
+- `window.reflexSchedulerStats(params)`
 - `window.reflexSchedulerRunDetail(runIdOrParams)`
 - `window.reflexMemorySave(params)`
 - `window.reflexMemoryRead(relPathOrParams)`
@@ -361,6 +362,8 @@ Scheduler methods:
   `<app_id>::<schedule_id>`.
 - `scheduler.setPaused({ scheduleId, paused })`.
 - `scheduler.runs({ limit?, beforeTs?, appId?, includeAll? })`.
+- `scheduler.stats({ appId?, includeAll?, recentLimit? })` -> schedule counts,
+  next fire timestamp, recent run counts, and last error summary.
 - `scheduler.runDetail({ runId })`.
 
 Apps can inspect and control their own schedules without extra permissions.
