@@ -1920,6 +1920,15 @@ const TEMPLATES: {
     badges: ["agent.task", "cards/table"],
   },
   {
+    id: "health-dashboard",
+    icon: "🩺",
+    name: "Health dashboard",
+    description: "Операционный обзор scheduler, memory/RAG и linked apps",
+    placeholder:
+      "Например: мониторинг автоматизаций проекта, индекса памяти и server apps с компактным виджетом; …",
+    badges: ["scheduler.stats", "memory.stats", "widgets"],
+  },
+  {
     id: "form",
     icon: "📝",
     name: "Form tool",

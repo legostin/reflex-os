@@ -912,6 +912,14 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
 - Показывать данные в таблице или как summary-карточки; ошибки должны вести к деталям запуска/сервиса, если есть id.\n\
 - Кэшировать последний результат через `window.reflexStorageSet(\"lastResult\", data)`.\n",
         ),
+        "health-dashboard" => Some(
+            "Шаблон HEALTH-DASHBOARD:\n\
+- Построй operational dashboard без agent.task на первом экране: `window.reflexSystemContext()`, `window.reflexSchedulerStats({recentLimit: 200})`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsList()` и `window.reflexAppsStatus(appId)` для linked apps.\n\
+- Если app привязан к проекту, бери projectId из `system.context().linked_projects[0]?.id`; если проекта нет — покажи scheduler/app health и мягкое пустое состояние для RAG.\n\
+- Summary cards: active/paused/invalid schedules, next fire, recent run errors, indexed/stale/missing memory docs, linked app health. Ошибка запуска должна открываться через `window.reflexSchedulerRunDetail(runId)`.\n\
+- Добавь Refresh, автосохранение последнего снимка через `window.reflexStorageSet(\"healthSnapshot\", data)` и восстановление через `window.reflexStorageGet`.\n\
+- Добавь manifest.widgets с компактным `widgets/health.html`, который показывает те же ключевые counters и открывает основную app.\n",
+        ),
         "form" => Some(
             "Шаблон FORM-TOOL:\n\
 - Несколько input-полей сверху, кнопка \"Run\" снизу.\n\
