@@ -1022,6 +1022,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexSystemContext = function() {
     return reflexInvokeRaw('system.context', {});
   };
+  window.reflexSystemOpenPanel = function(panelOrParams, projectId, threadId) {
+    var params = (typeof panelOrParams === 'string') ? {panel: panelOrParams, projectId: projectId || null, threadId: threadId || null} : (panelOrParams || {});
+    return reflexInvokeRaw('system.openPanel', params);
+  };
   window.reflexSystemOpenUrl = function(urlOrParams) {
     var params = (typeof urlOrParams === 'string') ? {url: urlOrParams} : (urlOrParams || {});
     return reflexInvokeRaw('system.openUrl', params);

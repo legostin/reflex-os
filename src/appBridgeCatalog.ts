@@ -4,6 +4,7 @@ export const BRIDGE_API_GROUPS = [
     methods: [
       "bridge.catalog",
       "system.context",
+      "system.openPanel",
       "system.openUrl",
       "system.openPath",
       "system.revealPath",
@@ -186,6 +187,7 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexInvoke",
       "reflexBridgeCatalog",
       "reflexSystemContext",
+      "reflexSystemOpenPanel",
       "reflexSystemOpenUrl",
       "reflexSystemOpenPath",
       "reflexSystemRevealPath",

@@ -49,6 +49,7 @@ The injected runtime overlay provides:
 - `window.reflexInvoke(method, params)`
 - `window.reflexBridgeCatalog()`
 - `window.reflexSystemContext()`
+- `window.reflexSystemOpenPanel(panelOrParams, projectId?, threadId?)`
 - `window.reflexSystemOpenUrl(urlOrParams)`
 - `window.reflexSystemOpenPath(pathOrParams)`
 - `window.reflexSystemRevealPath(pathOrParams)`
@@ -187,6 +188,9 @@ Core methods:
   permission hints, and this app's current bridge grants.
 - `system.context()` -> app id/root, manifest, app project summary, linked
   project summaries, and memory defaults.
+- `system.openPanel({ panel, projectId?, threadId? })` -> ask Reflex to open
+  a main UI panel: `apps`, `memory`, `automations`, `browser`, or `settings`.
+  For `memory`, optional `projectId`/`threadId` selects the initial context.
 - `system.openUrl({ url })` -> open an `http`, `https`, `mailto`, or `tel`
   URL in the system default app.
 - `system.openPath({ path })` -> open an existing local file/folder; relative
@@ -409,10 +413,11 @@ Apps can expose:
 
 Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,
-`clipboard.*`, `system.openUrl`, `system.openPath`, `system.revealPath`,
-`apps.create`, `apps.import`, `apps.commit`, `apps.commitPartial`, `apps.delete`,
-`apps.restore`, `apps.revert`, `apps.purge`, and `apps.open` are not valid inside
-schedules. `projects.open`, `topics.open`, `scheduler.runNow`,
+`clipboard.*`, `system.openPanel`, `system.openUrl`, `system.openPath`,
+`system.revealPath`, `apps.create`, `apps.import`, `apps.commit`,
+`apps.commitPartial`, `apps.delete`, `apps.restore`, `apps.revert`,
+`apps.purge`, and `apps.open` are not valid inside schedules. `projects.open`,
+`topics.open`, `scheduler.runNow`,
 `scheduler.setPaused`, `scheduler.upsert`, and
 `scheduler.delete` are also blocked inside schedule steps to prevent unattended
 recursive runs. Non-UI methods such as `project.files.*` can run in schedules

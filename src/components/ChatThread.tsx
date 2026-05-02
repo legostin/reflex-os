@@ -92,7 +92,10 @@ type ThreadRunningPayload = {
 };
 
 type AppOpenRequestPayload = {
-  app_id: string;
+  app_id?: string;
+  panel?: string;
+  project_id?: string;
+  thread_id?: string;
   from_app?: string;
 };
 
@@ -216,6 +219,27 @@ function routeKey(r: Route): string {
       return "browser";
     case "settings":
       return "settings";
+  }
+}
+
+function routeForSystemPanel(payload: AppOpenRequestPayload): Route | null {
+  switch (payload.panel?.trim()) {
+    case "apps":
+      return { kind: "apps" };
+    case "memory":
+      return {
+        kind: "memory",
+        project_id: payload.project_id,
+        thread_id: payload.thread_id,
+      };
+    case "automations":
+      return { kind: "automations" };
+    case "browser":
+      return { kind: "browser" };
+    case "settings":
+      return { kind: "settings" };
+    default:
+      return null;
   }
 }
 
@@ -1165,6 +1189,11 @@ export default function ChatThread() {
     const appOpen = listen<AppOpenRequestPayload>(
       "reflex://app-open-request",
       (e) => {
+        const panelRoute = routeForSystemPanel(e.payload);
+        if (panelRoute) {
+          navigate(panelRoute);
+          return;
+        }
         if (e.payload.app_id) {
           navigate({ kind: "app", app_id: e.payload.app_id });
         }

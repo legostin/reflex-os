@@ -22,6 +22,7 @@ pub async fn dispatch_app_method(
     match method {
         "bridge.catalog" => bridge_catalog_for_app(app, app_id),
         "system.context" => system_context(app, app_id),
+        "system.openPanel" | "system.open_panel" => system_open_panel(app, app_id, &params),
         "system.openUrl" | "system.open_url" => system_open_url(app, &params),
         "system.openPath" | "system.open_path" => system_open_path(app, app_id, &params),
         "system.revealPath" | "system.reveal_path" => system_reveal_path(app, app_id, &params),
@@ -1241,6 +1242,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             &[
                 "bridge.catalog",
                 "system.context",
+                "system.openPanel",
                 "system.openUrl",
                 "system.openPath",
                 "system.revealPath",
@@ -1419,6 +1421,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexInvoke",
                 "reflexBridgeCatalog",
                 "reflexSystemContext",
+                "reflexSystemOpenPanel",
                 "reflexSystemOpenUrl",
                 "reflexSystemOpenPath",
                 "reflexSystemRevealPath",
@@ -1590,6 +1593,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             "scheduler_ui_blocklist": [
                 "dialog.*",
                 "clipboard.*",
+                "system.openPanel",
                 "system.openUrl",
                 "system.openPath",
                 "system.revealPath",
@@ -1785,6 +1789,64 @@ fn system_context(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, St
             "scope": "project",
         },
     }))
+}
+
+fn system_open_panel(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let raw_panel = params
+        .get("panel")
+        .or_else(|| params.get("name"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "missing panel".to_string())?;
+    let panel = normalize_system_panel(raw_panel)?;
+    let project_id = string_param(params, "project_id", "projectId");
+    let thread_id = string_param(params, "thread_id", "threadId");
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("panel".into(), serde_json::Value::String(panel.to_string()));
+    payload.insert("from_app".into(), serde_json::Value::String(app_id.to_string()));
+    if let Some(project_id) = project_id.clone() {
+        payload.insert("project_id".into(), serde_json::Value::String(project_id));
+    }
+    if let Some(thread_id) = thread_id.clone() {
+        payload.insert("thread_id".into(), serde_json::Value::String(thread_id));
+    }
+    app.emit(
+        "reflex://app-open-request",
+        &serde_json::Value::Object(payload),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let mut out = serde_json::Map::new();
+    out.insert("ok".into(), serde_json::Value::Bool(true));
+    out.insert("panel".into(), serde_json::Value::String(panel.to_string()));
+    if let Some(project_id) = project_id {
+        out.insert("project_id".into(), serde_json::Value::String(project_id));
+    }
+    if let Some(thread_id) = thread_id {
+        out.insert("thread_id".into(), serde_json::Value::String(thread_id));
+    }
+    Ok(serde_json::Value::Object(out))
+}
+
+fn normalize_system_panel(raw: &str) -> Result<&'static str, String> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "apps" | "app" | "utilities" | "utils" | "app-grid" | "apps-grid" | "утилиты"
+        | "приложения" => Ok("apps"),
+        "memory" | "memories" | "rag" | "knowledge" | "память" => Ok("memory"),
+        "automations" | "automation" | "schedules" | "schedule" | "scheduler"
+        | "автоматизации" | "расписания" => Ok("automations"),
+        "browser" | "web" | "браузер" => Ok("browser"),
+        "settings" | "preferences" | "prefs" | "logs" | "настройки" => Ok("settings"),
+        other => Err(format!(
+            "invalid panel: {other}; expected apps, memory, automations, browser, or settings"
+        )),
+    }
 }
 
 fn system_open_url(
