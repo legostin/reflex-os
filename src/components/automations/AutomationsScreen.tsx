@@ -94,6 +94,27 @@ export function AutomationsScreen({
       }),
     [items],
   );
+  const stats = useMemo(() => {
+    let active = 0;
+    let paused = 0;
+    let invalid = 0;
+    for (const item of items) {
+      if (!item.valid) {
+        invalid += 1;
+      } else if (item.paused) {
+        paused += 1;
+      } else {
+        active += 1;
+      }
+    }
+    return {
+      total: items.length,
+      active,
+      paused,
+      invalid,
+      running: running.size,
+    };
+  }, [items, running]);
 
   return (
     <div className="automations-root">
@@ -126,6 +147,14 @@ export function AutomationsScreen({
       </header>
 
       {error && <div className="automations-error">{error}</div>}
+
+      <section className="automations-summary" aria-label="Automation summary">
+        <SummaryCard label="Всего" value={stats.total} />
+        <SummaryCard label="Активные" value={stats.active} tone="ok" />
+        <SummaryCard label="Запущены" value={stats.running} tone="run" />
+        <SummaryCard label="На паузе" value={stats.paused} />
+        <SummaryCard label="Ошибки cron" value={stats.invalid} tone="bad" />
+      </section>
 
       {tab === "schedules" && (
         <section className="automations-list">
@@ -185,6 +214,23 @@ export function AutomationsScreen({
           onClose={() => setSelectedRunId(null)}
         />
       )}
+    </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone?: "ok" | "run" | "bad";
+}) {
+  return (
+    <div className={`automations-summary-card ${tone ? `tone-${tone}` : ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
