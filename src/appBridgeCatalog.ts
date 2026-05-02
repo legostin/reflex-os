@@ -53,6 +53,7 @@ export const BRIDGE_API_GROUPS = [
     methods: [
       "projects.list",
       "projects.open",
+      "project.profile.update",
       "topics.list",
       "topics.open",
       "skills.list",
@@ -207,6 +208,7 @@ export const BRIDGE_HELPER_GROUPS = [
     helpers: [
       "reflexProjectsList",
       "reflexProjectsOpen",
+      "reflexProjectProfileUpdate",
       "reflexTopicsList",
       "reflexTopicsOpen",
       "reflexSkillsList",
@@ -306,9 +308,9 @@ export const BRIDGE_RECIPE_CARDS = [
   },
   {
     title: "MCP и skills проекта",
-    body: "Закрепляй preferred skills, подключай MCP servers и записывай артефакты с явными grants.",
-    calls: ["project.skills.ensure", "project.mcp.upsert", "project.files.write"],
+    body: "Обновляй project profile, закрепляй skills и подключай MCP servers с явными grants.",
+    calls: ["project.profile.update", "project.skills.ensure", "project.mcp.upsert"],
     example:
-      'await reflexProjectMcpUpsert("linear", { command: "npx", args: ["-y", "linear-mcp"] });',
+      'await reflexProjectProfileUpdate({ description: "Agent workspace for growth loops" });',
   },
 ] as const;

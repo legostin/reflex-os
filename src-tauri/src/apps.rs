@@ -1164,6 +1164,9 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof projectIdOrParams === 'string') ? {projectId: projectIdOrParams} : (projectIdOrParams || {});
     return reflexInvokeRaw('projects.open', params);
   };
+  window.reflexProjectProfileUpdate = function(patch) {
+    return reflexInvokeRaw('project.profile.update', patch || {});
+  };
   window.reflexTopicsList = function(params) {
     return reflexInvokeRaw('topics.list', params || {});
   };

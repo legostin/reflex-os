@@ -63,6 +63,8 @@ const PERMISSION_EXAMPLES = [
   "memory.global.write",
   "memory.project:*",
   "projects.read:*",
+  "projects.write:<project>",
+  "projects.write:*",
   "topics.read:<project>",
   "topics.read:*",
   "skills.read:<project>",

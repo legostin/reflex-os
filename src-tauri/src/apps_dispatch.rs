@@ -626,6 +626,7 @@ pub async fn dispatch_app_method(
         }
         "projects.list" => projects_list_for_app(app, app_id, params),
         "projects.open" => projects_open_for_app(app, app_id, params),
+        "project.profile.update" => project_profile_update_for_app(app, app_id, params),
         "topics.list" | "threads.list" => topics_list_for_app(app, app_id, params),
         "topics.open" | "threads.open" => topics_open_for_app(app, app_id, params),
         "skills.list" => skills_list_for_app(app, app_id, params),
@@ -1233,6 +1234,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             &[
                 "projects.list",
                 "projects.open",
+                "project.profile.update",
                 "topics.list",
                 "topics.open",
                 "skills.list",
@@ -1383,6 +1385,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             &[
                 "reflexProjectsList",
                 "reflexProjectsOpen",
+                "reflexProjectProfileUpdate",
                 "reflexTopicsList",
                 "reflexTopicsOpen",
                 "reflexSkillsList",
@@ -1485,7 +1488,7 @@ fn bridge_permission_hints() -> serde_json::Value {
     serde_json::json!([
         { "scope": "clipboard", "grants": ["clipboard.read", "clipboard.write", "clipboard:*"] },
         { "scope": "browser", "grants": ["browser.read", "browser.control", "browser:*", "browser.project:<project>"] },
-        { "scope": "projects", "grants": ["projects.read:*"] },
+        { "scope": "projects", "grants": ["projects.read:*", "projects.write:<project>", "projects.write:*"] },
         { "scope": "topics", "grants": ["topics.read:<project>", "topics.read:*"] },
         { "scope": "skills", "grants": ["skills.read:<project>", "skills.read:*", "skills.write:<project>", "skills.write:*"] },
         { "scope": "mcp", "grants": ["mcp.read:<project>", "mcp.read:*", "mcp.write:<project>", "mcp.write:*"] },
@@ -2857,6 +2860,97 @@ fn projects_open_for_app(
     )
     .map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "ok": true, "project_id": project_id }))
+}
+
+fn project_profile_update_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut project = resolve_project_write_target(app, app_id, &params, "projects.write")?;
+    let mut changed = Vec::new();
+
+    if params.get("description").is_some() {
+        project.description = normalize_optional_project_text(
+            params.get("description").unwrap(),
+            "description",
+            2_000,
+        )?;
+        changed.push("description");
+    }
+
+    if let Some(value) = params
+        .get("agent_instructions")
+        .or_else(|| params.get("agentInstructions"))
+    {
+        project.agent_instructions =
+            normalize_optional_project_text(value, "agentInstructions", 20_000)?;
+        changed.push("agent_instructions");
+    }
+
+    if changed.is_empty() {
+        return Err("project.profile.update requires description or agentInstructions".into());
+    }
+
+    write_project_and_register(app, &project)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "changed": changed,
+        "project": project_summary(&project),
+    }))
+}
+
+fn resolve_project_write_target(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+    scope: &str,
+) -> Result<project::Project, String> {
+    if let Some(project_id) = string_param(params, "project_id", "projectId") {
+        let project = list_user_projects(app)?
+            .into_iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| format!("project not found: {project_id}"))?;
+        ensure_scoped_permission(app, app_id, scope, &project.id)?;
+        return Ok(project);
+    }
+    let targets: Vec<project::Project> = list_user_projects(app)?
+        .into_iter()
+        .filter(|project| scoped_permission_allowed(app, app_id, scope, &project.id))
+        .collect();
+    if targets.len() == 1 {
+        return Ok(targets.into_iter().next().expect("one project write target"));
+    }
+    if targets.is_empty() {
+        return Err(format!(
+            "missing project_id; add manifest.permissions entry '{scope}:<project>' or '{scope}:*'"
+        ));
+    }
+    Err(format!(
+        "missing project_id; multiple {scope} targets are available"
+    ))
+}
+
+fn normalize_optional_project_text(
+    value: &serde_json::Value,
+    label: &str,
+    max_len: usize,
+) -> Result<Option<String>, String> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let text = value
+        .as_str()
+        .ok_or_else(|| format!("{label} must be a string or null"))?
+        .trim()
+        .to_string();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    if text.len() > max_len {
+        return Err(format!("{label} must be {max_len} characters or fewer"));
+    }
+    Ok(Some(text))
 }
 
 fn topics_list_for_app(
@@ -5316,5 +5410,29 @@ mod tests {
             "args": ["bridge.js"]
         }))
         .is_ok());
+    }
+
+    #[test]
+    fn project_profile_text_is_trimmed_bounded_and_nullable() {
+        assert_eq!(
+            normalize_optional_project_text(
+                &serde_json::Value::String("  useful context  ".into()),
+                "description",
+                100,
+            )
+            .unwrap(),
+            Some("useful context".into())
+        );
+        assert_eq!(
+            normalize_optional_project_text(&serde_json::Value::Null, "description", 100)
+                .unwrap(),
+            None
+        );
+        assert!(normalize_optional_project_text(
+            &serde_json::Value::String("too long".into()),
+            "description",
+            3,
+        )
+        .is_err());
     }
 }
