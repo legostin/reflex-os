@@ -136,6 +136,7 @@ The injected runtime overlay provides:
 - `window.reflexMemoryDelete(relPathOrParams)`
 - `window.reflexMemorySearch(queryOrParams)`
 - `window.reflexMemoryRecall(queryOrParams)`
+- `window.reflexMemoryReindex(params)`
 - `window.reflexMemoryIndexPath(pathOrParams)`
 - `window.reflexMemoryPathStatus(pathOrParams)`
 - `window.reflexMemoryPathStatusBatch(pathsOrParams)`
@@ -323,6 +324,7 @@ Memory methods:
 - `memory.delete({ scope?, relPath, projectId?, threadId? })`.
 - `memory.search({ query, projectId?, limit? })`.
 - `memory.recall({ query, projectId?, threadId?, maxNotes?, maxRag? })`.
+- `memory.reindex({ projectId? })` -> rebuild supported project-file RAG entries.
 - `memory.indexPath({ path, projectId? })`.
 - `memory.pathStatus({ path, projectId? })`.
 - `memory.pathStatusBatch({ paths, projectId? })`.
