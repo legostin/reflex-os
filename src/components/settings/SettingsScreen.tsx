@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { BRIDGE_API_GROUPS, BRIDGE_HELPER_GROUPS } from "../../appBridgeCatalog";
 import "./settings.css";
 
 type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
@@ -47,187 +48,6 @@ const CAPABILITY_GROUPS = [
   {
     title: "MCP и skills",
     body: "Project-scoped MCP JSON и preferred skills внедряются в новые, продолженные и auto-resumed topics.",
-  },
-] as const;
-
-const API_GROUPS = [
-  {
-    title: "Система и manifest",
-    methods: [
-      "system.context",
-      "manifest.get",
-      "manifest.update",
-    ],
-  },
-  {
-    title: "Агентный runtime",
-    methods: [
-      "agent.ask",
-      "agent.startTopic",
-      "agent.task",
-      "agent.stream",
-      "agent.streamAbort",
-    ],
-  },
-  {
-    title: "Данные app и файлы",
-    methods: [
-      "storage.get",
-      "storage.set",
-      "fs.read",
-      "fs.write",
-    ],
-  },
-  {
-    title: "Проекты и топики",
-    methods: [
-      "projects.list",
-      "topics.list",
-      "skills.list",
-      "mcp.servers",
-    ],
-  },
-  {
-    title: "Browser sidecar",
-    methods: [
-      "browser.init",
-      "browser.tabs.list",
-      "browser.open",
-      "browser.navigate",
-      "browser.readText",
-      "browser.readOutline",
-      "browser.screenshot",
-      "browser.clickText",
-      "browser.clickSelector",
-      "browser.fill",
-    ],
-  },
-  {
-    title: "Нативный macOS",
-    methods: [
-      "dialog.openDirectory",
-      "dialog.openFile",
-      "dialog.saveFile",
-      "notify.show",
-    ],
-  },
-  {
-    title: "Сеть",
-    methods: ["net.fetch"],
-  },
-  {
-    title: "Память",
-    methods: [
-      "memory.save",
-      "memory.list",
-      "memory.delete",
-      "memory.search",
-      "memory.recall",
-      "memory.indexPath",
-      "memory.pathStatus",
-      "memory.forgetPath",
-    ],
-  },
-  {
-    title: "Автоматизации",
-    methods: [
-      "scheduler.list",
-      "scheduler.runNow",
-      "scheduler.setPaused",
-      "scheduler.runs",
-      "scheduler.runDetail",
-    ],
-  },
-  {
-    title: "Сетка apps",
-    methods: [
-      "events.emit",
-      "events.subscribe",
-      "events.unsubscribe",
-      "apps.list",
-      "apps.invoke",
-      "apps.list_actions",
-    ],
-  },
-] as const;
-
-const HELPER_GROUPS = [
-  {
-    title: "Core",
-    helpers: [
-      "reflexInvoke",
-      "reflexSystemContext",
-      "reflexManifestGet",
-      "reflexManifestUpdate",
-      "reflexCapabilities",
-    ],
-  },
-  {
-    title: "Agent",
-    helpers: [
-      "reflexAgentAsk",
-      "reflexAgentStartTopic",
-      "reflexAgentTask",
-      "reflexAgentStream",
-      "reflexAgentStreamAbort",
-    ],
-  },
-  {
-    title: "Storage / IO",
-    helpers: [
-      "reflexStorageGet",
-      "reflexStorageSet",
-      "reflexFsRead",
-      "reflexFsWrite",
-      "reflexNetFetch",
-      "reflexNotifyShow",
-      "reflexDialogOpenDirectory",
-      "reflexDialogOpenFile",
-      "reflexDialogSaveFile",
-    ],
-  },
-  {
-    title: "Projects / Browser",
-    helpers: [
-      "reflexProjectsList",
-      "reflexTopicsList",
-      "reflexSkillsList",
-      "reflexMcpServers",
-      "reflexBrowserInit",
-      "reflexBrowserTabs",
-      "reflexBrowserOpen",
-      "reflexBrowserNavigate",
-      "reflexBrowserReadText",
-      "reflexBrowserReadOutline",
-      "reflexBrowserScreenshot",
-      "reflexBrowserClickText",
-      "reflexBrowserClickSelector",
-      "reflexBrowserFill",
-    ],
-  },
-  {
-    title: "Memory / Automation / Apps",
-    helpers: [
-      "reflexMemorySave",
-      "reflexMemoryList",
-      "reflexMemoryDelete",
-      "reflexMemorySearch",
-      "reflexMemoryRecall",
-      "reflexMemoryIndexPath",
-      "reflexMemoryPathStatus",
-      "reflexMemoryForgetPath",
-      "reflexSchedulerList",
-      "reflexSchedulerRunNow",
-      "reflexSchedulerSetPaused",
-      "reflexSchedulerRuns",
-      "reflexSchedulerRunDetail",
-      "reflexAppsInvoke",
-      "reflexAppsList",
-      "reflexAppsListActions",
-      "reflexEventOn",
-      "reflexEventOff",
-      "reflexEventEmit",
-    ],
   },
 ] as const;
 
@@ -314,7 +134,7 @@ function CapabilitiesPane() {
           </span>
         </div>
         <div className="settings-api-grid">
-          {API_GROUPS.map((group) => (
+          {BRIDGE_API_GROUPS.map((group) => (
             <article className="settings-api-group" key={group.title}>
               <h3>{group.title}</h3>
               <div className="settings-method-list">
@@ -333,7 +153,7 @@ function CapabilitiesPane() {
           <span className="settings-section-meta">window.reflex*</span>
         </div>
         <div className="settings-helper-grid">
-          {HELPER_GROUPS.map((group) => (
+          {BRIDGE_HELPER_GROUPS.map((group) => (
             <article className="settings-api-group" key={group.title}>
               <h3>{group.title}</h3>
               <div className="settings-method-list">

@@ -16,6 +16,7 @@ import { WidgetGrid, type WidgetSource } from "./widgets/WidgetGrid";
 import { SuggesterModal } from "./projects/SuggesterModal";
 import { BrowserScreen } from "./browser/BrowserScreen";
 import { SettingsScreen } from "./settings/SettingsScreen";
+import { BRIDGE_HELPER_GROUPS } from "../appBridgeCatalog";
 import "./ChatThread.css";
 
 type QuickContext = {
@@ -359,86 +360,6 @@ type AppCapabilityFact = {
   value: string;
   title: string;
 };
-
-const APP_BRIDGE_HELPER_GROUPS = [
-  {
-    title: "Core",
-    helpers: [
-      "reflexInvoke",
-      "reflexSystemContext",
-      "reflexManifestGet",
-      "reflexManifestUpdate",
-      "reflexCapabilities",
-    ],
-  },
-  {
-    title: "Agent",
-    helpers: [
-      "reflexAgentAsk",
-      "reflexAgentStartTopic",
-      "reflexAgentTask",
-      "reflexAgentStream",
-      "reflexAgentStreamAbort",
-    ],
-  },
-  {
-    title: "Storage / IO",
-    helpers: [
-      "reflexStorageGet",
-      "reflexStorageSet",
-      "reflexFsRead",
-      "reflexFsWrite",
-      "reflexNetFetch",
-      "reflexNotifyShow",
-      "reflexDialogOpenDirectory",
-      "reflexDialogOpenFile",
-      "reflexDialogSaveFile",
-    ],
-  },
-  {
-    title: "Projects / Browser",
-    helpers: [
-      "reflexProjectsList",
-      "reflexTopicsList",
-      "reflexSkillsList",
-      "reflexMcpServers",
-      "reflexBrowserInit",
-      "reflexBrowserTabs",
-      "reflexBrowserOpen",
-      "reflexBrowserNavigate",
-      "reflexBrowserReadText",
-      "reflexBrowserReadOutline",
-      "reflexBrowserScreenshot",
-      "reflexBrowserClickText",
-      "reflexBrowserClickSelector",
-      "reflexBrowserFill",
-    ],
-  },
-  {
-    title: "Memory / Automation / Apps",
-    helpers: [
-      "reflexMemorySave",
-      "reflexMemoryList",
-      "reflexMemoryDelete",
-      "reflexMemorySearch",
-      "reflexMemoryRecall",
-      "reflexMemoryIndexPath",
-      "reflexMemoryPathStatus",
-      "reflexMemoryForgetPath",
-      "reflexSchedulerList",
-      "reflexSchedulerRunNow",
-      "reflexSchedulerSetPaused",
-      "reflexSchedulerRuns",
-      "reflexSchedulerRunDetail",
-      "reflexAppsList",
-      "reflexAppsInvoke",
-      "reflexAppsListActions",
-      "reflexEventOn",
-      "reflexEventOff",
-      "reflexEventEmit",
-    ],
-  },
-] as const;
 
 function summarizeManifestValues(
   values: string[],
@@ -3084,7 +3005,7 @@ function AppViewer({
 
       {bridgeOpen && (
         <div className="appviewer-bridge-panel" aria-label="Runtime bridge helpers">
-          {APP_BRIDGE_HELPER_GROUPS.map((group) => (
+          {BRIDGE_HELPER_GROUPS.map((group) => (
             <div className="appviewer-bridge-group" key={group.title}>
               <div className="appviewer-bridge-title">{group.title}</div>
               <div className="appviewer-bridge-list">
