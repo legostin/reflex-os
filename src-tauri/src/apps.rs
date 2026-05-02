@@ -940,6 +940,18 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexSystemContext = function() {
     return reflexInvokeRaw('system.context', {});
   };
+  window.reflexSystemOpenUrl = function(urlOrParams) {
+    var params = (typeof urlOrParams === 'string') ? {url: urlOrParams} : (urlOrParams || {});
+    return reflexInvokeRaw('system.openUrl', params);
+  };
+  window.reflexSystemOpenPath = function(pathOrParams) {
+    var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
+    return reflexInvokeRaw('system.openPath', params);
+  };
+  window.reflexSystemRevealPath = function(pathOrParams) {
+    var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
+    return reflexInvokeRaw('system.revealPath', params);
+  };
   window.reflexManifestGet = function() {
     return reflexInvokeRaw('manifest.get', {});
   };

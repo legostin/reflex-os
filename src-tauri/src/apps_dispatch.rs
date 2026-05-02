@@ -21,6 +21,9 @@ pub async fn dispatch_app_method(
     eprintln!("[reflex] dispatch app={app_id} method={method}");
     match method {
         "system.context" => system_context(app, app_id),
+        "system.openUrl" | "system.open_url" => system_open_url(app, &params),
+        "system.openPath" | "system.open_path" => system_open_path(app, app_id, &params),
+        "system.revealPath" | "system.reveal_path" => system_reveal_path(app, app_id, &params),
         "manifest.get" => manifest_get(app, app_id),
         "manifest.update" => manifest_update(app, app_id, params),
         "agent.ask" => {
@@ -729,6 +732,74 @@ fn system_context(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, St
             "scope": "project",
         },
     }))
+}
+
+fn system_open_url(
+    app: &AppHandle,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let url = required_string_param(params, "url", "url")?;
+    let lower = url.to_ascii_lowercase();
+    if !["http://", "https://", "mailto:", "tel:"]
+        .iter()
+        .any(|prefix| lower.starts_with(prefix))
+    {
+        return Err("unsupported url scheme: use http, https, mailto, or tel".into());
+    }
+
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(url.clone(), None::<String>)
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "ok": true, "url": url }))
+}
+
+fn system_open_path(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let path = resolve_system_path(app, app_id, params)?;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_path(path.to_string_lossy().to_string(), None::<String>)
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "ok": true, "path": path.to_string_lossy() }))
+}
+
+fn system_reveal_path(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let path = resolve_system_path(app, app_id, params)?;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .reveal_item_in_dir(&path)
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "ok": true, "path": path.to_string_lossy() }))
+}
+
+fn resolve_system_path(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<PathBuf, String> {
+    let raw = required_string_param(params, "path", "path")?;
+    let path = PathBuf::from(&raw);
+    let path = if path.is_absolute() {
+        path
+    } else {
+        apps::app_dir(app, app_id)
+            .map_err(|e| e.to_string())?
+            .join(path)
+    };
+
+    if !path.exists() {
+        return Err(format!("path not found: {}", path.to_string_lossy()));
+    }
+
+    Ok(path)
 }
 
 fn linked_projects_for_app(

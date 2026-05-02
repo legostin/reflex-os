@@ -17,6 +17,12 @@ const SCHEDULE_STEP_METHOD_BLACKLIST: &[&str] = &[
     "scheduler.run_now",
     "scheduler.setPaused",
     "scheduler.set_paused",
+    "system.openPath",
+    "system.openUrl",
+    "system.open_path",
+    "system.open_url",
+    "system.revealPath",
+    "system.reveal_path",
 ];
 
 tokio::task_local! {
@@ -297,6 +303,12 @@ mod tests {
             "scheduler.run_now",
             "scheduler.setPaused",
             "scheduler.set_paused",
+            "system.openPath",
+            "system.openUrl",
+            "system.open_path",
+            "system.open_url",
+            "system.revealPath",
+            "system.reveal_path",
         ] {
             assert!(
                 SCHEDULE_STEP_METHOD_BLACKLIST.contains(&method),

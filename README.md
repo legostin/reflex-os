@@ -47,6 +47,9 @@ The injected runtime overlay provides:
 
 - `window.reflexInvoke(method, params)`
 - `window.reflexSystemContext()`
+- `window.reflexSystemOpenUrl(urlOrParams)`
+- `window.reflexSystemOpenPath(pathOrParams)`
+- `window.reflexSystemRevealPath(pathOrParams)`
 - `window.reflexManifestGet()`
 - `window.reflexManifestUpdate(patch)`
 - `window.reflexCapabilities()`
@@ -109,6 +112,12 @@ Core methods:
 
 - `system.context()` -> app id/root, manifest, app project summary, linked
   project summaries, and memory defaults.
+- `system.openUrl({ url })` -> open an `http`, `https`, `mailto`, or `tel`
+  URL in the system default app.
+- `system.openPath({ path })` -> open an existing local file/folder; relative
+  paths resolve from the app folder.
+- `system.revealPath({ path })` -> reveal an existing local file/folder in
+  Finder; relative paths resolve from the app folder.
 - `manifest.get()` -> current `manifest.json`.
 - `manifest.update({ patch })` -> merge-update this app's manifest; useful for
   adding `actions`, `widgets`, `schedules`, permissions, or network hosts.
@@ -195,10 +204,10 @@ Apps can expose:
 - `widgets`: compact pages shown on a linked project's dashboard.
 
 Workflow steps call normal bridge methods and can pass previous results through
-`{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*` and
-`apps.open` are not valid inside schedules. `scheduler.runNow` and
-`scheduler.setPaused` are also blocked inside schedule steps to prevent
-unattended recursive runs.
+`{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,
+`system.openUrl`, `system.openPath`, `system.revealPath`, and `apps.open` are
+not valid inside schedules. `scheduler.runNow` and `scheduler.setPaused` are
+also blocked inside schedule steps to prevent unattended recursive runs.
 
 ## Development
 

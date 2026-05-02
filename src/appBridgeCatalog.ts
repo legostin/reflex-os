@@ -1,7 +1,14 @@
 export const BRIDGE_API_GROUPS = [
   {
     title: "Система и manifest",
-    methods: ["system.context", "manifest.get", "manifest.update"],
+    methods: [
+      "system.context",
+      "system.openUrl",
+      "system.openPath",
+      "system.revealPath",
+      "manifest.get",
+      "manifest.update",
+    ],
   },
   {
     title: "Агентный runtime",
@@ -101,6 +108,9 @@ export const BRIDGE_HELPER_GROUPS = [
     helpers: [
       "reflexInvoke",
       "reflexSystemContext",
+      "reflexSystemOpenUrl",
+      "reflexSystemOpenPath",
+      "reflexSystemRevealPath",
       "reflexManifestGet",
       "reflexManifestUpdate",
       "reflexCapabilities",
