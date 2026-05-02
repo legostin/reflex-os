@@ -67,6 +67,7 @@ The injected runtime overlay provides:
 - `window.reflexMemoryPathStatus(pathOrParams)`
 - `window.reflexMemoryForgetPath(pathOrParams)`
 - `window.reflexAppsInvoke(appId, actionId, params)`
+- `window.reflexAppsListActions(appIdOrParams, includeSteps?)`
 - `window.reflexEventOn(topic, handler)`
 - `window.reflexEventOff(topic)`
 - `window.reflexEventEmit(topic, payload)`

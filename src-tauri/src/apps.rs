@@ -787,6 +787,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexAppsInvoke = function(appId, actionId, params) {
     return reflexInvokeRaw('apps.invoke', {app_id: appId, action_id: actionId, params: params||{}});
   };
+  window.reflexAppsListActions = function(appIdOrParams, includeSteps) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams, include_steps: !!includeSteps} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.list_actions', params);
+  };
   window.reflexInvoke = reflexInvokeRaw;
   window.reflexSystemContext = function() {
     return reflexInvokeRaw('system.context', {});
