@@ -3771,7 +3771,8 @@ function ThreadCard({ thread }: { thread: Thread }) {
       : `exit ${thread.exit_code ?? "?"}`
     : "running";
 
-  const followupDisabled = submitting || !thread.done;
+  const running = !thread.done;
+  const followupDisabled = submitting;
 
   async function sendFollowup() {
     const text = followup.trim();
@@ -3779,6 +3780,13 @@ function ThreadCard({ thread }: { thread: Thread }) {
     setError(null);
     setSubmitting(true);
     try {
+      if (running) {
+        try {
+          await invoke("stop_thread", { threadId: thread.id });
+        } catch (e) {
+          console.warn("[reflex] stop before send failed", e);
+        }
+      }
       const confirmsPlan = showPlanBanner && isPlanApprovalText(text);
       const args: Record<string, unknown> = {
         projectId: thread.project_id,
@@ -3893,46 +3901,51 @@ function ThreadCard({ thread }: { thread: Thread }) {
         </div>
       )}
       <div className="chat-followup">
-        {thread.done ? (
-          <>
-            <input
-              className="chat-followup-input"
-              type="text"
-              placeholder={
-                showPlanBanner
-                  ? "Поправь план или напиши `go`…"
-                  : "Продолжить тред…"
-              }
-              value={followup}
-              onChange={(e) => setFollowup(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void sendFollowup();
-                }
-              }}
-              disabled={followupDisabled}
-            />
-            <button
-              className="chat-followup-button"
-              onClick={() => void sendFollowup()}
-              disabled={followupDisabled || !followup.trim()}
-            >
-              ↵
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="chat-followup-running">Codex работает…</span>
-            <button
-              className="chat-followup-button chat-followup-stop"
-              onClick={() => void stopThread()}
-              disabled={stopping}
-            >
-              {stopping ? "…" : "Stop"}
-            </button>
-          </>
+        {running && (
+          <span className="chat-followup-running">Codex работает…</span>
         )}
+        <input
+          className="chat-followup-input"
+          type="text"
+          placeholder={
+            running
+              ? "Прервать и отправить новое сообщение…"
+              : showPlanBanner
+                ? "Поправь план или напиши `go`…"
+                : "Продолжить тред…"
+          }
+          value={followup}
+          onChange={(e) => setFollowup(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void sendFollowup();
+            }
+          }}
+          disabled={followupDisabled}
+        />
+        {running && (
+          <button
+            className="chat-followup-button chat-followup-stop"
+            onClick={() => void stopThread()}
+            disabled={stopping || submitting}
+            title="Остановить агента без сообщения"
+          >
+            {stopping ? "…" : "Stop"}
+          </button>
+        )}
+        <button
+          className="chat-followup-button"
+          onClick={() => void sendFollowup()}
+          disabled={followupDisabled || !followup.trim()}
+          title={
+            running
+              ? "Прервать агента и отправить сообщение"
+              : "Отправить"
+          }
+        >
+          {running ? "⤳" : "↵"}
+        </button>
       </div>
       {error && <div className="chat-followup-error">{error}</div>}
     </li>
