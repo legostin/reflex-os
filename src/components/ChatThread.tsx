@@ -2020,35 +2020,35 @@ const TEMPLATES: {
 const SKILL_PRESETS = [
   {
     id: "build-web-apps:frontend-app-builder",
-    label: "Веб-приложения",
+    labelKey: "skill.webApps",
   },
   {
     id: "build-web-apps:react-best-practices",
-    label: "React",
+    labelKey: "React",
   },
   {
     id: "playwright",
-    label: "QA браузера",
+    labelKey: "skill.browserQa",
   },
   {
     id: "openai-docs",
-    label: "Документация OpenAI",
+    labelKey: "skill.openaiDocs",
   },
   {
     id: "github:gh-fix-ci",
-    label: "GitHub CI",
+    labelKey: "GitHub CI",
   },
   {
     id: "build-ios-apps:ios-debugger-agent",
-    label: "iOS отладка",
+    labelKey: "skill.iosDebug",
   },
   {
     id: "build-macos-apps:build-run-debug",
-    label: "macOS отладка",
+    labelKey: "skill.macosDebug",
   },
   {
     id: "game-studio:game-playtest",
-    label: "QA игр",
+    labelKey: "skill.gameQa",
   },
 ] as const;
 
@@ -4130,6 +4130,7 @@ function ProjectScreen({
   onCreateApp: () => void;
   onOpenApp: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const project = projects.find((p) => p.id === projectId);
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [showHidden, setShowHidden] = useState(false);
@@ -4424,7 +4425,7 @@ function ProjectScreen({
       parsed !== null &&
       (typeof parsed !== "object" || Array.isArray(parsed))
     ) {
-      setMcpError("MCP config должен быть JSON-объектом.");
+      setMcpError("MCP config must be a JSON object.");
       return;
     }
     setMcpSaving(true);
@@ -4514,7 +4515,7 @@ function ProjectScreen({
             <button
               className="project-path-link"
               onClick={() => project && openExternal(project.root)}
-              title="Открыть в Finder"
+              title={t("project.openInFinder")}
             >
               {project.root}
             </button>
@@ -4530,7 +4531,7 @@ function ProjectScreen({
               value={descriptionDraft}
               autoFocus
               rows={4}
-              placeholder="Опиши зачем этот проект, что хочешь делать"
+              placeholder={t("project.descriptionEditPlaceholder")}
               onChange={(e) => setDescriptionDraft(e.currentTarget.value)}
               onBlur={() => {
                 void saveDescription(descriptionDraft);
@@ -4556,16 +4557,19 @@ function ProjectScreen({
                 setDescriptionDraft(project.description ?? "");
                 setEditDescription(true);
               }}
-              title="Кликни чтобы редактировать"
+              title={t("project.descriptionEditTitle")}
             >
-              {project.description ?? "Без описания. Кликни чтобы заполнить."}
+              {project.description ?? t("project.descriptionEmpty")}
             </div>
           )}
         </section>
       )}
 
       {project && (
-        <section className="project-context-grid" aria-label="Контекст агента">
+        <section
+          className="project-context-grid"
+          aria-label={t("project.agentContext")}
+        >
           <article className="project-context-item">
             <span className="project-context-label">Sandbox</span>
             <strong>{sandbox}</strong>
@@ -4575,8 +4579,12 @@ function ProjectScreen({
             onClick={openAgentProfileEditor}
             type="button"
           >
-            <span className="project-context-label">Профиль агента</span>
-            <strong>{hasAgentProfile ? "настроен" : "по умолчанию"}</strong>
+            <span className="project-context-label">
+              {t("project.agentProfile")}
+            </span>
+            <strong>
+              {hasAgentProfile ? t("project.configured") : t("project.default")}
+            </strong>
             {projectSkills.length > 0 && (
               <div className="project-context-chips">
                 {projectSkills.slice(0, 4).map((skill) => (
@@ -4608,31 +4616,49 @@ function ProjectScreen({
           </button>
           <article className="project-context-item">
             <span className="project-context-label">Memory / RAG</span>
-            <strong>{ragDocs} док.</strong>
+            <strong>{t("project.docsCount", { count: ragDocs })}</strong>
             <div className="project-context-chips">
-              {ragChunks != null && <span>{ragChunks} чанков</span>}
-              {ragSources != null && <span>{ragSources} источников</span>}
-              {ragStale > 0 && <span>{ragStale} устар.</span>}
-              {ragMissing > 0 && <span>{ragMissing} нет</span>}
+              {ragChunks != null && (
+                <span>{t("project.chunksCount", { count: ragChunks })}</span>
+              )}
+              {ragSources != null && (
+                <span>{t("project.sourcesCount", { count: ragSources })}</span>
+              )}
+              {ragStale > 0 && (
+                <span>{t("project.staleCount", { count: ragStale })}</span>
+              )}
+              {ragMissing > 0 && (
+                <span>{t("project.missingCount", { count: ragMissing })}</span>
+              )}
               {!projectMemoryStats && fallbackFileIndexStats.ignored > 0 && (
-                <span>{fallbackFileIndexStats.ignored} игнор.</span>
+                <span>
+                  {t("project.ignoredCount", {
+                    count: fallbackFileIndexStats.ignored,
+                  })}
+                </span>
               )}
               {ragDocs === 0 &&
                 ragStale === 0 &&
                 ragMissing === 0 &&
-                !fallbackFileIndexStats.ignored && <span>нет индекса</span>}
+                !fallbackFileIndexStats.ignored && (
+                  <span>{t("project.noIndex")}</span>
+                )}
             </div>
           </article>
           <article className="project-context-item">
-            <span className="project-context-label">Утилиты</span>
+            <span className="project-context-label">
+              {t("project.utilities")}
+            </span>
             <strong>{linkedAppIds.length}</strong>
           </article>
           <article className="project-context-item">
-            <span className="project-context-label">Топики</span>
+            <span className="project-context-label">
+              {t("project.topics")}
+            </span>
             <strong>{topics.length}</strong>
             {runningCount > 0 && (
               <span className="project-context-note">
-                {runningCount} выполняется
+                {t("project.runningCount", { count: runningCount })}
               </span>
             )}
           </article>
@@ -4656,7 +4682,7 @@ function ProjectScreen({
         if (sources.length === 0 && linkedAppIds.length === 0) return null;
         return (
           <section className="project-dashboard">
-            <h2 className="section-title">Дашборд</h2>
+            <h2 className="section-title">{t("project.dashboard")}</h2>
             <WidgetGrid sources={sources} onOpenApp={onOpenApp} />
           </section>
         );
@@ -4665,16 +4691,16 @@ function ProjectScreen({
       {project && (
         <section className="project-linked">
           <div className="section-head">
-            <h2 className="section-title">Привязанные утилиты</h2>
+            <h2 className="section-title">{t("project.linkedUtilities")}</h2>
             <div className="section-actions">
               <button className="apps-create-btn" onClick={onCreateApp}>
-                + Создать утилиту
+                {t("project.createUtility")}
               </button>
               <button
                 className="apps-create-btn"
                 onClick={() => setShowLinkPicker(true)}
               >
-                + Привязать
+                {t("project.linkUtility")}
               </button>
             </div>
           </div>
@@ -4685,7 +4711,7 @@ function ProjectScreen({
             if (linked.length === 0) {
               return (
                 <div className="project-linked-empty">
-                  Утилит пока нет. Привяжи существующую или создай новую.
+                  {t("project.linkedEmpty")}
                 </div>
               );
             }
@@ -4709,13 +4735,13 @@ function ProjectScreen({
                         className="apps-trash-action"
                         onClick={() => onOpenApp(a.id)}
                       >
-                        Открыть
+                        {t("project.open")}
                       </button>
                       <button
                         className="apps-trash-action"
                         onClick={() => void unlinkApp(a.id)}
                       >
-                        Отвязать
+                        {t("project.unlink")}
                       </button>
                     </div>
                   </li>
@@ -4735,9 +4761,9 @@ function ProjectScreen({
               value={sandbox}
               onChange={(e) => void setSandbox(e.currentTarget.value)}
             >
-              <option value="read-only">read-only (безопасно)</option>
+              <option value="read-only">{t("project.readOnlySafe")}</option>
               <option value="workspace-write">
-                workspace-write (по умолчанию)
+                {t("project.workspaceWriteDefault")}
               </option>
               <option value="danger-full-access">
                 danger-full-access ⚠️
@@ -4745,18 +4771,18 @@ function ProjectScreen({
             </select>
             {sandbox === "danger-full-access" && (
               <span className="setting-hint setting-hint-warn">
-                Агент работает без macOS Seatbelt — полные права доступа.
+                {t("project.dangerFullAccessHint")}
               </span>
             )}
           </div>
           <div className="setting-row setting-row-block">
-            <label className="setting-label">Профиль агента</label>
+            <label className="setting-label">{t("project.agentProfile")}</label>
             <div className="setting-mcp-summary">
               {hasAgentProfile ? (
                 <>
                   {project?.agent_instructions?.trim() && (
                     <span className="setting-chip setting-chip-muted">
-                      инструкции
+                      {t("project.instructionsChip")}
                     </span>
                   )}
                   {projectSkills.map((skill) => (
@@ -4766,19 +4792,21 @@ function ProjectScreen({
                   ))}
                 </>
               ) : (
-                <span className="setting-empty">поведение Codex по умолчанию</span>
+                <span className="setting-empty">
+                  {t("project.codexDefaultBehavior")}
+                </span>
               )}
               <button
                 className="setting-action"
                 onClick={openAgentProfileEditor}
               >
-                Править профиль
+                {t("project.editProfile")}
               </button>
             </div>
             {profileEditing && (
               <div className="setting-editor">
                 <label className="setting-editor-label">
-                  Инструкции проекта, добавляемые в каждый топик
+                  {t("project.instructionsLabel")}
                 </label>
                 <textarea
                   className="setting-textarea"
@@ -4788,10 +4816,10 @@ function ProjectScreen({
                     setProfileInstructionsDraft(e.currentTarget.value)
                   }
                   rows={6}
-                  placeholder="Например: предпочитай небольшие точечные изменения. Используй browser MCP для визуальной проверки. Отвечай по-русски, кроме имён кода и API."
+                  placeholder={t("project.instructionsPlaceholder")}
                 />
                 <label className="setting-editor-label">
-                  Preferred skills, по одному в строке или через запятую
+                  {t("project.preferredSkillsLabel")}
                 </label>
                 <textarea
                   className="setting-textarea setting-textarea-compact"
@@ -4820,7 +4848,7 @@ function ProjectScreen({
                         title={skill.id}
                       >
                         {selected ? "✓ " : "+ "}
-                        {skill.label}
+                        {t(skill.labelKey)}
                       </button>
                     );
                   })}
@@ -4834,14 +4862,14 @@ function ProjectScreen({
                     onClick={() => setProfileEditing(false)}
                     disabled={profileSaving}
                   >
-                    Отмена
+                    {t("apps.cancel")}
                   </button>
                   <button
                     className="setting-action setting-action-primary"
                     onClick={() => void saveAgentProfile()}
                     disabled={profileSaving}
                   >
-                    {profileSaving ? "Сохранение…" : "Сохранить"}
+                    {profileSaving ? t("project.saving") : t("appViewer.save")}
                   </button>
                 </div>
               </div>
@@ -4855,12 +4883,13 @@ function ProjectScreen({
                 checked={browserOn}
                 onChange={(e) => void setBrowser(e.currentTarget.checked)}
               />
-              {browserOn ? "включен" : "выключен"}
+              {browserOn
+                ? t("project.browserEnabled")
+                : t("project.browserDisabled")}
             </label>
             {browserOn && (
               <span className="setting-hint">
-                Встроенный Reflex browser bridge подключится при следующем
-                старте или resume треда.
+                {t("project.browserHint")}
               </span>
             )}
           </div>
@@ -4868,7 +4897,7 @@ function ProjectScreen({
             <label className="setting-label">MCP servers</label>
             <div className="setting-mcp-summary">
               {mcpServerNames.length === 0 ? (
-                <span className="setting-empty">нет</span>
+                <span className="setting-empty">{t("project.none")}</span>
               ) : (
                 mcpServerNames.map((name) => (
                   <span key={name} className="setting-chip">
@@ -4877,7 +4906,7 @@ function ProjectScreen({
                 ))
               )}
               <button className="setting-action" onClick={openMcpEditor}>
-                Править JSON
+                {t("project.editJson")}
               </button>
             </div>
             {mcpEditing && (
@@ -4896,14 +4925,14 @@ function ProjectScreen({
                     onClick={() => setMcpEditing(false)}
                     disabled={mcpSaving}
                   >
-                    Отмена
+                    {t("apps.cancel")}
                   </button>
                   <button
                     className="setting-action setting-action-primary"
                     onClick={() => void saveMcpServers()}
                     disabled={mcpSaving}
                   >
-                    {mcpSaving ? "Сохранение…" : "Сохранить"}
+                    {mcpSaving ? t("project.saving") : t("appViewer.save")}
                   </button>
                 </div>
               </div>
@@ -4915,10 +4944,10 @@ function ProjectScreen({
       <section>
         <div className="section-head">
           <h2 className="section-title">
-            Топики
+            {t("project.topics")}
             {runningCount > 0 && (
               <span className="section-badge running">
-                {runningCount} выполняется
+                {t("project.runningCount", { count: runningCount })}
               </span>
             )}
           </h2>
@@ -4926,38 +4955,37 @@ function ProjectScreen({
             className="apps-create-btn"
             onClick={() => setShowNewTopic(true)}
           >
-            + Новый топик
+            {t("project.newTopic")}
           </button>
         </div>
         {topics.length === 0 ? (
           <div className="section-empty">
-            Топиков пока нет. Нажми <b>+ Новый топик</b> или открой Quick-панель (
-            <kbd>⌘⇧Space</kbd>) поверх этой папки.
+            {t("project.noTopics")}
           </div>
         ) : (
           <ul className="topic-list">
-            {topics.map((t) => (
-              <li key={t.id}>
+            {topics.map((topic) => (
+              <li key={topic.id}>
                 <button
                   className="topic-row topic-row-with-status"
-                  onClick={() => onSelectTopic(t.id)}
+                  onClick={() => onSelectTopic(topic.id)}
                 >
                   <StatusDot
-                    done={t.done}
-                    ok={t.exit_code === 0}
+                    done={topic.done}
+                    ok={topic.exit_code === 0}
                   />
                   <div className="topic-row-body">
                     <span className="topic-row-prompt">
-                      {t.title ?? t.prompt}
+                      {topic.title ?? topic.prompt}
                     </span>
                     <span className="topic-row-meta">
-                      {t.done
-                        ? t.exit_code === 0
-                          ? "готово"
-                          : `exit ${t.exit_code ?? "?"}`
-                        : "выполняется"}
+                      {topic.done
+                        ? topic.exit_code === 0
+                          ? t("project.done")
+                          : `exit ${topic.exit_code ?? "?"}`
+                        : t("project.running")}
                       {" · "}
-                      {new Date(t.created_at_ms).toLocaleString()}
+                      {new Date(topic.created_at_ms).toLocaleString()}
                     </span>
                   </div>
                 </button>
@@ -4969,18 +4997,18 @@ function ProjectScreen({
 
       <section>
         <div className="section-head">
-          <h2 className="section-title">Файлы</h2>
+          <h2 className="section-title">{t("project.files")}</h2>
           <label className="section-toggle">
             <input
               type="checkbox"
               checked={showHidden}
               onChange={(e) => setShowHidden(e.currentTarget.checked)}
             />
-            показать скрытые
+            {t("project.showHidden")}
           </label>
         </div>
         {visibleEntries.length === 0 ? (
-          <div className="section-empty">Папка пуста.</div>
+          <div className="section-empty">{t("project.emptyFolder")}</div>
         ) : (
           <ul className="file-list">
             {visibleEntries.map((e) => {
@@ -5001,12 +5029,18 @@ function ProjectScreen({
               const dotTitle = !s
                 ? ""
                 : s.indexed && s.stale
-                  ? "В RAG, но изменён после индексации — переиндексируй"
+                  ? t("project.ragStale")
                   : s.indexed
-                    ? `В RAG${s.indexed_under ? ` (${s.indexed_under} док.)` : ""}`
+                    ? `${t("project.inRag")}${
+                        s.indexed_under
+                          ? ` (${t("project.docsCount", {
+                              count: s.indexed_under,
+                            })})`
+                          : ""
+                      }`
                     : ignored
-                      ? "Не индексируется (бинарный / большой / неподдерживаемый)"
-                      : "Можно проиндексировать";
+                      ? t("project.notIndexed")
+                      : t("project.canIndex");
               return (
                 <li key={e.path}>
                   <button
@@ -5018,7 +5052,7 @@ function ProjectScreen({
                         setDrawerTarget(e);
                       }
                     }}
-                    title={`${e.path}\n${dotTitle}\n(Alt+клик — открыть в Finder)`}
+                    title={`${e.path}\n${dotTitle}\n(${t("project.altOpenFinder")})`}
                   >
                     <span
                       className="file-status-dot"
@@ -5051,11 +5085,8 @@ function ProjectScreen({
           onClick={() => setShowLinkPicker(false)}
         >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="modal-title">Привязать утилиту</h2>
-            <p className="modal-hint">
-              Утилиты, не привязанные к этому проекту. Клик по строке —
-              привязать.
-            </p>
+            <h2 className="modal-title">{t("project.linkUtilityTitle")}</h2>
+            <p className="modal-hint">{t("project.linkUtilityHint")}</p>
             {(() => {
               const linkedIds = new Set(project.apps ?? []);
               const available = installedApps.filter(
@@ -5064,7 +5095,7 @@ function ProjectScreen({
               if (available.length === 0) {
                 return (
                   <div className="project-linked-empty">
-                    Все доступные утилиты уже привязаны.
+                    {t("project.allUtilitiesLinked")}
                   </div>
                 );
               }
@@ -5083,7 +5114,9 @@ function ProjectScreen({
                         <div className="project-linked-name">
                           {a.name}
                           {a.ready === false && (
-                            <span className="apps-card-badge">создаётся…</span>
+                            <span className="apps-card-badge">
+                              {t("apps.creatingBadge")}
+                            </span>
                           )}
                         </div>
                         {a.description && (
@@ -5102,7 +5135,7 @@ function ProjectScreen({
                 className="modal-btn"
                 onClick={() => setShowLinkPicker(false)}
               >
-                Отмена
+                {t("apps.cancel")}
               </button>
             </div>
           </div>
@@ -5115,13 +5148,11 @@ function ProjectScreen({
           onClick={() => !creatingTopic && setShowNewTopic(false)}
         >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="modal-title">Новый топик в проекте</h2>
-            <p className="modal-hint">
-              Опиши задачу. Codex стартует тред в текущей папке проекта.
-            </p>
+            <h2 className="modal-title">{t("project.newTopicTitle")}</h2>
+            <p className="modal-hint">{t("project.newTopicHint")}</p>
             <textarea
               className="modal-input"
-              placeholder="Например: добавь поддержку dark mode в config; проверь lints; перепиши парсер на nom…"
+              placeholder={t("project.newTopicPlaceholder")}
               value={newTopicPrompt}
               onChange={(e) => setNewTopicPrompt(e.currentTarget.value)}
               onKeyDown={(e) => {
@@ -5140,7 +5171,7 @@ function ProjectScreen({
                 checked={newTopicPlanMode}
                 onChange={(e) => setNewTopicPlanMode(e.currentTarget.checked)}
               />
-              <span>📋 Сначала план (codex составит план, ты подтвердишь)</span>
+              <span>📋 {t("project.planFirst")}</span>
             </label>
             <div className="modal-actions">
               <button
@@ -5148,14 +5179,16 @@ function ProjectScreen({
                 disabled={creatingTopic}
                 onClick={() => setShowNewTopic(false)}
               >
-                Отмена
+                {t("apps.cancel")}
               </button>
               <button
                 className="modal-btn modal-btn-primary"
                 disabled={creatingTopic || !newTopicPrompt.trim()}
                 onClick={() => void submitNewTopic()}
               >
-                {creatingTopic ? "Запускаю…" : "Создать (⌘↵)"}
+                {creatingTopic
+                  ? t("project.starting")
+                  : t("project.createShortcut")}
               </button>
             </div>
           </div>
