@@ -2116,6 +2116,82 @@
   padding: 2px 5px;
 }
 
+.appviewer-action-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(106, 208, 132, 0.18);
+  background: rgba(106, 208, 132, 0.045);
+}
+
+.appviewer-action-strip-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  color: rgba(164, 230, 182, 0.7);
+}
+
+.appviewer-action-buttons {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.appviewer-action-run {
+  min-height: 24px;
+  max-width: 220px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid rgba(106, 208, 132, 0.28);
+  background: rgba(106, 208, 132, 0.1);
+  color: rgba(210, 246, 220, 0.9);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.appviewer-action-run:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.appviewer-action-public {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(245, 245, 247, 0.62);
+  font-size: 9px;
+  padding: 1px 4px;
+}
+
+.appviewer-action-result {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: rgba(245, 245, 247, 0.62);
+  font-size: 11px;
+}
+
+.appviewer-action-result code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(245, 245, 247, 0.82);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
 .apps-header-row {
   display: flex;
   justify-content: space-between;

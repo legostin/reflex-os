@@ -428,6 +428,16 @@ function summarizeManifestValues(
   return `${values.length} ${overflowLabel}`;
 }
 
+function previewJsonValue(value: unknown): string {
+  if (value == null) return "null";
+  if (typeof value === "string") return value.slice(0, 240);
+  try {
+    return JSON.stringify(value, null, 2).slice(0, 240);
+  } catch {
+    return String(value).slice(0, 240);
+  }
+}
+
 function buildAppCapabilityFacts(
   manifest: AppManifest | null,
   serverPort: number | null,
@@ -2389,6 +2399,12 @@ function AppViewer({
   const [showDiff, setShowDiff] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [bridgeOpen, setBridgeOpen] = useState(false);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [actionResult, setActionResult] = useState<{
+    name: string;
+    runId: string | null;
+    preview: string;
+  } | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const [pick, setPick] = useState<InspectorPick | null>(null);
   const [pickInstruction, setPickInstruction] = useState("");
@@ -2669,6 +2685,33 @@ function AppViewer({
       setServerState("failed");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function runManifestAction(action: AppAction) {
+    if (actionBusy) return;
+    setActionBusy(action.id);
+    setActionResult(null);
+    setError(null);
+    try {
+      const result = await invoke<any>("app_invoke", {
+        appId,
+        method: "apps.invoke",
+        params: {
+          app_id: appId,
+          action_id: action.id,
+          params: {},
+        },
+      });
+      setActionResult({
+        name: action.name || action.id,
+        runId: result?.run_id ?? result?.runId ?? null,
+        preview: previewJsonValue(result?.result ?? result),
+      });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setActionBusy(null);
     }
   }
 
@@ -2954,6 +2997,34 @@ function AppViewer({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {(manifest?.actions?.length ?? 0) > 0 && (
+        <div className="appviewer-action-strip" aria-label="Manifest actions">
+          <div className="appviewer-action-strip-title">Actions</div>
+          <div className="appviewer-action-buttons">
+            {(manifest?.actions ?? []).map((action) => (
+              <button
+                key={action.id}
+                className="appviewer-action-run"
+                onClick={() => void runManifestAction(action)}
+                disabled={actionBusy !== null}
+                title={action.description ?? action.id}
+              >
+                {actionBusy === action.id ? "…" : action.name || action.id}
+                {action.public && (
+                  <span className="appviewer-action-public">public</span>
+                )}
+              </button>
+            ))}
+          </div>
+          {actionResult && (
+            <div className="appviewer-action-result" title={actionResult.runId ?? undefined}>
+              <span>{actionResult.name}</span>
+              <code>{actionResult.preview}</code>
+            </div>
+          )}
         </div>
       )}
 
