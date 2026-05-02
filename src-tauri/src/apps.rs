@@ -805,6 +805,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof promptOrParams === 'string') ? {prompt: promptOrParams} : (promptOrParams || {});
     return reflexInvokeRaw('agent.ask', params);
   };
+  window.reflexAgentStartTopic = function(promptOrParams, projectId) {
+    var params = (typeof promptOrParams === 'string') ? {prompt: promptOrParams, projectId: projectId || null} : (promptOrParams || {});
+    return reflexInvokeRaw('agent.startTopic', params);
+  };
   window.reflexAgentTask = function(promptOrParams) {
     var params = (typeof promptOrParams === 'string') ? {prompt: promptOrParams} : (promptOrParams || {});
     return reflexInvokeRaw('agent.task', params);

@@ -138,7 +138,8 @@
   line-height: 1.45;
 }
 
-.settings-api-grid {
+.settings-api-grid,
+.settings-helper-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 10px;

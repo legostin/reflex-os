@@ -93,7 +93,10 @@ const API_GROUPS = [
       "browser.open",
       "browser.navigate",
       "browser.readText",
+      "browser.readOutline",
       "browser.screenshot",
+      "browser.clickText",
+      "browser.clickSelector",
       "browser.fill",
     ],
   },
@@ -141,6 +144,81 @@ const API_GROUPS = [
       "events.unsubscribe",
       "apps.invoke",
       "apps.list_actions",
+    ],
+  },
+] as const;
+
+const HELPER_GROUPS = [
+  {
+    title: "Core",
+    helpers: [
+      "reflexInvoke",
+      "reflexSystemContext",
+      "reflexManifestGet",
+      "reflexManifestUpdate",
+    ],
+  },
+  {
+    title: "Agent",
+    helpers: [
+      "reflexAgentAsk",
+      "reflexAgentStartTopic",
+      "reflexAgentTask",
+      "reflexAgentStream",
+      "reflexAgentStreamAbort",
+    ],
+  },
+  {
+    title: "Storage / IO",
+    helpers: [
+      "reflexStorageGet",
+      "reflexStorageSet",
+      "reflexFsRead",
+      "reflexFsWrite",
+      "reflexNetFetch",
+      "reflexNotifyShow",
+      "reflexDialogOpenDirectory",
+      "reflexDialogOpenFile",
+      "reflexDialogSaveFile",
+    ],
+  },
+  {
+    title: "Projects / Browser",
+    helpers: [
+      "reflexProjectsList",
+      "reflexTopicsList",
+      "reflexBrowserInit",
+      "reflexBrowserTabs",
+      "reflexBrowserOpen",
+      "reflexBrowserNavigate",
+      "reflexBrowserReadText",
+      "reflexBrowserReadOutline",
+      "reflexBrowserScreenshot",
+      "reflexBrowserClickText",
+      "reflexBrowserClickSelector",
+      "reflexBrowserFill",
+    ],
+  },
+  {
+    title: "Memory / Automation / Apps",
+    helpers: [
+      "reflexMemorySave",
+      "reflexMemoryList",
+      "reflexMemoryDelete",
+      "reflexMemorySearch",
+      "reflexMemoryRecall",
+      "reflexMemoryIndexPath",
+      "reflexMemoryPathStatus",
+      "reflexMemoryForgetPath",
+      "reflexSchedulerList",
+      "reflexSchedulerRunNow",
+      "reflexSchedulerSetPaused",
+      "reflexSchedulerRuns",
+      "reflexAppsInvoke",
+      "reflexAppsListActions",
+      "reflexEventOn",
+      "reflexEventOff",
+      "reflexEventEmit",
     ],
   },
 ] as const;
@@ -232,6 +310,30 @@ function CapabilitiesPane() {
             </article>
           ))}
         </div>
+      </section>
+
+      <section className="settings-section settings-section-open">
+        <div className="settings-section-title-row">
+          <h2>Runtime overlay helpers</h2>
+          <span className="settings-section-meta">window.reflex*</span>
+        </div>
+        <div className="settings-helper-grid">
+          {HELPER_GROUPS.map((group) => (
+            <article className="settings-api-group" key={group.title}>
+              <h3>{group.title}</h3>
+              <div className="settings-method-list">
+                {group.helpers.map((helper) => (
+                  <code key={helper}>{helper}</code>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+        <p className="settings-hint">
+          Generated apps should prefer these helpers over manual postMessage;
+          permissions and manifest.network rules still apply to the underlying
+          bridge method.
+        </p>
       </section>
 
       <section className="settings-section">

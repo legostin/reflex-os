@@ -49,6 +49,7 @@ The injected runtime overlay provides:
 - `window.reflexManifestGet()`
 - `window.reflexManifestUpdate(patch)`
 - `window.reflexAgentAsk(promptOrParams)`
+- `window.reflexAgentStartTopic(promptOrParams, projectId?)`
 - `window.reflexAgentTask(promptOrParams)`
 - `window.reflexAgentStream(promptOrParams)`
 - `window.reflexAgentStreamAbort(threadIdOrParams)`
