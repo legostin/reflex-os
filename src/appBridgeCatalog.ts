@@ -255,6 +255,12 @@ export const BRIDGE_RECIPE_CARDS = [
     example: 'await reflexMemoryUpdate("facts/user.md", { body, tags: ["profile"] });',
   },
   {
+    title: "Capabilities",
+    body: "Добавляй permissions и network hosts точечно, без ручного manifest merge.",
+    calls: ["permissions.ensure", "network.allowHost", "reflexCapabilities"],
+    example: 'await reflexNetworkAllowHost("api.example.com");',
+  },
+  {
     title: "App как сервис",
     body: "Публикуй actions и dashboard widgets, затем вызывай их из других apps или schedules.",
     calls: ["actions.upsert", "widgets.upsert", "apps.invoke"],

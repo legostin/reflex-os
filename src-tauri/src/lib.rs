@@ -917,7 +917,7 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
         ),
         "api-client" => Some(
             "Шаблон API-CLIENT:\n\
-- Используй `window.reflexNetFetch(...)` к указанному API. ОБЯЗАТЕЛЬНО добавь в manifest:\n  \"network\": { \"allowed_hosts\": [\"<host>\"] }\n\
+- Используй `window.reflexNetFetch(...)` к указанному API. Перед первым запросом вызови `await window.reflexNetworkAllowHost(\"<host>\")`, чтобы host попал в manifest.network.allowed_hosts без ручного merge.\n\
 - Кнопка для запроса, отображение результата (JSON pretty-print).\n\
 - Если нужны секреты — спроси у пользователя через input-field, храни через `window.reflexStorageSet`.\n",
         ),
