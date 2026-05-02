@@ -770,14 +770,12 @@ fn project_agent_profile_preface(project: &project::Project) -> String {
         .and_then(|v| v.as_object())
         .map(|obj| obj.keys().cloned().collect())
         .unwrap_or_default();
-
-    if description.is_empty()
-        && instructions.is_empty()
-        && skills.is_empty()
-        && mcp_names.is_empty()
-    {
-        return String::new();
-    }
+    let linked_apps: Vec<&str> = project
+        .apps
+        .iter()
+        .map(|id| id.trim())
+        .filter(|id| !id.is_empty())
+        .collect();
 
     let mut buf = String::from("## Reflex project profile\n");
     buf.push_str(&format!("- Project: {}\n", project.name));
@@ -794,6 +792,20 @@ fn project_agent_profile_preface(project: &project::Project) -> String {
         buf.push_str(&mcp_names.join(", "));
         buf.push('\n');
     }
+    if !linked_apps.is_empty() {
+        buf.push_str("- Linked Reflex apps: ");
+        buf.push_str(&linked_apps.join(", "));
+        buf.push('\n');
+    }
+    buf.push_str(
+        "\n### Reflex operating context\n\
+- Treat this as a project-scoped macOS agent workspace: topics, generated apps, widgets, MCP servers, skills, memory/RAG, and automations can work together.\n\
+- If preferred skills are listed and one matches the task, explicitly use that skill/workflow before coding.\n\
+- If MCP servers are listed, consider them available for this project and use the relevant one instead of re-implementing that capability.\n\
+- Prefer project memory/RAG for durable facts and indexed files; save durable decisions when they should affect future work.\n\
+- For repeatable background work, prefer generated Reflex apps with manifest.schedules/actions/widgets over ad-hoc scripts.\n\
+- For reusable project tools, prefer generated Reflex apps with a clear bridge API surface and documented permissions.\n",
+    );
     if !instructions.is_empty() {
         buf.push_str("\n### Project instructions\n");
         buf.push_str(instructions);
