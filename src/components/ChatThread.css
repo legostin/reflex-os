@@ -1276,6 +1276,14 @@
   gap: 6px;
 }
 
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .appviewer-stuck {
   flex: 1;
   display: flex;
@@ -2433,6 +2441,20 @@
   margin: 0;
   font-size: 13px;
   color: rgba(245, 245, 247, 0.55);
+}
+
+.modal-context-chip {
+  align-self: flex-start;
+  max-width: 100%;
+  border: 1px solid rgba(74, 140, 255, 0.28);
+  background: rgba(74, 140, 255, 0.12);
+  color: #cfd8ff;
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .modal-input {

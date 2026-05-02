@@ -13,7 +13,8 @@ bridge, long-term memory, file indexing, widgets, and app-driven automations.
 - **Browser**: project-scoped Playwright sidecar with an MCP bridge and a
   "start chat from tabs" flow.
 - **Apps**: generated Reflex utilities served either as static HTML or local
-  server runtimes. Apps communicate with Reflex through `window.postMessage`.
+  server runtimes. Apps communicate with Reflex through `window.postMessage`
+  and can be created from a Project so widgets/actions link back automatically.
 - **Memory**: global, project, and topic notes plus vector search over notes,
   files, and selected images.
 - **Automations**: manifest-defined schedules and actions executed through the

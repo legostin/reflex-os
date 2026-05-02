@@ -586,12 +586,25 @@ async fn create_app(
     app: AppHandle,
     description: String,
     template: Option<String>,
+    project_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let trimmed = description.trim();
     if trimmed.is_empty() {
         return Err("empty description".into());
     }
     let template = template.unwrap_or_else(|| "blank".to_string());
+    let target_project = match project_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(id) => Some(
+            project::get_by_id(&app, id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("project not found: {id}"))?,
+        ),
+        None => None,
+    };
 
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -625,11 +638,14 @@ async fn create_app(
         widgets: Vec::new(),
     };
     apps::write_manifest(&app, &app_id, &manifest).map_err(|e| e.to_string())?;
+    if let Some(target) = &target_project {
+        link_app_to_project_inner(&app, &target.id, &app_id)?;
+    }
     let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
 
     let thread_id = format!("t_{now_ms}");
     let project_root = dir.clone();
-    let prompt = build_app_creation_prompt(trimmed, &template);
+    let prompt = build_app_creation_prompt(trimmed, &template, target_project.as_ref());
 
     let meta = storage::ThreadMeta {
         id: thread_id.clone(),
@@ -925,7 +941,11 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
     }
 }
 
-fn build_app_creation_prompt(description: &str, template: &str) -> String {
+fn build_app_creation_prompt(
+    description: &str,
+    template: &str,
+    target_project: Option<&project::Project>,
+) -> String {
     let mut p = String::new();
     p.push_str("Ты создаёшь Reflex app в текущей рабочей папке.\n\n");
     p.push_str("ВАЖНО — КОНТЕКСТ:\n");
@@ -953,6 +973,39 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("Ответ:   window.addEventListener('message', e => {\n");
     p.push_str("           if (e.data?.source==='reflex' && e.data.type==='response' && e.data.id===id) ...\n");
     p.push_str("         });\n\n");
+    if let Some(project) = target_project {
+        p.push_str("ЦЕЛЕВОЙ ПРОЕКТ:\n");
+        p.push_str(&format!(
+            "- Эта app будет автоматически привязана к project `{}` ({}) по пути `{}`.\n",
+            project.name, project.id, project.root
+        ));
+        if let Some(description) = project
+            .description
+            .as_ref()
+            .filter(|s| !s.trim().is_empty())
+        {
+            p.push_str(&format!("- Описание проекта: {}\n", description.trim()));
+        }
+        if !project.skills.is_empty() {
+            p.push_str(&format!(
+                "- Preferred skills проекта: {}.\n",
+                project.skills.join(", ")
+            ));
+        }
+        let mcp_names: Vec<String> = project
+            .mcp_servers
+            .as_ref()
+            .and_then(|v| v.as_object())
+            .map(|servers| servers.keys().cloned().collect())
+            .unwrap_or_default();
+        if !mcp_names.is_empty() {
+            p.push_str(&format!(
+                "- MCP servers проекта доступны агентным задачам при cwd этого проекта: {}.\n",
+                mcp_names.join(", ")
+            ));
+        }
+        p.push_str("- Runtime app увидит этот проект в system.context().linked_projects и сможет использовать его как default project memory scope.\n\n");
+    }
     p.push_str("ДОСТУПНЫЕ МЕТОДЫ:\n");
     p.push_str("  bridge.catalog() -> {methods, helpers, permissions, app, notes} — runtime self-discovery bridge API, overlay helpers, permission hints и текущих grants app\n");
     p.push_str("  system.context() -> {app_id, app_root, manifest, app_project, linked_projects, memory_defaults} — контекст текущей утилиты; app_project/linked_projects это summaries со skills и mcp_server_names, без raw MCP config\n");
@@ -1234,21 +1287,31 @@ fn update_project_agent_profile(
     Ok(p)
 }
 
+fn link_app_to_project_inner(
+    app: &AppHandle,
+    project_id: &str,
+    app_id: &str,
+) -> Result<project::Project, String> {
+    apps::read_manifest(app, app_id)
+        .map_err(|e| format!("app not found or unreadable: {app_id}: {e}"))?;
+    let mut p = project::get_by_id(app, project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    if !p.apps.iter().any(|id| id == app_id) {
+        p.apps.push(app_id.to_string());
+    }
+    project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
+    project::register(app, &p).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+
 #[tauri::command]
 fn link_app_to_project(
     app: AppHandle,
     project_id: String,
     app_id: String,
 ) -> Result<project::Project, String> {
-    let mut p = project::get_by_id(&app, &project_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("project not found: {project_id}"))?;
-    if !p.apps.contains(&app_id) {
-        p.apps.push(app_id);
-    }
-    project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
-    project::register(&app, &p).map_err(|e| e.to_string())?;
-    Ok(p)
+    link_app_to_project_inner(&app, &project_id, &app_id)
 }
 
 #[tauri::command]

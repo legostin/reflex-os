@@ -166,6 +166,7 @@ type Route =
       initialTemplate?: string;
       openCreate?: boolean;
       createRequestId?: number;
+      project_id?: string;
     }
   | { kind: "app"; app_id: string }
   | { kind: "memory"; project_id?: string; thread_id?: string }
@@ -1230,6 +1231,15 @@ export default function ChatThread() {
             onCreateTopic={(prompt, planMode) =>
               createNewTopic(r.project_id, prompt, planMode)
             }
+            onCreateApp={() =>
+              navigate({
+                kind: "apps",
+                initialTemplate: "automation",
+                openCreate: true,
+                createRequestId: Date.now(),
+                project_id: r.project_id,
+              })
+            }
             onOpenApp={(id) => navigate({ kind: "app", app_id: id })}
           />
         );
@@ -1248,6 +1258,7 @@ export default function ChatThread() {
             initialTemplate={r.initialTemplate}
             openCreate={r.openCreate}
             createRequestId={r.createRequestId}
+            targetProject={projects.find((p) => p.id === r.project_id)}
             onOpenApp={(id) => navigate({ kind: "app", app_id: id })}
             onOpenTopic={(id) => navigate({ kind: "topic", thread_id: id })}
           />
@@ -1948,12 +1959,14 @@ function AppsScreen({
   initialTemplate,
   openCreate,
   createRequestId,
+  targetProject,
   onOpenApp,
   onOpenTopic,
 }: {
   initialTemplate?: string;
   openCreate?: boolean;
   createRequestId?: number;
+  targetProject?: Project;
   onOpenApp: (id: string) => void;
   onOpenTopic: (id: string) => void;
 }) {
@@ -2101,7 +2114,11 @@ function AppsScreen({
     try {
       const res = await invoke<{ app_id: string; thread_id: string }>(
         "create_app",
-        { description: text, template },
+        {
+          description: text,
+          template,
+          projectId: targetProject?.id ?? null,
+        },
       );
       setShowModal(false);
       setDescription("");
@@ -2270,6 +2287,11 @@ function AppsScreen({
               <>
                 <h2 className="modal-title">Новый Reflex app</h2>
                 <p className="modal-hint">Выбери шаблон под задачу.</p>
+                {targetProject && (
+                  <div className="modal-context-chip">
+                    Будет привязана к {targetProject.name}
+                  </div>
+                )}
                 <div className="template-grid">
                   {TEMPLATES.map((t) => (
                     <button
@@ -2320,6 +2342,11 @@ function AppsScreen({
                 <p className="modal-hint">
                   Опиши что должен делать app. Codex напишет файлы в фоне.
                 </p>
+                {targetProject && (
+                  <div className="modal-context-chip">
+                    Будет привязана к {targetProject.name}
+                  </div>
+                )}
                 <textarea
                   className="modal-input"
                   placeholder={
@@ -3825,6 +3852,7 @@ function ProjectScreen({
   onSelectTopic,
   onProjectUpdated,
   onCreateTopic,
+  onCreateApp,
   onOpenApp,
 }: {
   projectId: string;
@@ -3833,6 +3861,7 @@ function ProjectScreen({
   onSelectTopic: (id: string) => void;
   onProjectUpdated: (p: Project) => void;
   onCreateTopic: (prompt: string, planMode: boolean) => Promise<void>;
+  onCreateApp: () => void;
   onOpenApp: (id: string) => void;
 }) {
   const project = projects.find((p) => p.id === projectId);
@@ -4282,12 +4311,17 @@ function ProjectScreen({
         <section className="project-linked">
           <div className="section-head">
             <h2 className="section-title">Привязанные утилиты</h2>
-            <button
-              className="apps-create-btn"
-              onClick={() => setShowLinkPicker(true)}
-            >
-              + Привязать утилиту
-            </button>
+            <div className="section-actions">
+              <button className="apps-create-btn" onClick={onCreateApp}>
+                + Создать утилиту
+              </button>
+              <button
+                className="apps-create-btn"
+                onClick={() => setShowLinkPicker(true)}
+              >
+                + Привязать
+              </button>
+            </div>
           </div>
           {(() => {
             const linked = linkedAppIds

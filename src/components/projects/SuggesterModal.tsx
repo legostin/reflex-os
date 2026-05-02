@@ -101,18 +101,11 @@ export function SuggesterModal({
         if (!pickedNew.has(i)) continue;
         const item = plan.create_new[i];
         const description = `${item.name}\n\n${item.description}`.trim();
-        const res = await invoke<{ app_id: string; thread_id: string }>(
-          "create_app",
-          { description, template: "blank" },
-        );
-        try {
-          await invoke("link_app_to_project", {
-            projectId,
-            appId: res.app_id,
-          });
-        } catch (e) {
-          console.warn("[reflex] link new app failed", e);
-        }
+        await invoke<{ app_id: string; thread_id: string }>("create_app", {
+          description,
+          template: "blank",
+          projectId,
+        });
       }
       onApplied();
       onClose();
