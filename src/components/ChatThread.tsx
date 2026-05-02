@@ -2713,7 +2713,7 @@ function AppViewer({
     if (!pick) return;
     const text = pickInstruction.trim();
     if (!text) return;
-    const summary = `Доработай элемент по селектору \`${pick.selector || pick.tagName}\`.\n\nКонтекст:\n\`\`\`html\n${pick.outerHTML}\n\`\`\`\n\nИЗМЕНЕНИЕ: ${text}`;
+    const summary = `Improve the element matching selector \`${pick.selector || pick.tagName}\`.\n\nContext:\n\`\`\`html\n${pick.outerHTML}\n\`\`\`\n\nRequested change, verbatim and possibly non-English:\n${text}`;
     await dispatchRevise(summary);
     setPick(null);
     setPickInstruction("");
@@ -2721,7 +2721,7 @@ function AppViewer({
 
   const submitErrorFix = async () => {
     if (!lastError) return;
-    const summary = `App упал с ошибкой:\n\nMessage: ${lastError.message}\nLocation: ${lastError.filename}:${lastError.lineno}:${lastError.colno}\nStack:\n\`\`\`\n${lastError.stack || "(no stack)"}\n\`\`\`\n\nПочини этот баг.`;
+    const summary = `The app crashed with an error:\n\nMessage: ${lastError.message}\nLocation: ${lastError.filename}:${lastError.lineno}:${lastError.colno}\nStack:\n\`\`\`\n${lastError.stack || "(no stack)"}\n\`\`\`\n\nFix this bug.`;
     await dispatchRevise(summary);
     setLastError(null);
   };
@@ -5252,7 +5252,7 @@ function ThreadCard({
       const args: Record<string, unknown> = {
         projectId: thread.project_id,
         threadId: thread.id,
-        prompt: confirmsPlan ? "go — выполняй план как описал." : text,
+        prompt: confirmsPlan ? "go - execute the plan as described." : text,
       };
       if (confirmsPlan) args.planConfirmed = true;
       await invoke("continue_thread", args);
@@ -5273,7 +5273,7 @@ function ThreadCard({
       await invoke("continue_thread", {
         projectId: thread.project_id,
         threadId: thread.id,
-        prompt: "go — выполняй план как описал.",
+        prompt: "go - execute the plan as described.",
         planConfirmed: true,
       });
     } catch (e) {

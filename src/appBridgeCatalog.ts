@@ -364,7 +364,7 @@ export const BRIDGE_RECIPE_CARDS = [
     title: "Утилита как сервис",
     body: "Публикуй actions/widgets, создавай утилиты, экспортируй bundles и управляй server runtime.",
     calls: ["actions.upsert", "apps.create", "apps.export", "apps.server.status"],
-    example: 'await reflexAppsCreate("утилита для ежедневного отчета");',
+    example: 'await reflexAppsCreate("A utility for a daily report");',
   },
   {
     title: "Автоматизация",

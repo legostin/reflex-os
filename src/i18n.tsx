@@ -113,6 +113,54 @@ const dictionaries: Record<Locale, Dictionary> = {
     "cap.mcp.title": "MCP and Skills",
     "cap.mcp.body":
       "Project-scoped MCP JSON and preferred skills are injected into new, continued, and auto-resumed topics.",
+    "bridge.systemManifest": "System and Manifest",
+    "bridge.agentRuntime": "Agent Runtime",
+    "bridge.appDataFiles": "App Data and Files",
+    "bridge.projectsTopics": "Projects and Topics",
+    "bridge.browserSidecar": "Browser Sidecar",
+    "bridge.nativeMacos": "Native macOS",
+    "bridge.network": "Network",
+    "bridge.memory": "Memory",
+    "bridge.automations": "Automations",
+    "bridge.appGrid": "App Grid",
+    "bridge.base": "Base",
+    "bridge.agent": "Agent",
+    "bridge.storageIo": "Storage / IO",
+    "bridge.projectsBrowser": "Projects / Browser",
+    "bridge.memoryAutomationApps": "Memory / Automations / Utilities",
+    "recipe.contextAgent.title": "Contextual sub-agent",
+    "recipe.contextAgent.body":
+      "Project cwd attaches sandbox, MCP, preferred skills, project profile, and memory/RAG.",
+    "recipe.longMemory.title": "Long-term memory",
+    "recipe.longMemory.body":
+      "Save new facts and update known relPath entries without duplicates.",
+    "recipe.capabilities.title": "Capabilities",
+    "recipe.capabilities.body":
+      "Add permissions and network hosts precisely, without manual manifest merging.",
+    "recipe.utilityService.title": "Utility as a service",
+    "recipe.utilityService.body":
+      "Publish actions/widgets, create utilities, export bundles, and manage server runtime.",
+    "recipe.automation.title": "Automation",
+    "recipe.automation.body":
+      "Schedule steps use the same bridge, except UI-only methods.",
+    "recipe.healthDashboard.title": "Health dashboard",
+    "recipe.healthDashboard.body":
+      "Show automation status, RAG index health, and the latest error; add scheduler.read:* for a global overview.",
+    "recipe.projectFiles.title": "Project files",
+    "recipe.projectFiles.body":
+      "Search, edit, and reindex linked project files through the bridge without leaving the utility sandbox.",
+    "recipe.appRevisions.title": "Utility revisions",
+    "recipe.appRevisions.body":
+      "Show a generated app diff, save meaningful revisions, and revert failed edits.",
+    "recipe.eventGrid.title": "Event grid",
+    "recipe.eventGrid.body":
+      "Connect utilities through topics, recent history, and subscriptions without direct coupling.",
+    "recipe.browserSidecar.title": "Browser sidecar",
+    "recipe.browserSidecar.body":
+      "Enable project Browser MCP, open pages, read outlines, and fill forms.",
+    "recipe.projectMcpSkills.title": "Project MCP and skills",
+    "recipe.projectMcpSkills.body":
+      "Update project profile, pin skills, and connect MCP servers with explicit grants.",
   },
   ru: {
     "language.auto": "Авто",
@@ -200,6 +248,54 @@ const dictionaries: Record<Locale, Dictionary> = {
     "cap.mcp.title": "MCP и skills",
     "cap.mcp.body":
       "Project-scoped MCP JSON и preferred skills внедряются в новые, продолженные и auto-resumed topics.",
+    "bridge.systemManifest": "Система и manifest",
+    "bridge.agentRuntime": "Агентный runtime",
+    "bridge.appDataFiles": "Данные app и файлы",
+    "bridge.projectsTopics": "Проекты и топики",
+    "bridge.browserSidecar": "Браузерный sidecar",
+    "bridge.nativeMacos": "Нативный macOS",
+    "bridge.network": "Сеть",
+    "bridge.memory": "Память",
+    "bridge.automations": "Автоматизации",
+    "bridge.appGrid": "Сетка apps",
+    "bridge.base": "База",
+    "bridge.agent": "Агент",
+    "bridge.storageIo": "Хранилище / IO",
+    "bridge.projectsBrowser": "Проекты / браузер",
+    "bridge.memoryAutomationApps": "Память / автоматизации / утилиты",
+    "recipe.contextAgent.title": "Контекстный sub-agent",
+    "recipe.contextAgent.body":
+      "Project cwd подключает sandbox, MCP, preferred skills, project profile и memory/RAG.",
+    "recipe.longMemory.title": "Долгая память",
+    "recipe.longMemory.body":
+      "Сохраняй новые факты и обновляй известный relPath без дублей.",
+    "recipe.capabilities.title": "Возможности",
+    "recipe.capabilities.body":
+      "Добавляй permissions и network hosts точечно, без ручного слияния manifest.",
+    "recipe.utilityService.title": "Утилита как сервис",
+    "recipe.utilityService.body":
+      "Публикуй actions/widgets, создавай утилиты, экспортируй bundles и управляй server runtime.",
+    "recipe.automation.title": "Автоматизация",
+    "recipe.automation.body":
+      "Schedule steps используют тот же bridge, кроме UI-only методов.",
+    "recipe.healthDashboard.title": "Дашборд здоровья",
+    "recipe.healthDashboard.body":
+      "Показывай состояние автоматизаций, RAG индекса и последнюю ошибку; для общего обзора добавь scheduler.read:*.",
+    "recipe.projectFiles.title": "Файлы проекта",
+    "recipe.projectFiles.body":
+      "Ищи, правь и переиндексируй файлы linked project через bridge, не выходя из sandbox утилиты.",
+    "recipe.appRevisions.title": "Ревизии утилиты",
+    "recipe.appRevisions.body":
+      "Показывай diff generated app, сохраняй осмысленные ревизии и откатывай неудачные правки.",
+    "recipe.eventGrid.title": "Сетка событий",
+    "recipe.eventGrid.body":
+      "Связывай утилиты через topics, recent history и подписки без прямых зависимостей между ними.",
+    "recipe.browserSidecar.title": "Браузерный sidecar",
+    "recipe.browserSidecar.body":
+      "Включай project Browser MCP, открывай страницы, читай outline и заполняй формы.",
+    "recipe.projectMcpSkills.title": "MCP и skills проекта",
+    "recipe.projectMcpSkills.body":
+      "Обновляй project profile, закрепляй skills и подключай MCP servers с явными grants.",
   },
 };
 
