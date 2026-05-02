@@ -16,8 +16,17 @@ import { WidgetGrid, type WidgetSource } from "./widgets/WidgetGrid";
 import { SuggesterModal } from "./projects/SuggesterModal";
 import { BrowserScreen } from "./browser/BrowserScreen";
 import { SettingsScreen } from "./settings/SettingsScreen";
-import { BRIDGE_HELPER_GROUPS, BRIDGE_RECIPE_CARDS } from "../appBridgeCatalog";
+import {
+  BRIDGE_API_GROUPS,
+  BRIDGE_HELPER_GROUPS,
+  BRIDGE_RECIPE_CARDS,
+} from "../appBridgeCatalog";
 import "./ChatThread.css";
+
+const BRIDGE_API_COUNT = BRIDGE_API_GROUPS.reduce(
+  (sum, group) => sum + group.methods.length,
+  0,
+);
 
 const BRIDGE_HELPER_COUNT = BRIDGE_HELPER_GROUPS.reduce(
   (sum, group) => sum + group.helpers.length,
@@ -2482,6 +2491,15 @@ function AppViewer({
   const isServerRuntime = manifest?.runtime === "server";
   isServerRuntimeRef.current = isServerRuntime;
   const normalizedBridgeQuery = bridgeQuery.trim().toLowerCase();
+  const visibleBridgeApiGroups = useMemo(() => {
+    if (!normalizedBridgeQuery) return BRIDGE_API_GROUPS;
+    return BRIDGE_API_GROUPS.map((group) => ({
+      ...group,
+      methods: group.methods.filter((method) =>
+        method.toLowerCase().includes(normalizedBridgeQuery),
+      ),
+    })).filter((group) => group.methods.length > 0);
+  }, [normalizedBridgeQuery]);
   const visibleBridgeHelperGroups = useMemo(() => {
     if (!normalizedBridgeQuery) return BRIDGE_HELPER_GROUPS;
     return BRIDGE_HELPER_GROUPS.map((group) => ({
@@ -2505,12 +2523,18 @@ function AppViewer({
       return haystack.includes(normalizedBridgeQuery);
     });
   }, [normalizedBridgeQuery]);
+  const visibleBridgeApiCount = visibleBridgeApiGroups.reduce(
+    (sum, group) => sum + group.methods.length,
+    0,
+  );
   const visibleBridgeHelperCount = visibleBridgeHelperGroups.reduce(
     (sum, group) => sum + group.helpers.length,
     0,
   );
   const hasBridgeMatches =
-    visibleBridgeHelperGroups.length > 0 || visibleBridgeRecipes.length > 0;
+    visibleBridgeApiGroups.length > 0 ||
+    visibleBridgeHelperGroups.length > 0 ||
+    visibleBridgeRecipes.length > 0;
 
   const attachNested = (tid: string) => {
     setNestedTabs((prev) => (prev.includes(tid) ? prev : [...prev, tid]));
@@ -3118,17 +3142,18 @@ function AppViewer({
       )}
 
       {bridgeOpen && (
-        <div className="appviewer-bridge-panel" aria-label="Runtime bridge helpers">
+        <div className="appviewer-bridge-panel" aria-label="Runtime bridge catalog">
           <div className="appviewer-bridge-head">
-            <span>Runtime helpers</span>
+            <span>Runtime bridge</span>
             <input
               value={bridgeQuery}
               onChange={(e) => setBridgeQuery(e.currentTarget.value)}
-              placeholder="Search helpers…"
+              placeholder="Search methods, helpers, recipes…"
             />
-            <span className="appviewer-bridge-count">
-              {visibleBridgeHelperCount}/{BRIDGE_HELPER_COUNT}
-            </span>
+            <div className="appviewer-bridge-counts">
+              <span>{visibleBridgeApiCount}/{BRIDGE_API_COUNT} methods</span>
+              <span>{visibleBridgeHelperCount}/{BRIDGE_HELPER_COUNT} helpers</span>
+            </div>
           </div>
           {!hasBridgeMatches ? (
             <div className="appviewer-bridge-empty">No matching bridge items.</div>
@@ -3145,18 +3170,38 @@ function AppViewer({
                   ))}
                 </div>
               )}
-              {visibleBridgeHelperGroups.length > 0 && (
-                <div className="appviewer-bridge-grid">
-                  {visibleBridgeHelperGroups.map((group) => (
-                    <div className="appviewer-bridge-group" key={group.title}>
-                      <div className="appviewer-bridge-title">{group.title}</div>
-                      <div className="appviewer-bridge-list">
-                        {group.helpers.map((helper) => (
-                          <code key={helper}>{helper}</code>
-                        ))}
+              {visibleBridgeApiGroups.length > 0 && (
+                <div className="appviewer-bridge-section">
+                  <div className="appviewer-bridge-section-label">Methods</div>
+                  <div className="appviewer-bridge-grid">
+                    {visibleBridgeApiGroups.map((group) => (
+                      <div className="appviewer-bridge-group" key={group.title}>
+                        <div className="appviewer-bridge-title">{group.title}</div>
+                        <div className="appviewer-bridge-list">
+                          {group.methods.map((method) => (
+                            <code key={method}>{method}</code>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </div>
+              )}
+              {visibleBridgeHelperGroups.length > 0 && (
+                <div className="appviewer-bridge-section">
+                  <div className="appviewer-bridge-section-label">Helpers</div>
+                  <div className="appviewer-bridge-grid">
+                    {visibleBridgeHelperGroups.map((group) => (
+                      <div className="appviewer-bridge-group" key={group.title}>
+                        <div className="appviewer-bridge-title">{group.title}</div>
+                        <div className="appviewer-bridge-list">
+                          {group.helpers.map((helper) => (
+                            <code key={helper}>{helper}</code>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </>

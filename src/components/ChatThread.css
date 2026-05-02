@@ -2152,12 +2152,31 @@
   border-color: rgba(80, 140, 255, 0.45);
 }
 
-.appviewer-bridge-count {
+.appviewer-bridge-counts {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
   justify-self: end;
   color: rgba(210, 224, 255, 0.58);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
   font-weight: 500;
+}
+
+.appviewer-bridge-section {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.appviewer-bridge-section-label {
+  color: rgba(220, 232, 255, 0.72);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .appviewer-bridge-grid {
