@@ -260,7 +260,7 @@ export function BrowserScreen({
         width: VIEWPORT_W,
         height: VIEWPORT_H,
       });
-        setActiveId(res.tab_id);
+      setActiveId(res.tab_id);
       await invoke("browser_screencast_start", {
         tabId: res.tab_id,
         quality: 60,
@@ -463,7 +463,7 @@ export function BrowserScreen({
               title={t.url}
             >
               <span className="browser-tab-title">
-                {t.title || t.url || "blank"}
+                {t.title || t.url || "пусто"}
               </span>
               <span
                 className="browser-tab-close"
@@ -520,7 +520,7 @@ export function BrowserScreen({
             onClick={() => void go()}
             disabled={busy || !urlDraft.trim()}
           >
-            Go
+            Перейти
           </button>
         </div>
       </header>
