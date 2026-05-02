@@ -1357,20 +1357,38 @@
   line-height: 1.4;
 }
 
-.apps-card-perms {
+.apps-card-capabilities {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 4px;
 }
 
-.apps-perm {
+.apps-capability {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-height: 18px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
   background: rgba(255, 255, 255, 0.06);
   color: rgba(245, 245, 247, 0.6);
   padding: 1px 6px;
   border-radius: 4px;
+}
+
+.apps-capability-label {
+  flex: 0 0 auto;
+  color: rgba(245, 245, 247, 0.42);
+}
+
+.apps-capability-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(245, 245, 247, 0.74);
 }
 
 .apps-error {

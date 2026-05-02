@@ -449,6 +449,14 @@ function buildAppCapabilityFacts(
   ];
 }
 
+function buildAppCatalogCapabilityFacts(
+  manifest: AppManifest,
+): AppCapabilityFact[] {
+  return buildAppCapabilityFacts(manifest, null).filter(
+    (fact) => fact.key === "runtime" || fact.value !== "none",
+  );
+}
+
 type AppServerStatus = {
   running: boolean;
   port: number | null;
@@ -2091,6 +2099,7 @@ function AppsScreen({
         <div className="apps-grid">
           {items.map((a) => {
             const isReady = a.ready !== false;
+            const capabilityFacts = buildAppCatalogCapabilityFacts(a);
             return (
               <div
                 key={a.id}
@@ -2124,11 +2133,20 @@ function AppsScreen({
                 {a.description && (
                   <div className="apps-card-desc">{a.description}</div>
                 )}
-                {a.permissions.length > 0 && (
-                  <div className="apps-card-perms">
-                    {a.permissions.map((p) => (
-                      <span key={p} className="apps-perm">
-                        {p}
+                {capabilityFacts.length > 0 && (
+                  <div className="apps-card-capabilities">
+                    {capabilityFacts.map((fact) => (
+                      <span
+                        key={fact.key}
+                        className="apps-capability"
+                        title={fact.title}
+                      >
+                        <span className="apps-capability-label">
+                          {fact.label}
+                        </span>
+                        <span className="apps-capability-value">
+                          {fact.value}
+                        </span>
                       </span>
                     ))}
                   </div>
