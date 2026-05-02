@@ -791,6 +791,12 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexSystemContext = function() {
     return reflexInvokeRaw('system.context', {});
   };
+  window.reflexManifestGet = function() {
+    return reflexInvokeRaw('manifest.get', {});
+  };
+  window.reflexManifestUpdate = function(patch) {
+    return reflexInvokeRaw('manifest.update', {patch: patch || {}});
+  };
   window.reflexMemorySave = function(params) {
     return reflexInvokeRaw('memory.save', params || {});
   };

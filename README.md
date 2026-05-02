@@ -46,6 +46,8 @@ The injected runtime overlay provides:
 
 - `window.reflexInvoke(method, params)`
 - `window.reflexSystemContext()`
+- `window.reflexManifestGet()`
+- `window.reflexManifestUpdate(patch)`
 - `window.reflexMemorySave(params)`
 - `window.reflexMemoryList(params)`
 - `window.reflexMemoryRecall(queryOrParams)`
@@ -60,6 +62,9 @@ Core methods:
 
 - `system.context()` -> app id/root, manifest, app project, linked projects,
   and memory defaults.
+- `manifest.get()` -> current `manifest.json`.
+- `manifest.update({ patch })` -> merge-update this app's manifest; useful for
+  adding `actions`, `widgets`, `schedules`, permissions, or network hosts.
 - `agent.ask({ prompt })` -> one-shot agent answer.
 - `agent.startTopic({ prompt, projectId? })` -> full Reflex topic.
 - `agent.task({ prompt, sandbox?, cwd? })` -> isolated sub-agent result.

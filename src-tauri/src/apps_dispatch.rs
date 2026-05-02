@@ -21,6 +21,8 @@ pub async fn dispatch_app_method(
     eprintln!("[reflex] dispatch app={app_id} method={method}");
     match method {
         "system.context" => system_context(app, app_id),
+        "manifest.get" => manifest_get(app, app_id),
+        "manifest.update" => manifest_update(app, app_id, params),
         "agent.ask" => {
             let prompt = params
                 .get("prompt")
@@ -524,6 +526,62 @@ pub async fn dispatch_app_method(
             memory_forget_path_for_app(app, app_id, params).await
         }
         other => Err(format!("unknown method: {other}")),
+    }
+}
+
+fn manifest_get(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(manifest).unwrap_or(serde_json::Value::Null))
+}
+
+fn manifest_update(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let current = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let mut value = serde_json::to_value(current).map_err(|e| e.to_string())?;
+    let patch = params
+        .get("patch")
+        .or_else(|| params.get("manifest"))
+        .cloned()
+        .ok_or("missing patch")?;
+    if !patch.is_object() {
+        return Err("manifest patch must be a JSON object".into());
+    }
+    merge_json(&mut value, patch);
+    value["id"] = serde_json::Value::String(app_id.to_string());
+    let mut manifest: apps::AppManifest =
+        serde_json::from_value(value).map_err(|e| format!("invalid manifest: {e}"))?;
+    manifest.id = app_id.to_string();
+
+    apps::write_manifest(app, app_id, &manifest).map_err(|e| e.to_string())?;
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    if let Some(handle) = app.try_state::<scheduler::SchedulerHandle>() {
+        handle.inner().rescan();
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "manifest": manifest,
+    }))
+}
+
+fn merge_json(base: &mut serde_json::Value, patch: serde_json::Value) {
+    match (base, patch) {
+        (serde_json::Value::Object(base_obj), serde_json::Value::Object(patch_obj)) => {
+            for (key, value) in patch_obj {
+                match base_obj.get_mut(&key) {
+                    Some(existing) => merge_json(existing, value),
+                    None => {
+                        base_obj.insert(key, value);
+                    }
+                }
+            }
+        }
+        (base_slot, value) => {
+            *base_slot = value;
+        }
     }
 }
 
