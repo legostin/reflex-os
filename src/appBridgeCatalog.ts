@@ -54,6 +54,7 @@ export const BRIDGE_API_GROUPS = [
       "projects.list",
       "projects.open",
       "project.profile.update",
+      "project.sandbox.set",
       "topics.list",
       "topics.open",
       "skills.list",
@@ -210,6 +211,7 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexProjectsList",
       "reflexProjectsOpen",
       "reflexProjectProfileUpdate",
+      "reflexProjectSandboxSet",
       "reflexTopicsList",
       "reflexTopicsOpen",
       "reflexSkillsList",
@@ -274,9 +276,9 @@ export const BRIDGE_HELPER_GROUPS = [
 export const BRIDGE_RECIPE_CARDS = [
   {
     title: "Контекстный sub-agent",
-    body: "Project cwd подключает MCP, preferred skills, project profile и memory/RAG.",
-    calls: ["agent.task", "reflexAgentTask", "mcp.servers"],
-    example: "await reflexAgentTask({ prompt, cwd: projectRoot, memoryThreadId });",
+    body: "Project cwd подключает sandbox, MCP, preferred skills, project profile и memory/RAG.",
+    calls: ["agent.task", "project.sandbox.set", "mcp.servers"],
+    example: 'await reflexProjectSandboxSet({ projectId, sandbox: "workspace-write" });',
   },
   {
     title: "Долгая память",

@@ -1167,6 +1167,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexProjectProfileUpdate = function(patch) {
     return reflexInvokeRaw('project.profile.update', patch || {});
   };
+  window.reflexProjectSandboxSet = function(sandboxOrParams) {
+    var params = (typeof sandboxOrParams === 'string') ? {sandbox: sandboxOrParams} : (sandboxOrParams || {});
+    return reflexInvokeRaw('project.sandbox.set', params);
+  };
   window.reflexTopicsList = function(params) {
     return reflexInvokeRaw('topics.list', params || {});
   };

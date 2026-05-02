@@ -627,6 +627,7 @@ pub async fn dispatch_app_method(
         "projects.list" => projects_list_for_app(app, app_id, params),
         "projects.open" => projects_open_for_app(app, app_id, params),
         "project.profile.update" => project_profile_update_for_app(app, app_id, params),
+        "project.sandbox.set" => project_sandbox_set_for_app(app, app_id, params),
         "topics.list" | "threads.list" => topics_list_for_app(app, app_id, params),
         "topics.open" | "threads.open" => topics_open_for_app(app, app_id, params),
         "skills.list" => skills_list_for_app(app, app_id, params),
@@ -1236,6 +1237,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "projects.list",
                 "projects.open",
                 "project.profile.update",
+                "project.sandbox.set",
                 "topics.list",
                 "topics.open",
                 "skills.list",
@@ -1388,6 +1390,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexProjectsList",
                 "reflexProjectsOpen",
                 "reflexProjectProfileUpdate",
+                "reflexProjectSandboxSet",
                 "reflexTopicsList",
                 "reflexTopicsOpen",
                 "reflexSkillsList",
@@ -2903,6 +2906,24 @@ fn project_profile_update_for_app(
     }))
 }
 
+fn project_sandbox_set_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut project = resolve_project_write_target(app, app_id, &params, "projects.write")?;
+    let sandbox = normalize_project_sandbox(&required_string_param(&params, "sandbox", "sandbox")?)?;
+    let changed = project.sandbox != sandbox;
+    project.sandbox = sandbox.clone();
+    write_project_and_register(app, &project)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "changed": changed,
+        "sandbox": sandbox,
+        "project": project_summary(&project),
+    }))
+}
+
 fn resolve_project_write_target(
     app: &AppHandle,
     app_id: &str,
@@ -2954,6 +2975,14 @@ fn normalize_optional_project_text(
         return Err(format!("{label} must be {max_len} characters or fewer"));
     }
     Ok(Some(text))
+}
+
+fn normalize_project_sandbox(raw: &str) -> Result<String, String> {
+    let sandbox = raw.trim();
+    match sandbox {
+        "read-only" | "workspace-write" | "danger-full-access" => Ok(sandbox.to_string()),
+        _ => Err(format!("invalid sandbox: {sandbox}")),
+    }
 }
 
 fn topics_list_for_app(
@@ -5496,5 +5525,16 @@ mod tests {
             3,
         )
         .is_err());
+    }
+
+    #[test]
+    fn project_sandbox_accepts_only_known_modes() {
+        assert_eq!(
+            normalize_project_sandbox(" workspace-write ").unwrap(),
+            "workspace-write"
+        );
+        assert!(normalize_project_sandbox("read-only").is_ok());
+        assert!(normalize_project_sandbox("danger-full-access").is_ok());
+        assert!(normalize_project_sandbox("full-access").is_err());
     }
 }

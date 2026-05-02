@@ -92,6 +92,7 @@ The injected runtime overlay provides:
 - `window.reflexProjectsList(params)`
 - `window.reflexProjectsOpen(projectIdOrParams)`
 - `window.reflexProjectProfileUpdate(patch)`
+- `window.reflexProjectSandboxSet(sandboxOrParams)`
 - `window.reflexTopicsList(params)`
 - `window.reflexTopicsOpen(threadIdOrParams, projectId?)`
 - `window.reflexSkillsList(params)`
@@ -213,6 +214,10 @@ Core methods:
 - `project.profile.update({ projectId?, description?, agentInstructions? })`
   -> `{ ok, changed, project }`; requires `projects.write:<project>` or
   `projects.write:*`. `null` or an empty string clears a field.
+- `project.sandbox.set({ projectId?, sandbox })` ->
+  `{ ok, changed, sandbox, project }`; requires `projects.write:<project>` or
+  `projects.write:*`. `sandbox` must be `read-only`, `workspace-write`, or
+  `danger-full-access`.
 - `topics.list({ projectId?, limit?, includeAll? })`.
 - `topics.open({ threadId, projectId? })` -> asks Reflex to open that topic in
   the main UI.
@@ -272,7 +277,8 @@ Core methods:
 Project/topic methods return sanitized summaries for linked projects by
 default. Cross-project overview requires `projects.read:*`,
 `topics.read:<project>`, or `topics.read:*` in `manifest.permissions`. Project
-profile updates require `projects.write:<project>` or `projects.write:*`.
+profile and sandbox updates require `projects.write:<project>` or
+`projects.write:*`.
 Skills and MCP server names are available for linked projects; cross-project
 skills require `skills.read:<project>` or `skills.read:*`, skill mutations
 require `skills.write:<project>` or `skills.write:*`, and raw MCP config requires
