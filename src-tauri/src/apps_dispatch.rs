@@ -492,6 +492,7 @@ pub async fn dispatch_app_method(
                 .unwrap_or(serde_json::Value::Null);
             invoke_app_action(app, app_id, &target_id, &action_id, action_params).await
         }
+        "apps.list" => list_app_summaries(app),
         "apps.list_actions" => {
             let target_id = params
                 .get("app_id")
@@ -1244,6 +1245,51 @@ fn caller_has_invoke_permission(
         format!("apps.invoke:{target_id}::{action_id}"),
     ];
     manifest.permissions.iter().any(|p| needed.contains(p))
+}
+
+fn list_app_summaries(app: &AppHandle) -> Result<serde_json::Value, String> {
+    let listings = apps::list_apps(app).map_err(|e| e.to_string())?;
+    let out: Vec<serde_json::Value> = listings
+        .into_iter()
+        .map(|listing| {
+            let ready = listing.ready;
+            let manifest = listing.manifest;
+            serde_json::json!({
+                "id": manifest.id,
+                "name": manifest.name,
+                "icon": manifest.icon,
+                "description": manifest.description,
+                "kind": manifest.kind,
+                "runtime": manifest.runtime.unwrap_or_else(|| "static".into()),
+                "ready": ready,
+                "capabilities": {
+                    "permissions": manifest.permissions.len(),
+                    "network_hosts": manifest
+                        .network
+                        .as_ref()
+                        .map(|n| n.allowed_hosts.len())
+                        .unwrap_or(0),
+                    "schedules": manifest.schedules.len(),
+                    "actions": manifest.actions.len(),
+                    "widgets": manifest.widgets.len(),
+                },
+                "actions": manifest.actions.iter().map(|action| serde_json::json!({
+                    "id": action.id,
+                    "name": action.name,
+                    "description": action.description,
+                    "public": action.public,
+                    "has_params": action.params_schema.is_some(),
+                })).collect::<Vec<_>>(),
+                "widgets": manifest.widgets.iter().map(|widget| serde_json::json!({
+                    "id": widget.id,
+                    "name": widget.name,
+                    "size": widget.size,
+                    "description": widget.description,
+                })).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    Ok(serde_json::Value::Array(out))
 }
 
 fn list_actions(

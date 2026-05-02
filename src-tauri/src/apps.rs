@@ -794,6 +794,9 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams, include_steps: !!includeSteps} : (appIdOrParams || {});
     return reflexInvokeRaw('apps.list_actions', params);
   };
+  window.reflexAppsList = function(params) {
+    return reflexInvokeRaw('apps.list', params || {});
+  };
   window.reflexInvoke = reflexInvokeRaw;
   window.reflexSystemContext = function() {
     return reflexInvokeRaw('system.context', {});

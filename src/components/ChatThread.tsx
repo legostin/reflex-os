@@ -412,6 +412,7 @@ const APP_BRIDGE_HELPER_GROUPS = [
       "reflexSchedulerRunNow",
       "reflexSchedulerRuns",
       "reflexMemoryRecall",
+      "reflexAppsList",
       "reflexAppsInvoke",
       "reflexAppsListActions",
       "reflexEventOn",

@@ -567,7 +567,7 @@ fn app_revise(
   • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
   • notify.show — macOS push\n\
   • net.fetch({{url, method?, headers?, body?}}) — требует manifest.network.allowed_hosts (поддержка \"*.foo.com\")\n\
-- Overlay helpers: reflexAgentAsk/Task/Stream/StreamAbort, reflexStorageGet/Set, reflexFsRead/Write, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
+- Overlay helpers: reflexAgentAsk/Task/Stream/StreamAbort, reflexStorageGet/Set, reflexFsRead/Write, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsList, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
 - iframe sandbox=\"allow-scripts allow-forms\" (для server runtime + allow-same-origin). Никаких внешних CDN — только inline или локальные файлы.\n\
 - Reflex автоматически инжектит overlay-скрипт в HTML: ловит window.onerror/unhandledrejection (юзер увидит ✨Fix), и режим Inspector (юзер кликает → ты получишь selector + outerHTML). Не пиши свой обработчик с теми же типами событий.\n\
 - После твоих правок iframe перезагрузится сам (file watcher), для server runtime — процесс перезапустится. Не требуй ручного reload.\n\
@@ -992,7 +992,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  memory.indexPath({path, projectId?}) -> {indexed, skipped}; memory.pathStatus({path, projectId?}); memory.forgetPath({path, projectId?})\n");
     p.push_str("- scope: \"project\" по умолчанию. Если app привязан ровно к одному проекту, project scope попадёт в память этого проекта; иначе — в память самого app.\n");
     p.push_str("- Для выбора проекта вызови system.context() и передай projectId из linked_projects. Для global scope добавь permission \"memory.global.read\" или \"memory.global.write\".\n");
-    p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexManifestGet(), reflexManifestUpdate(patch), reflexCapabilities(), reflexProjectsList(params), reflexTopicsList(params), reflexSkillsList(params), reflexMcpServers(params), reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit.\n");
+    p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexManifestGet(), reflexManifestUpdate(patch), reflexCapabilities(), reflexProjectsList(params), reflexTopicsList(params), reflexSkillsList(params), reflexMcpServers(params), reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexAppsList(params), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit.\n");
     p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set(...), reflexFsRead/Write(...), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
     p.push_str("  Browser helpers: reflexBrowserInit(params), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserNavigate(tabId, url), reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?), reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?).\n");
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
@@ -1044,7 +1044,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("    }]\n");
     p.push_str("  }\n");
     p.push_str("- Каждый widget.entry — отдельный HTML-файл в папке app, обычно `widgets/<id>.html`.\n");
-    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexAgent*/Storage/Fs/Net/Dialog/Notify helpers, reflexSystemContext, reflexManifestGet, reflexCapabilities, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser* helpers, reflexSchedulerList/RunNow/SetPaused/Runs, reflexMemorySave/List/Search/Recall/PathStatus helpers, reflexEventOn/Emit, reflexAppsInvoke, reflexAppsListActions).\n");
+    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexAgent*/Storage/Fs/Net/Dialog/Notify helpers, reflexSystemContext, reflexManifestGet, reflexCapabilities, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser* helpers, reflexSchedulerList/RunNow/SetPaused/Runs, reflexMemorySave/List/Search/Recall/PathStatus helpers, reflexEventOn/Emit, reflexAppsList, reflexAppsInvoke, reflexAppsListActions).\n");
     p.push_str("- Виджет компактный: тёмная прозрачная подложка (background:transparent), html/body высотой 100%, padding 12-14px, без своих рамок (рамки рисует grid).\n");
     p.push_str("- Если данные обновляются часто — сам ставь setInterval на 5-30 сек.\n");
     p.push_str("- Если виджет читает данные другой утилиты — используй reflexAppsInvoke('<app>','<action>',{...}); НЕ дублируй сбор данных.\n\n");
@@ -1053,6 +1053,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  events.emit({topic, payload})            — публикация события всем подписчикам\n");
     p.push_str("  events.subscribe({topics: [\"...\"]})       — подписка. \"*\" = любой топик\n");
     p.push_str("  events.unsubscribe({topics: [...]})\n");
+    p.push_str("  apps.list() -> AppSummary[]              — безопасный каталог installed apps без raw manifest/server command/steps\n");
     p.push_str("  apps.invoke({app_id, action_id, params}) -> {ok, run_id, result}\n");
     p.push_str("  apps.list_actions({app_id?, include_steps?}) — что можно вызвать\n");
     p.push_str("В iframe runtime overlay уже есть helpers, можно звать напрямую (без postMessage):\n");
@@ -1075,7 +1076,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  window.reflexMemorySave(params), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams)\n");
     p.push_str("  window.reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams)\n");
     p.push_str("  window.reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryForgetPath(pathOrParams)\n");
-    p.push_str("  window.reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?)\n");
+    p.push_str("  window.reflexAppsList(params), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?)\n");
     p.push_str("Permissions для apps.invoke декларируется в manifest.permissions:\n");
     p.push_str("  [\"apps.invoke:*\"]                       — звать ЛЮБОЕ action ЛЮБОГО app\n");
     p.push_str("  [\"apps.invoke:health-stats\"]            — только конкретный app\n");
