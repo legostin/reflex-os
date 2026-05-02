@@ -19,6 +19,11 @@ import { SettingsScreen } from "./settings/SettingsScreen";
 import { BRIDGE_HELPER_GROUPS } from "../appBridgeCatalog";
 import "./ChatThread.css";
 
+const BRIDGE_HELPER_COUNT = BRIDGE_HELPER_GROUPS.reduce(
+  (sum, group) => sum + group.helpers.length,
+  0,
+);
+
 type QuickContext = {
   frontmost_app: string | null;
   finder_target: string | null;
@@ -2430,6 +2435,7 @@ function AppViewer({
   const [commitDraft, setCommitDraft] = useState("revision");
   const [exporting, setExporting] = useState(false);
   const [bridgeOpen, setBridgeOpen] = useState(false);
+  const [bridgeQuery, setBridgeQuery] = useState("");
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<{
     name: string;
@@ -2448,6 +2454,20 @@ function AppViewer({
 
   const isServerRuntime = manifest?.runtime === "server";
   isServerRuntimeRef.current = isServerRuntime;
+  const normalizedBridgeQuery = bridgeQuery.trim().toLowerCase();
+  const visibleBridgeHelperGroups = useMemo(() => {
+    if (!normalizedBridgeQuery) return BRIDGE_HELPER_GROUPS;
+    return BRIDGE_HELPER_GROUPS.map((group) => ({
+      ...group,
+      helpers: group.helpers.filter((helper) =>
+        helper.toLowerCase().includes(normalizedBridgeQuery),
+      ),
+    })).filter((group) => group.helpers.length > 0);
+  }, [normalizedBridgeQuery]);
+  const visibleBridgeHelperCount = visibleBridgeHelperGroups.reduce(
+    (sum, group) => sum + group.helpers.length,
+    0,
+  );
 
   const attachNested = (tid: string) => {
     setNestedTabs((prev) => (prev.includes(tid) ? prev : [...prev, tid]));
@@ -3056,16 +3076,33 @@ function AppViewer({
 
       {bridgeOpen && (
         <div className="appviewer-bridge-panel" aria-label="Runtime bridge helpers">
-          {BRIDGE_HELPER_GROUPS.map((group) => (
-            <div className="appviewer-bridge-group" key={group.title}>
-              <div className="appviewer-bridge-title">{group.title}</div>
-              <div className="appviewer-bridge-list">
-                {group.helpers.map((helper) => (
-                  <code key={helper}>{helper}</code>
-                ))}
-              </div>
+          <div className="appviewer-bridge-head">
+            <span>Runtime helpers</span>
+            <input
+              value={bridgeQuery}
+              onChange={(e) => setBridgeQuery(e.currentTarget.value)}
+              placeholder="Search helpers…"
+            />
+            <span className="appviewer-bridge-count">
+              {visibleBridgeHelperCount}/{BRIDGE_HELPER_COUNT}
+            </span>
+          </div>
+          {visibleBridgeHelperGroups.length === 0 ? (
+            <div className="appviewer-bridge-empty">No matching helpers.</div>
+          ) : (
+            <div className="appviewer-bridge-grid">
+              {visibleBridgeHelperGroups.map((group) => (
+                <div className="appviewer-bridge-group" key={group.title}>
+                  <div className="appviewer-bridge-title">{group.title}</div>
+                  <div className="appviewer-bridge-list">
+                    {group.helpers.map((helper) => (
+                      <code key={helper}>{helper}</code>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
 
