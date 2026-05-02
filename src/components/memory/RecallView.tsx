@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MemoryRef, RagHit, RecallResult } from "../../types/memory";
+import { useI18n } from "../../i18n";
 import "./memory.css";
 
 interface RecallViewProps {
@@ -30,6 +31,7 @@ export default function RecallView({
   threadId,
   query,
 }: RecallViewProps) {
+  const { t } = useI18n();
   const [result, setResult] = useState<RecallResult | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,13 +82,13 @@ export default function RecallView({
   return (
     <div className="recall-root">
       <div className="recall-header">
-        <h3 className="recall-title">Контекст памяти</h3>
+        <h3 className="recall-title">{t("recall.title")}</h3>
         <span className="recall-query" title={query}>
-          {query || "(нет запроса)"}
+          {query || t("recall.noQuery")}
         </span>
       </div>
 
-      {loading && <div className="recall-loading">Собираю контекст...</div>}
+      {loading && <div className="recall-loading">{t("recall.loading")}</div>}
       {error && <div className="memory-error">{error}</div>}
 
       {result && (
@@ -106,7 +108,7 @@ export default function RecallView({
               onClick={() => toggle("project")}
             >
               <span>{collapsed.project ? ">" : "v"}</span>
-              <span>Память проекта</span>
+              <span>{t("recall.projectMemory")}</span>
               <span className="recall-section-count">
                 {projectNotes.length}
               </span>
@@ -114,7 +116,7 @@ export default function RecallView({
             {!collapsed.project && (
               <ul className="recall-list">
                 {projectNotes.length === 0 ? (
-                  <li className="memory-empty">Нет подходящих проектных заметок.</li>
+                  <li className="memory-empty">{t("recall.noProjectNotes")}</li>
                 ) : (
                   projectNotes.map((n) => (
                     <li key={n.rel_path} className="recall-list-item">
@@ -133,13 +135,13 @@ export default function RecallView({
               onClick={() => toggle("topic")}
             >
               <span>{collapsed.topic ? ">" : "v"}</span>
-              <span>Память топика</span>
+              <span>{t("recall.topicMemory")}</span>
               <span className="recall-section-count">{topicNotes.length}</span>
             </button>
             {!collapsed.topic && (
               <ul className="recall-list">
                 {topicNotes.length === 0 ? (
-                  <li className="memory-empty">Нет подходящих заметок топика.</li>
+                  <li className="memory-empty">{t("recall.noTopicNotes")}</li>
                 ) : (
                   topicNotes.map((n) => (
                     <li key={n.rel_path} className="recall-list-item">
@@ -158,13 +160,13 @@ export default function RecallView({
               onClick={() => toggle("rag")}
             >
               <span>{collapsed.rag ? ">" : "v"}</span>
-              <span>RAG совпадения</span>
+              <span>{t("recall.ragMatches")}</span>
               <span className="recall-section-count">{ragHits.length}</span>
             </button>
             {!collapsed.rag && (
               <ul className="recall-list">
                 {ragHits.length === 0 ? (
-                  <li className="memory-empty">Нет RAG совпадений.</li>
+                  <li className="memory-empty">{t("recall.noRagMatches")}</li>
                 ) : (
                   ragHits.map((hit, i) => (
                     <li
@@ -173,7 +175,11 @@ export default function RecallView({
                     >
                       <div className="recall-rag-meta">
                         <span>{hit.kind}</span>
-                        <span>оценка {hit.score.toFixed(3)}</span>
+                        <span>
+                          {t("recall.score", {
+                            score: hit.score.toFixed(3),
+                          })}
+                        </span>
                         {hit.source && <span>{hit.source}</span>}
                       </div>
                       <pre className="recall-rag-chunk">{hit.chunk}</pre>
