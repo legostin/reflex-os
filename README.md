@@ -109,6 +109,7 @@ The injected runtime overlay provides:
 - `window.reflexProjectFilesCopy(fromOrParams, to?)`
 - `window.reflexProjectFilesDelete(pathOrParams, recursive?)`
 - `window.reflexBrowserInit(params)`
+- `window.reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?)`
 - `window.reflexBrowserTabs()`
 - `window.reflexBrowserOpen(url)`
 - `window.reflexBrowserNavigate(tabId, url)`
@@ -257,7 +258,8 @@ Core methods:
 - `project.files.delete({ projectId?, path, recursive? })` ->
   `{ ok, project_id, project_name, path, kind }`; refuses to delete the project
   root and requires `project.files.write:<project>` or `project.files.write:*`.
-- `browser.init`, `browser.tabs.list`, `browser.open`, `browser.navigate`.
+- `browser.init`, `project.browser.setEnabled`,
+  `browser.tabs.list`, `browser.open`, `browser.navigate`.
 - `browser.readText`, `browser.readOutline`, `browser.screenshot`.
 - `browser.clickText`, `browser.clickSelector`, `browser.fill`.
 - `events.emit`, `events.subscribe`, `events.unsubscribe`,
@@ -278,7 +280,9 @@ require `skills.write:<project>` or `skills.write:*`, and raw MCP config require
 `mcp.write:<project>` or `mcp.write:*`.
 Browser methods require `browser.read` for read-only inspection or
 `browser.control` for init/open/navigate/click/fill. Project browser state
-requires a linked project or `browser.project:<project>`.
+requires a linked project or `browser.project:<project>`. Enabling the Reflex
+Browser MCP server for a project uses `project.browser.setEnabled` and requires
+`mcp.write:<project>` or `mcp.write:*`.
 
 Scheduler methods:
 

@@ -76,6 +76,7 @@ export const BRIDGE_API_GROUPS = [
     title: "Browser sidecar",
     methods: [
       "browser.init",
+      "project.browser.setEnabled",
       "browser.tabs.list",
       "browser.open",
       "browser.navigate",
@@ -226,6 +227,7 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexProjectFilesCopy",
       "reflexProjectFilesDelete",
       "reflexBrowserInit",
+      "reflexProjectBrowserSetEnabled",
       "reflexBrowserTabs",
       "reflexBrowserOpen",
       "reflexBrowserNavigate",
@@ -302,9 +304,9 @@ export const BRIDGE_RECIPE_CARDS = [
   },
   {
     title: "Browser sidecar",
-    body: "Открывай страницу, читай текст/outline, кликай и заполняй формы.",
-    calls: ["browser.open", "browser.readText", "browser.fill"],
-    example: "const tab = await reflexBrowserOpen(url);",
+    body: "Включай project Browser MCP, открывай страницы, читай outline и заполняй формы.",
+    calls: ["project.browser.setEnabled", "browser.open", "browser.fill"],
+    example: "await reflexProjectBrowserSetEnabled({ projectId, enabled: true });",
   },
   {
     title: "MCP и skills проекта",

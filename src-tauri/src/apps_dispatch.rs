@@ -635,6 +635,7 @@ pub async fn dispatch_app_method(
         "mcp.servers" | "mcp.list" => mcp_servers_for_app(app, app_id, params),
         "project.mcp.upsert" => project_mcp_upsert_for_app(app, app_id, params),
         "project.mcp.delete" => project_mcp_delete_for_app(app, app_id, params),
+        "project.browser.setEnabled" => project_browser_set_enabled_for_app(app, app_id, params),
         "project.files.list" => project_files_list_for_app(app, app_id, params),
         "project.files.read" => project_files_read_for_app(app, app_id, params),
         "project.files.search" => project_files_search_for_app(app, app_id, params),
@@ -1257,6 +1258,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             "Browser sidecar",
             &[
                 "browser.init",
+                "project.browser.setEnabled",
                 "browser.tabs.list",
                 "browser.open",
                 "browser.navigate",
@@ -1403,6 +1405,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexProjectFilesCopy",
                 "reflexProjectFilesDelete",
                 "reflexBrowserInit",
+                "reflexProjectBrowserSetEnabled",
                 "reflexBrowserTabs",
                 "reflexBrowserOpen",
                 "reflexBrowserNavigate",
@@ -3331,6 +3334,65 @@ fn project_mcp_delete_for_app(
         "removed": removed,
         "server_names": next_names,
     }))
+}
+
+fn project_browser_set_enabled_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut project = resolve_project_mcp_write_target(app, app_id, &params)?;
+    let enabled = params
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .ok_or("missing enabled")?;
+    let server_names = set_project_browser_mcp_enabled(app, &mut project, enabled)?;
+    write_project_and_register(app, &project)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project.id,
+        "project_name": project.name,
+        "enabled": enabled,
+        "server_names": server_names,
+    }))
+}
+
+fn set_project_browser_mcp_enabled(
+    app: &AppHandle,
+    project: &mut project::Project,
+    enabled: bool,
+) -> Result<Vec<String>, String> {
+    let mut servers = project
+        .mcp_servers
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let object = servers
+        .as_object_mut()
+        .ok_or("project mcp_servers must be a JSON object")?;
+
+    if enabled {
+        let bridge = browser::mcp_bridge_path(app).map_err(|e| format!("bridge path: {e}"))?;
+        let node = browser::resolve_node().unwrap_or_else(|_| "node".to_string());
+        object.insert(
+            "reflex_browser".to_string(),
+            serde_json::json!({
+                "command": node,
+                "args": [bridge.to_string_lossy()],
+            }),
+        );
+        object.remove("playwright");
+    } else {
+        object.remove("reflex_browser");
+        object.remove("playwright");
+    }
+
+    let server_names = sorted_mcp_server_names(&servers);
+    project.mcp_servers = if server_names.is_empty() {
+        None
+    } else {
+        Some(servers)
+    };
+    Ok(server_names)
 }
 
 fn resolve_project_mcp_write_target(

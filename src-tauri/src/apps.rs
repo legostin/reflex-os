@@ -1231,6 +1231,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexBrowserInit = function(params) {
     return reflexInvokeRaw('browser.init', params || {});
   };
+  window.reflexProjectBrowserSetEnabled = function(projectIdOrParams, enabled) {
+    var params = (typeof projectIdOrParams === 'string') ? {projectId: projectIdOrParams, enabled: !!enabled} : (projectIdOrParams || {});
+    return reflexInvokeRaw('project.browser.setEnabled', params);
+  };
   window.reflexBrowserTabs = function() {
     return reflexInvokeRaw('browser.tabs.list', {});
   };
