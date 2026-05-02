@@ -727,6 +727,7 @@ export default function ChatThread() {
     null,
   );
   const containerRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
 
   const setActiveProject = async (id: string | null) => {
     setActiveProjectIdState(id);
@@ -957,7 +958,7 @@ export default function ChatThread() {
   const createNewProject = async () => {
     try {
       const path = await invoke<string | null>("pick_directory", {
-        title: "Выбор папки проекта",
+        title: t("project.pickFolderTitle"),
       });
       if (!path) return;
       setNewProjectPath(path);
@@ -1498,16 +1499,15 @@ export default function ChatThread() {
           onClick={() => !creatingProject && setNewProjectPath(null)}
         >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="modal-title">Новый проект</h2>
+            <h2 className="modal-title">{t("project.newTitle")}</h2>
             <p className="modal-hint">
               <code>{newProjectPath}</code>
               <br />
-              Опиши зачем этот проект и что хочешь делать. Это поможет агенту
-              предлагать утилиты и подсказки.
+              {t("project.newHint")}
             </p>
             <textarea
               className="modal-input"
-              placeholder="Например: следить за весом и активностью; собирать новости по AI каждое утро…"
+              placeholder={t("project.descriptionPlaceholder")}
               value={newProjectDescription}
               onChange={(e) => setNewProjectDescription(e.currentTarget.value)}
               onKeyDown={(e) => {
@@ -1525,14 +1525,16 @@ export default function ChatThread() {
                 disabled={creatingProject}
                 onClick={() => void submitNewProject(false)}
               >
-                Пропустить
+                {t("project.skip")}
               </button>
               <button
                 className="modal-btn modal-btn-primary"
                 disabled={creatingProject || !newProjectDescription.trim()}
                 onClick={() => void submitNewProject(true)}
               >
-                {creatingProject ? "Создаю…" : "Создать (⌘↵)"}
+                {creatingProject
+                  ? t("project.creating")
+                  : t("project.createShortcut")}
               </button>
             </div>
           </div>
@@ -3854,6 +3856,7 @@ function HomeScreen({
   onOpenApps: () => void;
   onCreateProject: () => void;
 }) {
+  const { t } = useI18n();
   const recent = threads
     .slice()
     .sort((a, b) => b.created_at_ms - a.created_at_ms)
@@ -3868,17 +3871,14 @@ function HomeScreen({
       />
       <section>
         <div className="section-head">
-          <h2 className="section-title">Проекты</h2>
+          <h2 className="section-title">{t("home.projects")}</h2>
           <button className="apps-create-btn" onClick={onCreateProject}>
-            + Новый проект
+            {t("home.newProject")}
           </button>
         </div>
         {projects.length === 0 ? (
           <div className="home-empty-panel">
-            <p>
-              Создай первый проект кнопкой выше или открой Quick-панель (
-              <kbd>⌘⇧Space</kbd>) поверх любой папки.
-            </p>
+            <p>{t("home.noProjectsHint")}</p>
           </div>
         ) : (
           <div className="project-grid">
@@ -3908,7 +3908,7 @@ function HomeScreen({
                     {p.root}
                   </div>
                   <div className="project-card-meta">
-                    {count} топиков
+                    {t("home.topicsCount", { count })}
                   </div>
                 </button>
               );
@@ -3918,7 +3918,7 @@ function HomeScreen({
       </section>
       {recent.length > 0 && (
         <section>
-          <h2 className="section-title">Недавние</h2>
+          <h2 className="section-title">{t("home.recent")}</h2>
           <ul className="topic-list">
             {recent.map((t) => (
               <li key={t.id}>
@@ -3955,6 +3955,7 @@ function HomeAppsSection({
   onSelectApp: (id: string) => void;
   onOpenApps: () => void;
 }) {
+  const { t } = useI18n();
   const [items, setItems] = useState<AppManifest[]>([]);
   const [statuses, setStatuses] = useState<Record<string, AppServerStatus>>({});
   const [error, setError] = useState<string | null>(null);
@@ -4014,27 +4015,27 @@ function HomeAppsSection({
     <section>
       <div className="section-head">
         <h2 className="section-title">
-          Утилиты
+          {t("nav.apps")}
           {runningCount > 0 && (
             <span className="section-badge running">
-              {runningCount} запущено
+              {t("home.runningCount", { count: runningCount })}
             </span>
           )}
         </h2>
         <button className="apps-create-btn" onClick={onOpenApps}>
-          Управлять утилитами
+          {t("home.manageUtilities")}
         </button>
       </div>
       {error && <div className="apps-error">{error}</div>}
       {!loaded ? (
         <div className="home-empty-panel">
-          <p>Загружаю утилиты…</p>
+          <p>{t("home.loadingUtilities")}</p>
         </div>
       ) : items.length === 0 ? (
         <div className="home-empty-panel">
-          <p>Утилит пока нет.</p>
+          <p>{t("apps.empty")}</p>
           <button className="home-inline-action" onClick={onOpenApps}>
-            Открыть утилиты
+            {t("home.openUtilities")}
           </button>
         </div>
       ) : (
@@ -4043,17 +4044,19 @@ function HomeAppsSection({
             const isReady = app.ready !== false;
             const isRunning = isHomeAppRunning(app, statuses, openAppIds);
             const statusLabel = !isReady
-              ? "создаётся"
+              ? t("home.appCreating")
               : isRunning
-                ? "запущено"
-                : "не запущено";
+                ? t("home.appRunning")
+                : t("home.appStopped");
             return (
               <button
                 key={app.id}
                 className={`home-app-card ${isReady ? "" : "home-app-card-disabled"}`}
                 disabled={!isReady}
                 onClick={() => isReady && onSelectApp(app.id)}
-                title={isReady ? "Открыть утилиту" : "Codex ещё пишет файлы…"}
+                title={
+                  isReady ? t("home.openUtilityTitle") : t("apps.writingFiles")
+                }
               >
                 <div className="home-app-card-top">
                   <span className="home-app-icon">{app.icon ?? "🧩"}</span>
@@ -4079,7 +4082,10 @@ function HomeAppsSection({
       )}
       {items.length > 0 && (
         <div className="home-apps-summary">
-          {readyCount} готово · {runningCount} запущено
+          {t("home.appsSummary", {
+            ready: readyCount,
+            running: runningCount,
+          })}
         </div>
       )}
     </section>
