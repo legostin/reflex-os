@@ -833,9 +833,29 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexMemoryList = function(params) {
     return reflexInvokeRaw('memory.list', params || {});
   };
+  window.reflexMemoryDelete = function(relPathOrParams) {
+    var params = (typeof relPathOrParams === 'string') ? {relPath: relPathOrParams} : (relPathOrParams || {});
+    return reflexInvokeRaw('memory.delete', params);
+  };
+  window.reflexMemorySearch = function(queryOrParams) {
+    var params = (typeof queryOrParams === 'string') ? {query: queryOrParams} : (queryOrParams || {});
+    return reflexInvokeRaw('memory.search', params);
+  };
   window.reflexMemoryRecall = function(queryOrParams) {
     var params = (typeof queryOrParams === 'string') ? {query: queryOrParams} : (queryOrParams || {});
     return reflexInvokeRaw('memory.recall', params);
+  };
+  window.reflexMemoryIndexPath = function(pathOrParams) {
+    var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
+    return reflexInvokeRaw('memory.indexPath', params);
+  };
+  window.reflexMemoryPathStatus = function(pathOrParams) {
+    var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
+    return reflexInvokeRaw('memory.pathStatus', params);
+  };
+  window.reflexMemoryForgetPath = function(pathOrParams) {
+    var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
+    return reflexInvokeRaw('memory.forgetPath', params);
   };
 
   window.addEventListener('message', function(ev){

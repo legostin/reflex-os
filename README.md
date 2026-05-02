@@ -60,7 +60,12 @@ The injected runtime overlay provides:
 - `window.reflexSchedulerRuns(params)`
 - `window.reflexMemorySave(params)`
 - `window.reflexMemoryList(params)`
+- `window.reflexMemoryDelete(relPathOrParams)`
+- `window.reflexMemorySearch(queryOrParams)`
 - `window.reflexMemoryRecall(queryOrParams)`
+- `window.reflexMemoryIndexPath(pathOrParams)`
+- `window.reflexMemoryPathStatus(pathOrParams)`
+- `window.reflexMemoryForgetPath(pathOrParams)`
 - `window.reflexAppsInvoke(appId, actionId, params)`
 - `window.reflexEventOn(topic, handler)`
 - `window.reflexEventOff(topic)`
