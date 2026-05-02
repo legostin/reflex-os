@@ -1605,6 +1605,41 @@ const TEMPLATES: {
   },
 ];
 
+const SKILL_PRESETS = [
+  {
+    id: "build-web-apps:frontend-app-builder",
+    label: "Web apps",
+  },
+  {
+    id: "build-web-apps:react-best-practices",
+    label: "React",
+  },
+  {
+    id: "playwright",
+    label: "Browser QA",
+  },
+  {
+    id: "openai-docs",
+    label: "OpenAI docs",
+  },
+  {
+    id: "github:gh-fix-ci",
+    label: "GitHub CI",
+  },
+  {
+    id: "build-ios-apps:ios-debugger-agent",
+    label: "iOS debug",
+  },
+  {
+    id: "build-macos-apps:build-run-debug",
+    label: "macOS debug",
+  },
+  {
+    id: "game-studio:game-playtest",
+    label: "Game QA",
+  },
+] as const;
+
 type TrashEntry = {
   trash_id: string;
   original_id: string;
@@ -3497,6 +3532,27 @@ function ProjectScreen({
   const hasAgentProfile = !!(
     project?.agent_instructions?.trim() || projectSkills.length > 0
   );
+  const profileSkillDraftSet = useMemo(() => {
+    return new Set(
+      profileSkillsDraft
+        .split(/[\n,]/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }, [profileSkillsDraft]);
+
+  function appendProfileSkill(skill: string) {
+    setProfileSkillsDraft((prev) => {
+      const seen = new Set(
+        prev
+          .split(/[\n,]/)
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean),
+      );
+      if (seen.has(skill.toLowerCase())) return prev;
+      return prev.trim() ? `${prev.trimEnd()}\n${skill}` : skill;
+    });
+  }
 
   return (
     <div className="project-root">
@@ -3720,6 +3776,26 @@ function ProjectScreen({
                     "build-web-apps:react-best-practices\nplaywright\nopenai-docs"
                   }
                 />
+                <div className="setting-skill-presets">
+                  {SKILL_PRESETS.map((skill) => {
+                    const selected = profileSkillDraftSet.has(
+                      skill.id.toLowerCase(),
+                    );
+                    return (
+                      <button
+                        key={skill.id}
+                        className={`setting-skill-preset ${selected ? "selected" : ""}`}
+                        type="button"
+                        onClick={() => appendProfileSkill(skill.id)}
+                        disabled={selected}
+                        title={skill.id}
+                      >
+                        {selected ? "✓ " : "+ "}
+                        {skill.label}
+                      </button>
+                    );
+                  })}
+                </div>
                 {profileError && (
                   <div className="setting-error">{profileError}</div>
                 )}

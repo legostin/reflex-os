@@ -784,6 +784,39 @@
   border-color: rgba(74, 140, 255, 0.42);
 }
 
+.setting-skill-presets {
+  width: min(100%, 720px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.setting-skill-preset {
+  border: 1px solid rgba(80, 140, 255, 0.24);
+  border-radius: 6px;
+  background: rgba(80, 140, 255, 0.10);
+  color: rgba(210, 224, 255, 0.94);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  min-height: 25px;
+  padding: 3px 8px;
+}
+
+.setting-skill-preset:hover:not(:disabled) {
+  background: rgba(80, 140, 255, 0.18);
+}
+
+.setting-skill-preset.selected {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.09);
+  color: rgba(245, 245, 247, 0.58);
+}
+
+.setting-skill-preset:disabled {
+  cursor: default;
+}
+
 .setting-error {
   color: #ff9b9b;
   font-size: 12px;
