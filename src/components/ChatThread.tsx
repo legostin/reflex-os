@@ -2450,6 +2450,10 @@ function AppViewer({
     runId: string | null;
     preview: string;
   } | null>(null);
+  const [actionDraft, setActionDraft] = useState<{
+    action: AppAction;
+    paramsText: string;
+  } | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const [pick, setPick] = useState<InspectorPick | null>(null);
   const [pickInstruction, setPickInstruction] = useState("");
@@ -2733,22 +2737,8 @@ function AppViewer({
     }
   }
 
-  async function runManifestAction(action: AppAction) {
+  async function executeManifestAction(action: AppAction, actionParams: unknown) {
     if (actionBusy) return;
-    let actionParams: unknown = {};
-    if (actionParamsSchema(action)) {
-      const raw = window.prompt(
-        `Params JSON for ${action.name || action.id}`,
-        defaultActionParamsJson(action),
-      );
-      if (raw === null) return;
-      try {
-        actionParams = JSON.parse(raw.trim() || "{}");
-      } catch (e) {
-        setError(`Invalid action params JSON: ${String(e)}`);
-        return;
-      }
-    }
     setActionBusy(action.id);
     setActionResult(null);
     setError(null);
@@ -2772,6 +2762,34 @@ function AppViewer({
     } finally {
       setActionBusy(null);
     }
+  }
+
+  function runManifestAction(action: AppAction) {
+    if (actionBusy) return;
+    if (actionParamsSchema(action)) {
+      setActionDraft({
+        action,
+        paramsText: defaultActionParamsJson(action),
+      });
+      setActionResult(null);
+      setError(null);
+      return;
+    }
+    void executeManifestAction(action, {});
+  }
+
+  function submitActionDraft() {
+    if (!actionDraft || actionBusy) return;
+    let params: unknown;
+    try {
+      params = JSON.parse(actionDraft.paramsText.trim() || "{}");
+    } catch (e) {
+      setError(`Invalid action params JSON: ${String(e)}`);
+      return;
+    }
+    const action = actionDraft.action;
+    setActionDraft(null);
+    void executeManifestAction(action, params);
   }
 
   async function refreshStatus() {
@@ -3087,6 +3105,49 @@ function AppViewer({
               <code>{actionResult.preview}</code>
             </div>
           )}
+        </div>
+      )}
+
+      {actionDraft && (
+        <div className="appviewer-action-editor" aria-label="Action params editor">
+          <div className="appviewer-action-editor-head">
+            <span>{actionDraft.action.name || actionDraft.action.id}</span>
+            <code>{actionDraft.action.id}</code>
+          </div>
+          <textarea
+            className="appviewer-action-editor-input"
+            rows={5}
+            value={actionDraft.paramsText}
+            onChange={(e) =>
+              setActionDraft((draft) =>
+                draft
+                  ? { ...draft, paramsText: e.currentTarget.value }
+                  : draft,
+              )
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                submitActionDraft();
+              }
+            }}
+          />
+          <div className="appviewer-action-editor-actions">
+            <button
+              className="appviewer-btn"
+              onClick={() => setActionDraft(null)}
+              disabled={actionBusy !== null}
+            >
+              Cancel
+            </button>
+            <button
+              className="appviewer-btn appviewer-btn-primary"
+              onClick={submitActionDraft}
+              disabled={actionBusy !== null}
+            >
+              Run
+            </button>
+          </div>
         </div>
       )}
 
