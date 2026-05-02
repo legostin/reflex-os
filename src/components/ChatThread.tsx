@@ -455,6 +455,23 @@ function defaultActionParamsJson(action: AppAction): string {
   return JSON.stringify(sample, null, 2);
 }
 
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(textarea);
+  if (!ok) throw new Error("copy failed");
+}
+
 function buildAppCapabilityFacts(
   manifest: AppManifest | null,
   serverPort: number | null,
@@ -2503,6 +2520,7 @@ function AppViewer({
   const [exporting, setExporting] = useState(false);
   const [bridgeOpen, setBridgeOpen] = useState(false);
   const [bridgeQuery, setBridgeQuery] = useState("");
+  const [copiedBridgeItem, setCopiedBridgeItem] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<{
     name: string;
@@ -2566,6 +2584,18 @@ function AppViewer({
     visibleBridgeApiGroups.length > 0 ||
     visibleBridgeHelperGroups.length > 0 ||
     visibleBridgeRecipes.length > 0;
+
+  async function copyBridgeItem(text: string) {
+    try {
+      await copyTextToClipboard(text);
+      setCopiedBridgeItem(text);
+      window.setTimeout(() => {
+        setCopiedBridgeItem((current) => (current === text ? null : current));
+      }, 1200);
+    } catch (e) {
+      console.warn("[reflex] bridge copy failed", e);
+    }
+  }
 
   const attachNested = (tid: string) => {
     setNestedTabs((prev) => (prev.includes(tid) ? prev : [...prev, tid]));
@@ -3199,7 +3229,13 @@ function AppViewer({
                     <div className="appviewer-bridge-recipe" key={recipe.title}>
                       <div className="appviewer-bridge-title">{recipe.title}</div>
                       <p>{recipe.body}</p>
-                      <code>{recipe.example}</code>
+                      <button
+                        className={`appviewer-bridge-code-button ${copiedBridgeItem === recipe.example ? "copied" : ""}`}
+                        onClick={() => void copyBridgeItem(recipe.example)}
+                        title="Copy"
+                      >
+                        <code>{recipe.example}</code>
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -3213,7 +3249,14 @@ function AppViewer({
                         <div className="appviewer-bridge-title">{group.title}</div>
                         <div className="appviewer-bridge-list">
                           {group.methods.map((method) => (
-                            <code key={method}>{method}</code>
+                            <button
+                              key={method}
+                              className={`appviewer-bridge-chip ${copiedBridgeItem === method ? "copied" : ""}`}
+                              onClick={() => void copyBridgeItem(method)}
+                              title="Copy"
+                            >
+                              <code>{method}</code>
+                            </button>
                           ))}
                         </div>
                       </div>
@@ -3230,7 +3273,14 @@ function AppViewer({
                         <div className="appviewer-bridge-title">{group.title}</div>
                         <div className="appviewer-bridge-list">
                           {group.helpers.map((helper) => (
-                            <code key={helper}>{helper}</code>
+                            <button
+                              key={helper}
+                              className={`appviewer-bridge-chip ${copiedBridgeItem === helper ? "copied" : ""}`}
+                              onClick={() => void copyBridgeItem(helper)}
+                              title="Copy"
+                            >
+                              <code>{helper}</code>
+                            </button>
                           ))}
                         </div>
                       </div>

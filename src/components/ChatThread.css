@@ -2255,16 +2255,36 @@
   line-height: 1.35;
 }
 
-.appviewer-bridge-recipe code {
+.appviewer-bridge-code-button {
+  max-width: 100%;
+  min-width: 0;
+  display: block;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: copy;
+  text-align: left;
+}
+
+.appviewer-bridge-code-button code {
+  display: block;
   max-width: 100%;
   overflow-x: auto;
   padding: 5px 6px;
   border-radius: 4px;
+  border: 1px solid transparent;
   background: rgba(0, 0, 0, 0.18);
   color: rgba(235, 240, 255, 0.86);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
   white-space: nowrap;
+}
+
+.appviewer-bridge-code-button:hover code,
+.appviewer-bridge-code-button.copied code {
+  border-color: rgba(80, 140, 255, 0.45);
+  background: rgba(80, 140, 255, 0.14);
 }
 
 .appviewer-bridge-empty {
@@ -2299,7 +2319,19 @@
   gap: 4px;
 }
 
-.appviewer-bridge-list code {
+.appviewer-bridge-chip {
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: copy;
+  font: inherit;
+}
+
+.appviewer-bridge-chip code {
+  display: block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2311,6 +2343,13 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
   padding: 2px 5px;
+}
+
+.appviewer-bridge-chip:hover code,
+.appviewer-bridge-chip.copied code {
+  border-color: rgba(80, 140, 255, 0.46);
+  background: rgba(80, 140, 255, 0.18);
+  color: rgba(245, 248, 255, 0.96);
 }
 
 @media (max-width: 760px) {
