@@ -1325,12 +1325,19 @@ export default function ChatThread() {
             projects={projects}
             threads={threads}
             openAppIds={openAppIds}
+            activeProjectId={activeProjectId}
             onSelectProject={(id) =>
               navigate({ kind: "project", project_id: id })
             }
             onSelectTopic={(id) => navigate({ kind: "topic", thread_id: id })}
             onSelectApp={(id) => navigate({ kind: "app", app_id: id })}
             onOpenApps={() => navigate({ kind: "apps" })}
+            onOpenMemory={() =>
+              navigate({
+                kind: "memory",
+                project_id: activeProjectId ?? undefined,
+              })
+            }
             onCreateProject={() => void createNewProject()}
           />
         );
@@ -1578,6 +1585,9 @@ function Header({
   onCreateProject: () => void;
 }) {
   const { t } = useI18n();
+  const activeProject = activeProjectId
+    ? projects.find((p) => p.id === activeProjectId)
+    : null;
   const crumbs: { label: string; route: Route | null }[] = [
     { label: "Reflex", route: { kind: "home" } },
   ];
@@ -1619,129 +1629,172 @@ function Header({
       });
     }
     crumbs.push({ label: t("nav.memory"), route: null });
+  } else if (route.kind === "automations") {
+    crumbs.push({ label: t("nav.automations"), route: null });
+  } else if (route.kind === "browser") {
+    crumbs.push({ label: t("nav.browser"), route: null });
+  } else if (route.kind === "settings") {
+    crumbs.push({ label: t("nav.settings"), route: null });
   }
 
   return (
     <header className="chat-header">
-      <nav className="chat-breadcrumbs">
-        {crumbs.map((c, i) => (
-          <span key={i} className="chat-crumb">
-            {c.route ? (
-              <button
-                className="chat-crumb-link"
-                onClick={() => onNavigate(c.route!)}
-              >
-                {c.label}
-              </button>
-            ) : (
-              <span className="chat-crumb-current">{c.label}</span>
-            )}
-            {i < crumbs.length - 1 && <span className="chat-crumb-sep">›</span>}
-          </span>
-        ))}
-      </nav>
-      <div className="chat-header-actions">
-        <button
-          className="header-tab"
-          onClick={onCreateProject}
-          title={t("nav.newProjectTitle")}
-        >
-          {t("nav.newProject")}
-        </button>
-        <button
-          className="header-tab"
-          onClick={onAddPane}
-          title={t("nav.newPaneTitle")}
-        >
-          {t("nav.newPane")}
-        </button>
-        <button
-          className={`header-tab ${route.kind === "apps" || route.kind === "app" ? "active" : ""}`}
-          onClick={() => onNavigate({ kind: "apps" })}
-        >
-          {t("nav.apps")}
-        </button>
-        <button
-          className={`header-tab ${route.kind === "memory" ? "active" : ""}`}
-          onClick={() => {
-            const routeThreadId =
-              route.kind === "topic" || route.kind === "memory"
-                ? route.thread_id
-                : undefined;
-            const activeThread = routeThreadId
-              ? threads.find((t) => t.id === routeThreadId)
-              : null;
-            const projectId =
-              route.kind === "project"
-                ? route.project_id
-                : activeThread
-                  ? activeThread.project_id
-                  : route.kind === "memory"
-                    ? route.project_id
-                    : undefined;
-            onNavigate({
-              kind: "memory",
-              project_id: projectId,
-              thread_id: activeThread?.id,
-            });
-          }}
-          title={t("nav.memory")}
-        >
-          {t("nav.memory")}
-        </button>
-        <button
-          className={`header-tab ${route.kind === "automations" ? "active" : ""}`}
-          onClick={() => onNavigate({ kind: "automations" })}
-          title={t("nav.automations")}
-        >
-          {t("nav.automations")}
-        </button>
-        <select
-          className="header-tab header-project-select"
-          value={activeProjectId ?? ""}
-          onChange={(e) => {
-            const v = e.currentTarget.value;
-            if (v) onSelectActiveProject(v);
-          }}
-          disabled={projects.length === 0}
-          title={t("nav.activeProject")}
-        >
-          {projects.length === 0 ? (
-            <option value="">{t("nav.noProjects")}</option>
-          ) : (
-            <>
-              {!activeProjectId && (
-                <option value="" disabled>
-                  {t("nav.chooseProject")}
-                </option>
+      <div className="chat-header-top">
+        <nav className="chat-breadcrumbs">
+          {crumbs.map((c, i) => (
+            <span key={i} className="chat-crumb">
+              {c.route ? (
+                <button
+                  className="chat-crumb-link"
+                  onClick={() => onNavigate(c.route!)}
+                >
+                  {c.label}
+                </button>
+              ) : (
+                <span className="chat-crumb-current">{c.label}</span>
               )}
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </>
-          )}
-        </select>
-        <button
-          className={`header-tab ${route.kind === "browser" ? "active" : ""}`}
-          onClick={() => onNavigate({ kind: "browser" })}
-          title={t("nav.browser")}
-        >
-          {t("nav.browser")}
-        </button>
-        <button
-          className={`header-tab ${route.kind === "settings" ? "active" : ""}`}
-          onClick={() => onNavigate({ kind: "settings" })}
-          title={t("nav.settings")}
-        >
-          ⚙
-        </button>
+              {i < crumbs.length - 1 && (
+                <span className="chat-crumb-sep">›</span>
+              )}
+            </span>
+          ))}
+        </nav>
         <span className="chat-subtitle">
           {threads.length} {t("header.threadLabel")} · {projects.length}{" "}
           {t("header.projectLabel")}
         </span>
       </div>
+      <nav className="chat-header-actions" aria-label={t("nav.primary")}>
+        <div className="header-action-group">
+          <span className="header-action-label">{t("nav.groupStart")}</span>
+          <button
+            className={`header-tab ${route.kind === "home" ? "active" : ""}`}
+            onClick={() => onNavigate({ kind: "home" })}
+          >
+            {t("nav.home")}
+          </button>
+          <button
+            className="header-tab header-tab-primary"
+            onClick={onCreateProject}
+            title={t("nav.newProjectTitle")}
+          >
+            {t("nav.newProject")}
+          </button>
+        </div>
+
+        <div className="header-action-group header-action-group-grow">
+          <span className="header-action-label">{t("nav.groupWork")}</span>
+          <select
+            className="header-tab header-project-select"
+            value={activeProjectId ?? ""}
+            onChange={(e) => {
+              const v = e.currentTarget.value;
+              if (v) onSelectActiveProject(v);
+            }}
+            disabled={projects.length === 0}
+            title={t("nav.activeProject")}
+            aria-label={t("nav.activeProject")}
+          >
+            {projects.length === 0 ? (
+              <option value="">{t("nav.noProjects")}</option>
+            ) : (
+              <>
+                {!activeProjectId && (
+                  <option value="" disabled>
+                    {t("nav.chooseProject")}
+                  </option>
+                )}
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
+          {activeProject && (
+            <button
+              className={`header-tab ${route.kind === "project" && route.project_id === activeProject.id ? "active" : ""}`}
+              onClick={() =>
+                onNavigate({ kind: "project", project_id: activeProject.id })
+              }
+              title={activeProject.name}
+            >
+              {t("nav.openProject")}
+            </button>
+          )}
+          <button
+            className={`header-tab ${route.kind === "memory" ? "active" : ""}`}
+            onClick={() => {
+              const routeThreadId =
+                route.kind === "topic" || route.kind === "memory"
+                  ? route.thread_id
+                  : undefined;
+              const activeThread = routeThreadId
+                ? threads.find((t) => t.id === routeThreadId)
+                : null;
+              const projectId =
+                route.kind === "project"
+                  ? route.project_id
+                  : activeThread
+                    ? activeThread.project_id
+                    : route.kind === "memory"
+                      ? route.project_id
+                      : activeProjectId ?? undefined;
+              onNavigate({
+                kind: "memory",
+                project_id: projectId,
+                thread_id: activeThread?.id,
+              });
+            }}
+            title={t("nav.memory")}
+          >
+            {t("nav.memory")}
+          </button>
+        </div>
+
+        <div className="header-action-group">
+          <span className="header-action-label">{t("nav.groupTools")}</span>
+          <button
+            className={`header-tab ${route.kind === "apps" || route.kind === "app" ? "active" : ""}`}
+            onClick={() => onNavigate({ kind: "apps" })}
+          >
+            {t("nav.apps")}
+          </button>
+          <button
+            className={`header-tab ${route.kind === "automations" ? "active" : ""}`}
+            onClick={() => onNavigate({ kind: "automations" })}
+            title={t("nav.automations")}
+          >
+            {t("nav.automations")}
+          </button>
+          <button
+            className={`header-tab ${route.kind === "browser" ? "active" : ""}`}
+            onClick={() => onNavigate({ kind: "browser" })}
+            title={t("nav.browser")}
+          >
+            {t("nav.browser")}
+          </button>
+        </div>
+
+        <div className="header-action-group header-action-group-compact">
+          <span className="header-action-label">{t("nav.groupView")}</span>
+          <button
+            className="header-tab"
+            onClick={onAddPane}
+            title={t("nav.newPaneTitle")}
+          >
+            {t("nav.newPane")}
+          </button>
+          <button
+            className={`header-tab ${route.kind === "settings" ? "active" : ""}`}
+            onClick={() => onNavigate({ kind: "settings" })}
+            title={t("nav.settings")}
+          >
+            {t("nav.settings")}
+          </button>
+        </div>
+      </nav>
     </header>
   );
 }
@@ -3843,22 +3896,29 @@ function HomeScreen({
   projects,
   threads,
   openAppIds,
+  activeProjectId,
   onSelectProject,
   onSelectTopic,
   onSelectApp,
   onOpenApps,
+  onOpenMemory,
   onCreateProject,
 }: {
   projects: Project[];
   threads: Thread[];
   openAppIds: Set<string>;
+  activeProjectId: string | null;
   onSelectProject: (id: string) => void;
   onSelectTopic: (id: string) => void;
   onSelectApp: (id: string) => void;
   onOpenApps: () => void;
+  onOpenMemory: () => void;
   onCreateProject: () => void;
 }) {
   const { t } = useI18n();
+  const activeProject = activeProjectId
+    ? projects.find((p) => p.id === activeProjectId) ?? projects[0] ?? null
+    : projects[0] ?? null;
   const recent = threads
     .slice()
     .sort((a, b) => b.created_at_ms - a.created_at_ms)
@@ -3866,6 +3926,60 @@ function HomeScreen({
 
   return (
     <div className="home-root">
+      <section className="home-start">
+        <div className="home-start-copy">
+          <p className="home-eyebrow">{t("home.startEyebrow")}</p>
+          <h1>{t("home.startTitle")}</h1>
+          <p>{t("home.startBody")}</p>
+        </div>
+        <div className="home-start-actions">
+          <button
+            className="home-primary-action"
+            onClick={() =>
+              activeProject
+                ? onSelectProject(activeProject.id)
+                : onCreateProject()
+            }
+          >
+            {activeProject
+              ? t("home.openActiveProject", { name: activeProject.name })
+              : t("home.createFirstProject")}
+          </button>
+          <button className="home-secondary-action" onClick={onOpenApps}>
+            {t("home.openUtilities")}
+          </button>
+        </div>
+        <div className="home-guide-grid">
+          <button
+            className="home-guide-card"
+            onClick={() =>
+              activeProject
+                ? onSelectProject(activeProject.id)
+                : onCreateProject()
+            }
+          >
+            <span className="home-guide-icon">💬</span>
+            <span className="home-guide-title">{t("home.askInProject")}</span>
+            <span className="home-guide-hint">
+              {t("home.askInProjectHint")}
+            </span>
+          </button>
+          <button className="home-guide-card" onClick={onOpenApps}>
+            <span className="home-guide-icon">🧩</span>
+            <span className="home-guide-title">{t("home.buildUtility")}</span>
+            <span className="home-guide-hint">
+              {t("home.buildUtilityHint")}
+            </span>
+          </button>
+          <button className="home-guide-card" onClick={onOpenMemory}>
+            <span className="home-guide-icon">M</span>
+            <span className="home-guide-title">{t("home.reviewMemory")}</span>
+            <span className="home-guide-hint">
+              {t("home.reviewMemoryHint")}
+            </span>
+          </button>
+        </div>
+      </section>
       <HomeAppsSection
         openAppIds={openAppIds}
         onSelectApp={onSelectApp}
@@ -4568,12 +4682,37 @@ function ProjectScreen({
       )}
 
       {project && (
+        <section className="project-start-panel">
+          <button
+            className="project-start-action project-start-action-primary"
+            onClick={() => setShowNewTopic(true)}
+          >
+            <span>{t("project.newTopic")}</span>
+            <small>{t("project.startTopicHint")}</small>
+          </button>
+          <button className="project-start-action" onClick={onCreateApp}>
+            <span>{t("project.createUtility")}</span>
+            <small>{t("project.utilityHint")}</small>
+          </button>
+          <button
+            className="project-start-action"
+            onClick={() => setShowLinkPicker(true)}
+          >
+            <span>{t("project.linkUtility")}</span>
+            <small>{t("project.connectUtilityHint")}</small>
+          </button>
+        </section>
+      )}
+
+      {project && (
         <section
           className="project-context-grid"
           aria-label={t("project.agentContext")}
         >
           <article className="project-context-item">
-            <span className="project-context-label">Sandbox</span>
+            <span className="project-context-label">
+              {t("project.safetyMode")}
+            </span>
             <strong>{sandbox}</strong>
           </article>
           <button
@@ -4582,7 +4721,7 @@ function ProjectScreen({
             type="button"
           >
             <span className="project-context-label">
-              {t("project.agentProfile")}
+              {t("project.agentBehavior")}
             </span>
             <strong>
               {hasAgentProfile ? t("project.configured") : t("project.default")}
@@ -4603,7 +4742,9 @@ function ProjectScreen({
             onClick={openMcpEditor}
             type="button"
           >
-            <span className="project-context-label">MCP servers</span>
+            <span className="project-context-label">
+              {t("project.connections")}
+            </span>
             <strong>{mcpServerNames.length}</strong>
             {mcpServerNames.length > 0 && (
               <div className="project-context-chips">
@@ -4617,7 +4758,9 @@ function ProjectScreen({
             )}
           </button>
           <article className="project-context-item">
-            <span className="project-context-label">Memory / RAG</span>
+            <span className="project-context-label">
+              {t("project.knowledge")}
+            </span>
             <strong>{t("project.docsCount", { count: ragDocs })}</strong>
             <div className="project-context-chips">
               {ragChunks != null && (
@@ -4755,195 +4898,209 @@ function ProjectScreen({
       )}
 
       {project && (
-        <section className="project-settings">
-          <div className="setting-row">
-            <label className="setting-label">Sandbox</label>
-            <select
-              className="setting-select"
-              value={sandbox}
-              onChange={(e) => void setSandbox(e.currentTarget.value)}
-            >
-              <option value="read-only">{t("project.readOnlySafe")}</option>
-              <option value="workspace-write">
-                {t("project.workspaceWriteDefault")}
-              </option>
-              <option value="danger-full-access">
-                danger-full-access ⚠️
-              </option>
-            </select>
-            {sandbox === "danger-full-access" && (
-              <span className="setting-hint setting-hint-warn">
-                {t("project.dangerFullAccessHint")}
-              </span>
-            )}
-          </div>
-          <div className="setting-row setting-row-block">
-            <label className="setting-label">{t("project.agentProfile")}</label>
-            <div className="setting-mcp-summary">
-              {hasAgentProfile ? (
-                <>
-                  {project?.agent_instructions?.trim() && (
-                    <span className="setting-chip setting-chip-muted">
-                      {t("project.instructionsChip")}
-                    </span>
-                  )}
-                  {projectSkills.map((skill) => (
-                    <span key={skill} className="setting-chip">
-                      {skill}
-                    </span>
-                  ))}
-                </>
-              ) : (
-                <span className="setting-empty">
-                  {t("project.codexDefaultBehavior")}
+        <details className="project-settings project-advanced">
+          <summary className="project-advanced-summary">
+            <span>
+              <strong>{t("project.advancedControls")}</strong>
+              <small>{t("project.advancedControlsHint")}</small>
+            </span>
+          </summary>
+          <div className="project-advanced-body">
+            <div className="setting-row">
+              <label className="setting-label">{t("project.safetyMode")}</label>
+              <select
+                className="setting-select"
+                value={sandbox}
+                onChange={(e) => void setSandbox(e.currentTarget.value)}
+              >
+                <option value="read-only">{t("project.readOnlySafe")}</option>
+                <option value="workspace-write">
+                  {t("project.workspaceWriteDefault")}
+                </option>
+                <option value="danger-full-access">
+                  danger-full-access ⚠️
+                </option>
+              </select>
+              {sandbox === "danger-full-access" && (
+                <span className="setting-hint setting-hint-warn">
+                  {t("project.dangerFullAccessHint")}
                 </span>
               )}
-              <button
-                className="setting-action"
-                onClick={openAgentProfileEditor}
-              >
-                {t("project.editProfile")}
-              </button>
             </div>
-            {profileEditing && (
-              <div className="setting-editor">
-                <label className="setting-editor-label">
-                  {t("project.instructionsLabel")}
-                </label>
-                <textarea
-                  className="setting-textarea"
-                  value={profileInstructionsDraft}
-                  spellCheck={false}
-                  onChange={(e) =>
-                    setProfileInstructionsDraft(e.currentTarget.value)
-                  }
-                  rows={6}
-                  placeholder={t("project.instructionsPlaceholder")}
-                />
-                <label className="setting-editor-label">
-                  {t("project.preferredSkillsLabel")}
-                </label>
-                <textarea
-                  className="setting-textarea setting-textarea-compact"
-                  value={profileSkillsDraft}
-                  spellCheck={false}
-                  onChange={(e) =>
-                    setProfileSkillsDraft(e.currentTarget.value)
-                  }
-                  rows={3}
-                  placeholder={
-                    "build-web-apps:react-best-practices\nplaywright\nopenai-docs"
-                  }
-                />
-                <div className="setting-skill-presets">
-                  {SKILL_PRESETS.map((skill) => {
-                    const selected = profileSkillDraftSet.has(
-                      skill.id.toLowerCase(),
-                    );
-                    return (
-                      <button
-                        key={skill.id}
-                        className={`setting-skill-preset ${selected ? "selected" : ""}`}
-                        type="button"
-                        onClick={() => appendProfileSkill(skill.id)}
-                        disabled={selected}
-                        title={skill.id}
-                      >
-                        {selected ? "✓ " : "+ "}
-                        {t(skill.labelKey)}
-                      </button>
-                    );
-                  })}
-                </div>
-                {profileError && (
-                  <div className="setting-error">{profileError}</div>
-                )}
-                <div className="setting-editor-actions">
-                  <button
-                    className="setting-action"
-                    onClick={() => setProfileEditing(false)}
-                    disabled={profileSaving}
-                  >
-                    {t("apps.cancel")}
-                  </button>
-                  <button
-                    className="setting-action setting-action-primary"
-                    onClick={() => void saveAgentProfile()}
-                    disabled={profileSaving}
-                  >
-                    {profileSaving ? t("project.saving") : t("appViewer.save")}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="setting-row">
-            <label className="setting-label">Browser MCP</label>
-            <label className="setting-toggle">
-              <input
-                type="checkbox"
-                checked={browserOn}
-                onChange={(e) => void setBrowser(e.currentTarget.checked)}
-              />
-              {browserOn
-                ? t("project.browserEnabled")
-                : t("project.browserDisabled")}
-            </label>
-            {browserOn && (
-              <span className="setting-hint">
-                {t("project.browserHint")}
-              </span>
-            )}
-          </div>
-          <div className="setting-row setting-row-block">
-            <label className="setting-label">MCP servers</label>
-            <div className="setting-mcp-summary">
-              {mcpServerNames.length === 0 ? (
-                <span className="setting-empty">{t("project.none")}</span>
-              ) : (
-                mcpServerNames.map((name) => (
-                  <span key={name} className="setting-chip">
-                    {name}
+            <div className="setting-row setting-row-block">
+              <label className="setting-label">
+                {t("project.agentBehavior")}
+              </label>
+              <div className="setting-mcp-summary">
+                {hasAgentProfile ? (
+                  <>
+                    {project?.agent_instructions?.trim() && (
+                      <span className="setting-chip setting-chip-muted">
+                        {t("project.instructionsChip")}
+                      </span>
+                    )}
+                    {projectSkills.map((skill) => (
+                      <span key={skill} className="setting-chip">
+                        {skill}
+                      </span>
+                    ))}
+                  </>
+                ) : (
+                  <span className="setting-empty">
+                    {t("project.codexDefaultBehavior")}
                   </span>
-                ))
-              )}
-              <button className="setting-action" onClick={openMcpEditor}>
-                {t("project.editJson")}
-              </button>
-            </div>
-            {mcpEditing && (
-              <div className="setting-editor">
-                <textarea
-                  className="setting-textarea"
-                  value={mcpDraft}
-                  spellCheck={false}
-                  onChange={(e) => setMcpDraft(e.currentTarget.value)}
-                  rows={8}
-                />
-                {mcpError && <div className="setting-error">{mcpError}</div>}
-                <div className="setting-editor-actions">
-                  <button
-                    className="setting-action"
-                    onClick={() => setMcpEditing(false)}
-                    disabled={mcpSaving}
-                  >
-                    {t("apps.cancel")}
-                  </button>
-                  <button
-                    className="setting-action setting-action-primary"
-                    onClick={() => void saveMcpServers()}
-                    disabled={mcpSaving}
-                  >
-                    {mcpSaving ? t("project.saving") : t("appViewer.save")}
-                  </button>
-                </div>
+                )}
+                <button
+                  className="setting-action"
+                  onClick={openAgentProfileEditor}
+                >
+                  {t("project.editProfile")}
+                </button>
               </div>
-            )}
+              {profileEditing && (
+                <div className="setting-editor">
+                  <label className="setting-editor-label">
+                    {t("project.instructionsLabel")}
+                  </label>
+                  <textarea
+                    className="setting-textarea"
+                    value={profileInstructionsDraft}
+                    spellCheck={false}
+                    onChange={(e) =>
+                      setProfileInstructionsDraft(e.currentTarget.value)
+                    }
+                    rows={6}
+                    placeholder={t("project.instructionsPlaceholder")}
+                  />
+                  <label className="setting-editor-label">
+                    {t("project.preferredSkillsLabel")}
+                  </label>
+                  <textarea
+                    className="setting-textarea setting-textarea-compact"
+                    value={profileSkillsDraft}
+                    spellCheck={false}
+                    onChange={(e) =>
+                      setProfileSkillsDraft(e.currentTarget.value)
+                    }
+                    rows={3}
+                    placeholder={
+                      "build-web-apps:react-best-practices\nplaywright\nopenai-docs"
+                    }
+                  />
+                  <div className="setting-skill-presets">
+                    {SKILL_PRESETS.map((skill) => {
+                      const selected = profileSkillDraftSet.has(
+                        skill.id.toLowerCase(),
+                      );
+                      return (
+                        <button
+                          key={skill.id}
+                          className={`setting-skill-preset ${selected ? "selected" : ""}`}
+                          type="button"
+                          onClick={() => appendProfileSkill(skill.id)}
+                          disabled={selected}
+                          title={skill.id}
+                        >
+                          {selected ? "✓ " : "+ "}
+                          {t(skill.labelKey)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {profileError && (
+                    <div className="setting-error">{profileError}</div>
+                  )}
+                  <div className="setting-editor-actions">
+                    <button
+                      className="setting-action"
+                      onClick={() => setProfileEditing(false)}
+                      disabled={profileSaving}
+                    >
+                      {t("apps.cancel")}
+                    </button>
+                    <button
+                      className="setting-action setting-action-primary"
+                      onClick={() => void saveAgentProfile()}
+                      disabled={profileSaving}
+                    >
+                      {profileSaving
+                        ? t("project.saving")
+                        : t("appViewer.save")}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="setting-row">
+              <label className="setting-label">
+                {t("project.browserBridge")}
+              </label>
+              <label className="setting-toggle">
+                <input
+                  type="checkbox"
+                  checked={browserOn}
+                  onChange={(e) => void setBrowser(e.currentTarget.checked)}
+                />
+                {browserOn
+                  ? t("project.browserEnabled")
+                  : t("project.browserDisabled")}
+              </label>
+              {browserOn && (
+                <span className="setting-hint">
+                  {t("project.browserHint")}
+                </span>
+              )}
+            </div>
+            <div className="setting-row setting-row-block">
+              <label className="setting-label">{t("project.connections")}</label>
+              <div className="setting-mcp-summary">
+                {mcpServerNames.length === 0 ? (
+                  <span className="setting-empty">{t("project.none")}</span>
+                ) : (
+                  mcpServerNames.map((name) => (
+                    <span key={name} className="setting-chip">
+                      {name}
+                    </span>
+                  ))
+                )}
+                <button className="setting-action" onClick={openMcpEditor}>
+                  {t("project.editJson")}
+                </button>
+              </div>
+              {mcpEditing && (
+                <div className="setting-editor">
+                  <textarea
+                    className="setting-textarea"
+                    value={mcpDraft}
+                    spellCheck={false}
+                    onChange={(e) => setMcpDraft(e.currentTarget.value)}
+                    rows={8}
+                  />
+                  {mcpError && <div className="setting-error">{mcpError}</div>}
+                  <div className="setting-editor-actions">
+                    <button
+                      className="setting-action"
+                      onClick={() => setMcpEditing(false)}
+                      disabled={mcpSaving}
+                    >
+                      {t("apps.cancel")}
+                    </button>
+                    <button
+                      className="setting-action setting-action-primary"
+                      onClick={() => void saveMcpServers()}
+                      disabled={mcpSaving}
+                    >
+                      {mcpSaving ? t("project.saving") : t("appViewer.save")}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </section>
+        </details>
       )}
 
-      <section>
+      <section className="project-topics-section">
         <div className="section-head">
           <h2 className="section-title">
             {t("project.topics")}
@@ -4997,7 +5154,7 @@ function ProjectScreen({
         )}
       </section>
 
-      <section>
+      <section className="project-files-section">
         <div className="section-head">
           <h2 className="section-title">{t("project.files")}</h2>
           <label className="section-toggle">
