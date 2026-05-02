@@ -66,6 +66,8 @@ The injected runtime overlay provides:
 - `window.reflexNotifyShow(titleOrParams, body?)`
 - `window.reflexProjectsList(params)`
 - `window.reflexTopicsList(params)`
+- `window.reflexSkillsList(params)`
+- `window.reflexMcpServers(params)`
 - `window.reflexBrowserInit(params)`
 - `window.reflexBrowserTabs()`
 - `window.reflexBrowserOpen(url)`

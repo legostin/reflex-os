@@ -83,6 +83,8 @@ const API_GROUPS = [
     methods: [
       "projects.list",
       "topics.list",
+      "skills.list",
+      "mcp.servers",
     ],
   },
   {
@@ -188,6 +190,8 @@ const HELPER_GROUPS = [
     helpers: [
       "reflexProjectsList",
       "reflexTopicsList",
+      "reflexSkillsList",
+      "reflexMcpServers",
       "reflexBrowserInit",
       "reflexBrowserTabs",
       "reflexBrowserOpen",
@@ -231,6 +235,10 @@ const PERMISSION_EXAMPLES = [
   "projects.read:*",
   "topics.read:<project>",
   "topics.read:*",
+  "skills.read:<project>",
+  "skills.read:*",
+  "mcp.read:<project>",
+  "mcp.read:*",
   "browser.read",
   "browser.control",
   "browser.project:<project>",

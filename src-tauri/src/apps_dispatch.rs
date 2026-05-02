@@ -513,6 +513,8 @@ pub async fn dispatch_app_method(
         }
         "projects.list" => projects_list_for_app(app, app_id, params),
         "topics.list" | "threads.list" => topics_list_for_app(app, app_id, params),
+        "skills.list" => skills_list_for_app(app, app_id, params),
+        "mcp.servers" | "mcp.list" => mcp_servers_for_app(app, app_id, params),
         "browser.init" => browser_init_for_app(app, app_id, params).await,
         "browser.tabs.list" | "browser.tabsList" => {
             ensure_browser_permission(app, app_id, "read")?;
@@ -1306,6 +1308,106 @@ fn topics_list_for_app(
     Ok(serde_json::Value::Array(out))
 }
 
+fn skills_list_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let targets = project_targets_for_app(app, app_id, &params, "skills.read")?;
+    let out: Vec<serde_json::Value> = targets
+        .into_iter()
+        .map(|project| {
+            serde_json::json!({
+                "project_id": project.id,
+                "project_name": project.name,
+                "skills": project.skills,
+            })
+        })
+        .collect();
+    Ok(serde_json::Value::Array(out))
+}
+
+fn mcp_servers_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let include_config = bool_param(&params, "include_config", "includeConfig").unwrap_or(false);
+    let targets = project_targets_for_app(app, app_id, &params, "mcp.read")?;
+    let mut out = Vec::new();
+
+    for project in targets {
+        if include_config {
+            ensure_scoped_permission(app, app_id, "mcp.read", &project.id)?;
+        }
+
+        let object = project
+            .mcp_servers
+            .as_ref()
+            .and_then(|value| value.as_object());
+        let mut names: Vec<String> = object
+            .map(|servers| servers.keys().cloned().collect())
+            .unwrap_or_default();
+        names.sort();
+
+        let servers: Vec<serde_json::Value> = names
+            .iter()
+            .map(|name| {
+                let mut item = serde_json::json!({ "name": name });
+                if include_config {
+                    item["config"] = object
+                        .and_then(|servers| servers.get(name))
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+                }
+                item
+            })
+            .collect();
+
+        out.push(serde_json::json!({
+            "project_id": project.id,
+            "project_name": project.name,
+            "server_names": names,
+            "servers": servers,
+        }));
+    }
+
+    Ok(serde_json::Value::Array(out))
+}
+
+fn project_targets_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+    scope: &str,
+) -> Result<Vec<project::Project>, String> {
+    let include_all = bool_param(params, "include_all", "includeAll").unwrap_or(false);
+    let target_project_id = string_param(params, "project_id", "projectId");
+    let projects = list_user_projects(app)?;
+
+    if let Some(project_id) = target_project_id {
+        let project = projects
+            .into_iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| format!("project not found: {project_id}"))?;
+        ensure_project_scope_access(app, app_id, scope, &project)?;
+        return Ok(vec![project]);
+    }
+
+    if include_all {
+        ensure_scoped_permission(app, app_id, scope, "*")?;
+        return Ok(projects);
+    }
+
+    Ok(projects
+        .into_iter()
+        .filter(|project| {
+            project_is_linked_to_app(app, app_id, project)
+                || scoped_permission_allowed(app, app_id, scope, &project.id)
+        })
+        .collect())
+}
+
 fn list_user_projects(app: &AppHandle) -> Result<Vec<project::Project>, String> {
     let apps_root = apps::apps_dir(app)
         .ok()
@@ -1394,6 +1496,24 @@ fn ensure_topic_read_access(
     } else {
         Err(format!(
             "permission denied: topics.read requires linked project or manifest.permissions entry 'topics.read:{}' / 'topics.read:*'",
+            target.id
+        ))
+    }
+}
+
+fn ensure_project_scope_access(
+    app: &AppHandle,
+    app_id: &str,
+    scope: &str,
+    target: &project::Project,
+) -> Result<(), String> {
+    if project_is_linked_to_app(app, app_id, target)
+        || scoped_permission_allowed(app, app_id, scope, &target.id)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "permission denied: {scope} requires linked project or manifest.permissions entry '{scope}:{}' / '{scope}:*'",
             target.id
         ))
     }

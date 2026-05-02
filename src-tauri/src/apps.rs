@@ -927,6 +927,12 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexTopicsList = function(params) {
     return reflexInvokeRaw('topics.list', params || {});
   };
+  window.reflexSkillsList = function(params) {
+    return reflexInvokeRaw('skills.list', params || {});
+  };
+  window.reflexMcpServers = function(params) {
+    return reflexInvokeRaw('mcp.servers', params || {});
+  };
   window.reflexBrowserInit = function(params) {
     return reflexInvokeRaw('browser.init', params || {});
   };
