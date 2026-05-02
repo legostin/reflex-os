@@ -9,7 +9,7 @@ use crate::memory::store::{self, ListFilter, SaveRequest};
 use crate::{browser, logs, memory, project, storage};
 use crate::scheduler;
 use crate::QuickContext;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub async fn dispatch_app_method(
@@ -646,6 +646,7 @@ pub async fn dispatch_app_method(
             scheduler_run_detail_for_app(app, app_id, params)
         }
         "memory.save" => memory_save_for_app(app, app_id, params).await,
+        "memory.read" => memory_read_for_app(app, app_id, params),
         "memory.list" => memory_list_for_app(app, app_id, params),
         "memory.delete" => memory_delete_for_app(app, app_id, params),
         "memory.search" => memory_search_for_app(app, app_id, params).await,
@@ -1269,6 +1270,22 @@ fn memory_list_for_app(
     Ok(serde_json::to_value(notes).unwrap_or(serde_json::Value::Array(vec![])))
 }
 
+fn memory_read_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let scope = parse_scope(&params, MemoryScope::Project)?;
+    if scope == MemoryScope::Global {
+        ensure_global_memory_permission(app, app_id, false)?;
+    }
+    let rel_path = parse_memory_rel_path(&params)?;
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let roots = scope_roots(&target)?;
+    let note = store::read(&roots, scope, &rel_path).map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(note).unwrap_or(serde_json::Value::Null))
+}
+
 fn memory_delete_for_app(
     app: &AppHandle,
     app_id: &str,
@@ -1278,22 +1295,44 @@ fn memory_delete_for_app(
     if scope == MemoryScope::Global {
         ensure_global_memory_permission(app, app_id, true)?;
     }
-    let rel_path = params
-        .get("rel_path")
-        .or_else(|| params.get("relPath"))
-        .and_then(|v| v.as_str())
-        .ok_or("missing rel_path")?;
+    let rel_path = parse_memory_rel_path(&params)?;
     let target = resolve_memory_target(app, app_id, &params)?;
     let roots = scope_roots(&target)?;
-    store::delete(&roots, scope, Path::new(rel_path)).map_err(|e| e.to_string())?;
+    store::delete(&roots, scope, &rel_path).map_err(|e| e.to_string())?;
     if scope != MemoryScope::Global {
-        let doc_id = format!("memory:{rel_path}");
+        let doc_id = format!("memory:{}", rel_path.display());
         let root = target.root.clone();
         tokio::spawn(async move {
             let _ = rag::forget(&root, &doc_id).await;
         });
     }
     Ok(serde_json::json!({ "ok": true }))
+}
+
+fn parse_memory_rel_path(params: &serde_json::Value) -> Result<PathBuf, String> {
+    let raw = params
+        .get("rel_path")
+        .or_else(|| params.get("relPath"))
+        .and_then(|v| v.as_str())
+        .ok_or("missing rel_path")?
+        .trim();
+    if raw.is_empty() {
+        return Err("rel_path must be non-empty".into());
+    }
+    let path = PathBuf::from(raw);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| {
+                matches!(
+                    component,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            })
+    {
+        return Err("rel_path must stay inside the memory scope".into());
+    }
+    Ok(path)
 }
 
 async fn memory_search_for_app(
@@ -2593,5 +2632,22 @@ mod tests {
         assert!(validate_action_params(&schema, &wrong_enum)
             .unwrap_err()
             .contains("params.mode must be one of"));
+    }
+
+    #[test]
+    fn memory_rel_path_rejects_escape_paths() {
+        for raw in ["/tmp/note.md", "../note.md", "notes/../../secret.md"] {
+            let params = serde_json::json!({ "relPath": raw });
+            assert!(
+                parse_memory_rel_path(&params).is_err(),
+                "{raw} should not be accepted as a memory rel path"
+            );
+        }
+
+        let params = serde_json::json!({ "relPath": "facts/project.md" });
+        assert_eq!(
+            parse_memory_rel_path(&params).unwrap(),
+            PathBuf::from("facts/project.md")
+        );
     }
 }

@@ -565,7 +565,7 @@ fn app_revise(
   • projects.list/open / topics.list/open — обзор и открытие проектов/топиков в основном UI; чужие требуют permission projects.read/topics.read\n\
   • skills.list / mcp.servers — preferred skills и MCP server names; raw MCP config требует permission mcp.read:<project>|*\n\
   • browser.init/tabs.list/open/navigate/readText/readOutline/screenshot/clickText/clickSelector/fill — встроенный browser sidecar; требует browser.read/control\n\
-  • memory.save/list/delete/search/recall/indexPath/pathStatus/forgetPath — память Reflex; project scope по умолчанию, global требует permission memory.global.read/write\n\
+  • memory.save/read/list/delete/search/recall/indexPath/pathStatus/forgetPath — память Reflex; project scope по умолчанию, global требует permission memory.global.read/write\n\
   • scheduler.list/runNow/setPaused/runs/runDetail — читать и управлять своими расписаниями; чужие требуют permission scheduler.read/run/write\n\
   • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
   • notify.show — macOS push\n\
@@ -997,6 +997,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("- Чужие app/schedule требуют manifest.permissions: \"scheduler.read:*\", \"scheduler.run:<app>\", \"scheduler.write:<app>::<schedule>\" или \"scheduler:*\".\n\n");
     p.push_str("MEMORY API — используй для долгой памяти, RAG и проектного контекста вместо собственного JSON-хака.\n");
     p.push_str("  memory.save({scope?, kind?, name, description?, body, tags?, projectId?, threadId?}) -> MemoryNote\n");
+    p.push_str("  memory.read({scope?, relPath, projectId?, threadId?}) -> MemoryNote\n");
     p.push_str("  memory.list({scope?, filter?, projectId?, threadId?}) -> MemoryNote[]; filter: {kind?, tag?, query?}\n");
     p.push_str("  memory.delete({scope?, relPath, projectId?, threadId?}) -> {ok}\n");
     p.push_str("  memory.search({query, projectId?, limit?}) -> RagHit[] — поиск по индексированным файлам и заметкам проекта\n");
@@ -1007,7 +1008,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexManifestGet(), reflexManifestUpdate(patch), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexMcpServers(params), reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit.\n");
     p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set/List/Delete(...), reflexFsRead/List/Write/Delete(...), reflexClipboardReadText(), reflexClipboardWriteText(textOrParams), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
     p.push_str("  Browser helpers: reflexBrowserInit(params), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserNavigate(tabId, url), reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?), reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?).\n");
-    p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
+    p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
     p.push_str("MANIFEST.network (для net.fetch):\n");
     p.push_str("  { \"network\": { \"allowed_hosts\": [\"api.example.com\", \"*.foo.com\"] } }\n\n");
     p.push_str("MANIFEST.schedules — повторяемые задачи. Reflex запускает их сам, даже когда окно app закрыто (Reflex живёт в трее).\n");
@@ -1089,7 +1090,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  window.reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?)\n");
     p.push_str("  window.reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?)\n");
     p.push_str("  window.reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerRunDetail(runIdOrParams)\n");
-    p.push_str("  window.reflexMemorySave(params), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams)\n");
+    p.push_str("  window.reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams)\n");
     p.push_str("  window.reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams)\n");
     p.push_str("  window.reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryForgetPath(pathOrParams)\n");
     p.push_str("  window.reflexAppsList(params), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?)\n");

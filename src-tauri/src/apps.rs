@@ -1177,6 +1177,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexMemorySave = function(params) {
     return reflexInvokeRaw('memory.save', params || {});
   };
+  window.reflexMemoryRead = function(relPathOrParams) {
+    var params = (typeof relPathOrParams === 'string') ? {relPath: relPathOrParams} : (relPathOrParams || {});
+    return reflexInvokeRaw('memory.read', params);
+  };
   window.reflexMemoryList = function(params) {
     return reflexInvokeRaw('memory.list', params || {});
   };

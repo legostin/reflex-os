@@ -96,6 +96,7 @@ The injected runtime overlay provides:
 - `window.reflexSchedulerRuns(params)`
 - `window.reflexSchedulerRunDetail(runIdOrParams)`
 - `window.reflexMemorySave(params)`
+- `window.reflexMemoryRead(relPathOrParams)`
 - `window.reflexMemoryList(params)`
 - `window.reflexMemoryDelete(relPathOrParams)`
 - `window.reflexMemorySearch(queryOrParams)`
@@ -194,6 +195,7 @@ Cross-app scheduler access requires `scheduler.read:*`, `scheduler.run:<app>`,
 Memory methods:
 
 - `memory.save({ scope?, kind?, name, description?, body, tags?, projectId?, threadId? })`.
+- `memory.read({ scope?, relPath, projectId?, threadId? })`.
 - `memory.list({ scope?, filter?, projectId?, threadId? })`.
 - `memory.delete({ scope?, relPath, projectId?, threadId? })`.
 - `memory.search({ query, projectId?, limit? })`.
