@@ -56,6 +56,12 @@ The injected runtime overlay provides:
 - `window.reflexLogList(params)`
 - `window.reflexManifestGet()`
 - `window.reflexManifestUpdate(patch)`
+- `window.reflexPermissionsList()`
+- `window.reflexPermissionsEnsure(permissionOrParams)`
+- `window.reflexPermissionsRevoke(permissionOrParams)`
+- `window.reflexNetworkHosts()`
+- `window.reflexNetworkAllowHost(hostOrParams)`
+- `window.reflexNetworkRevokeHost(hostOrParams)`
 - `window.reflexWidgetsList()`
 - `window.reflexWidgetsUpsert(widgetOrParams)`
 - `window.reflexWidgetsDelete(widgetIdOrParams, deleteEntry?)`
@@ -145,6 +151,12 @@ Core methods:
 - `manifest.get()` -> current `manifest.json`.
 - `manifest.update({ patch })` -> merge-update this app's manifest; useful for
   adding `actions`, `widgets`, `schedules`, permissions, or network hosts.
+- `permissions.list()`, `permissions.ensure({ permission })` or
+  `permissions.ensure({ permissions })`, `permissions.revoke(...)` -> targeted
+  updates to this app's manifest permissions.
+- `network.hosts()`, `network.allowHost({ host })` or
+  `network.allowHost({ hosts })`, `network.revokeHost(...)` -> targeted updates
+  to `manifest.network.allowed_hosts` for `net.fetch`.
 - `widgets.list()` -> this app's dashboard widgets.
 - `widgets.upsert({ id, name?, entry?, size?, description?, html? })` or
   `widgets.upsert({ widget, html? })` -> create/update a dashboard widget and

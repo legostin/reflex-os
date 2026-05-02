@@ -969,6 +969,28 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexManifestUpdate = function(patch) {
     return reflexInvokeRaw('manifest.update', {patch: patch || {}});
   };
+  window.reflexPermissionsList = function() {
+    return reflexInvokeRaw('permissions.list', {});
+  };
+  window.reflexPermissionsEnsure = function(permissionOrParams) {
+    var params = (typeof permissionOrParams === 'string') ? {permission: permissionOrParams} : (permissionOrParams || {});
+    return reflexInvokeRaw('permissions.ensure', params);
+  };
+  window.reflexPermissionsRevoke = function(permissionOrParams) {
+    var params = (typeof permissionOrParams === 'string') ? {permission: permissionOrParams} : (permissionOrParams || {});
+    return reflexInvokeRaw('permissions.revoke', params);
+  };
+  window.reflexNetworkHosts = function() {
+    return reflexInvokeRaw('network.hosts', {});
+  };
+  window.reflexNetworkAllowHost = function(hostOrParams) {
+    var params = (typeof hostOrParams === 'string') ? {host: hostOrParams} : (hostOrParams || {});
+    return reflexInvokeRaw('network.allowHost', params);
+  };
+  window.reflexNetworkRevokeHost = function(hostOrParams) {
+    var params = (typeof hostOrParams === 'string') ? {host: hostOrParams} : (hostOrParams || {});
+    return reflexInvokeRaw('network.revokeHost', params);
+  };
   window.reflexWidgetsList = function() {
     return reflexInvokeRaw('widgets.list', {});
   };

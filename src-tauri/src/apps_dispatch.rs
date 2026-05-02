@@ -33,6 +33,12 @@ pub async fn dispatch_app_method(
         }
         "manifest.get" => manifest_get(app, app_id),
         "manifest.update" => manifest_update(app, app_id, params),
+        "permissions.list" => permissions_list_for_app(app, app_id),
+        "permissions.ensure" => permissions_ensure_for_app(app, app_id, params),
+        "permissions.revoke" => permissions_revoke_for_app(app, app_id, params),
+        "network.hosts" => network_hosts_for_app(app, app_id),
+        "network.allowHost" => network_allow_host_for_app(app, app_id, params),
+        "network.revokeHost" => network_revoke_host_for_app(app, app_id, params),
         "widgets.list" => widgets_list_for_app(app, app_id),
         "widgets.upsert" => widgets_upsert_for_app(app, app_id, params),
         "widgets.delete" => widgets_delete_for_app(app, app_id, params),
@@ -716,6 +722,239 @@ fn manifest_update(
     }))
 }
 
+fn write_manifest_and_emit(
+    app: &AppHandle,
+    app_id: &str,
+    manifest: &apps::AppManifest,
+) -> Result<(), String> {
+    apps::write_manifest(app, app_id, manifest).map_err(|e| e.to_string())?;
+    emit_apps_changed(app);
+    if let Some(handle) = app.try_state::<scheduler::SchedulerHandle>() {
+        handle.inner().rescan();
+    }
+    Ok(())
+}
+
+fn permissions_list_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "permissions": manifest.permissions }))
+}
+
+fn permissions_ensure_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let permissions = parse_string_list(&params, "permission", "permissions")?;
+    let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let mut added = Vec::new();
+    for permission in permissions {
+        let permission = normalize_permission(&permission)?;
+        if !manifest.permissions.iter().any(|p| p == &permission) {
+            manifest.permissions.push(permission.clone());
+            added.push(permission);
+        }
+    }
+    write_manifest_and_emit(app, app_id, &manifest)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "added": added,
+        "permissions": manifest.permissions,
+    }))
+}
+
+fn permissions_revoke_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let permissions = parse_string_list(&params, "permission", "permissions")?;
+    let revoke: std::collections::HashSet<String> = permissions
+        .into_iter()
+        .map(|permission| normalize_permission(&permission))
+        .collect::<Result<_, _>>()?;
+    let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let before = manifest.permissions.len();
+    manifest.permissions.retain(|permission| !revoke.contains(permission));
+    let removed = before.saturating_sub(manifest.permissions.len());
+    write_manifest_and_emit(app, app_id, &manifest)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "removed": removed,
+        "permissions": manifest.permissions,
+    }))
+}
+
+fn network_hosts_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "allowed_hosts": manifest
+            .network
+            .map(|network| network.allowed_hosts)
+            .unwrap_or_default(),
+    }))
+}
+
+fn network_allow_host_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let hosts = parse_string_list(&params, "host", "hosts")?;
+    let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let network = manifest.network.get_or_insert_with(apps::NetworkPolicy::default);
+    let mut added = Vec::new();
+    for host in hosts {
+        let host = normalize_allowed_host(&host)?;
+        if !network.allowed_hosts.iter().any(|h| h == &host) {
+            network.allowed_hosts.push(host.clone());
+            added.push(host);
+        }
+    }
+    let allowed_hosts = network.allowed_hosts.clone();
+    write_manifest_and_emit(app, app_id, &manifest)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "added": added,
+        "allowed_hosts": allowed_hosts,
+    }))
+}
+
+fn network_revoke_host_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let hosts = parse_string_list(&params, "host", "hosts")?;
+    let revoke: std::collections::HashSet<String> = hosts
+        .into_iter()
+        .map(|host| normalize_allowed_host(&host))
+        .collect::<Result<_, _>>()?;
+    let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let mut removed = 0usize;
+    let mut allowed_hosts = Vec::new();
+    if let Some(network) = manifest.network.as_mut() {
+        let before = network.allowed_hosts.len();
+        network.allowed_hosts.retain(|host| !revoke.contains(host));
+        removed = before.saturating_sub(network.allowed_hosts.len());
+        allowed_hosts = network.allowed_hosts.clone();
+        if network.allowed_hosts.is_empty() {
+            manifest.network = None;
+        }
+    }
+    write_manifest_and_emit(app, app_id, &manifest)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "removed": removed,
+        "allowed_hosts": allowed_hosts,
+    }))
+}
+
+fn parse_string_list(
+    params: &serde_json::Value,
+    single_key: &str,
+    list_key: &str,
+) -> Result<Vec<String>, String> {
+    if let Some(value) = params.get(single_key).and_then(|v| v.as_str()) {
+        let value = value.trim();
+        if !value.is_empty() {
+            return Ok(vec![value.to_string()]);
+        }
+    }
+    let value = params
+        .get(list_key)
+        .or_else(|| params.get(&snake_to_camel(list_key)))
+        .ok_or_else(|| format!("missing {single_key} or {list_key}"))?;
+    if let Some(value) = value.as_str() {
+        let value = value.trim();
+        if !value.is_empty() {
+            return Ok(vec![value.to_string()]);
+        }
+    }
+    let items = value
+        .as_array()
+        .ok_or_else(|| format!("{list_key} must be a string or array of strings"))?;
+    let out: Vec<String> = items
+        .iter()
+        .filter_map(|item| item.as_str())
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect();
+    if out.is_empty() {
+        return Err(format!("{list_key} must include at least one non-empty string"));
+    }
+    Ok(out)
+}
+
+fn snake_to_camel(input: &str) -> String {
+    let mut out = String::new();
+    let mut upper_next = false;
+    for ch in input.chars() {
+        if ch == '_' {
+            upper_next = true;
+        } else if upper_next {
+            out.extend(ch.to_uppercase());
+            upper_next = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn normalize_permission(permission: &str) -> Result<String, String> {
+    let permission = permission.trim();
+    if permission.is_empty() {
+        return Err("permission must be non-empty".into());
+    }
+    if permission.len() > 160 {
+        return Err("permission must be 160 characters or fewer".into());
+    }
+    if !permission
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | ':' | '*' | '-' | '_'))
+    {
+        return Err("permission may contain only ASCII letters, numbers, '.', ':', '*', '-' or '_'".into());
+    }
+    Ok(permission.to_string())
+}
+
+fn normalize_allowed_host(raw: &str) -> Result<String, String> {
+    let raw = raw.trim().to_lowercase();
+    if raw.is_empty() {
+        return Err("host must be non-empty".into());
+    }
+    let wildcard = raw.starts_with("*.");
+    let input = raw.strip_prefix("*.").unwrap_or(&raw);
+    let parsed_host = if input.contains("://") {
+        reqwest::Url::parse(input)
+            .map_err(|e| format!("invalid host url: {e}"))?
+            .host_str()
+            .ok_or_else(|| "host url has no host".to_string())?
+            .to_string()
+    } else {
+        reqwest::Url::parse(&format!("https://{input}"))
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_string))
+            .unwrap_or_else(|| input.to_string())
+    };
+    let host = parsed_host.trim().trim_matches('.').to_string();
+    if host.is_empty() {
+        return Err("host must be non-empty".into());
+    }
+    if host.len() > 253 {
+        return Err("host must be 253 characters or fewer".into());
+    }
+    if host.contains('/') || host.contains(char::is_whitespace) || host.contains('*') {
+        return Err("host must be a hostname, IP address, or leading wildcard hostname".into());
+    }
+    if wildcard && (host == "localhost" || host.parse::<std::net::IpAddr>().is_ok()) {
+        return Err("wildcard host must be a DNS hostname".into());
+    }
+    Ok(if wildcard { format!("*.{host}") } else { host })
+}
+
 fn merge_json(base: &mut serde_json::Value, patch: serde_json::Value) {
     match (base, patch) {
         (serde_json::Value::Object(base_obj), serde_json::Value::Object(patch_obj)) => {
@@ -940,6 +1179,12 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "logs.list",
                 "manifest.get",
                 "manifest.update",
+                "permissions.list",
+                "permissions.ensure",
+                "permissions.revoke",
+                "network.hosts",
+                "network.allowHost",
+                "network.revokeHost",
                 "widgets.list",
                 "widgets.upsert",
                 "widgets.delete",
@@ -1063,6 +1308,12 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexLogList",
                 "reflexManifestGet",
                 "reflexManifestUpdate",
+                "reflexPermissionsList",
+                "reflexPermissionsEnsure",
+                "reflexPermissionsRevoke",
+                "reflexNetworkHosts",
+                "reflexNetworkAllowHost",
+                "reflexNetworkRevokeHost",
                 "reflexWidgetsList",
                 "reflexWidgetsUpsert",
                 "reflexWidgetsDelete",
@@ -3757,5 +4008,23 @@ mod tests {
         assert!(validate_action_def(&action)
             .unwrap_err()
             .contains("steps"));
+    }
+
+    #[test]
+    fn permission_and_host_normalizers_accept_targeted_manifest_grants() {
+        assert_eq!(
+            normalize_permission(" apps.invoke:health::today ").unwrap(),
+            "apps.invoke:health::today"
+        );
+        assert!(normalize_permission("bad permission").is_err());
+        assert_eq!(
+            normalize_allowed_host("https://API.Example.com/v1").unwrap(),
+            "api.example.com"
+        );
+        assert_eq!(
+            normalize_allowed_host("*.Example.com").unwrap(),
+            "*.example.com"
+        );
+        assert!(normalize_allowed_host("*.127.0.0.1").is_err());
     }
 }
