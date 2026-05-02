@@ -884,6 +884,15 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
 - Кнопка для запроса, отображение результата (JSON pretty-print).\n\
 - Если нужны секреты — спроси у пользователя через input-field, храни в storage.json.\n",
         ),
+        "automation" => Some(
+            "Шаблон AUTOMATION:\n\
+- Обязательно добавь в manifest.schedules хотя бы одно расписание с 6-польным cron (sec min hour dom month dow, UTC).\n\
+- В schedule.steps используй bridge methods без UI: agent.task, storage.*, fs.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/runDetail.\n\
+- Не используй dialog.* и scheduler.runNow/setPaused внутри schedule.steps.\n\
+- Добавь обычный UI, где видно состояние: scheduler.list(), scheduler.runs({limit: 20}), кнопка ручного запуска через scheduler.runNow({scheduleId}).\n\
+- Если автоматизация производит полезные данные, сохраняй их в storage или memory.save и добавь manifest.actions для других apps.\n\
+- Если результат нужен на проектном дашборде, добавь manifest.widgets с компактной страницей widgets/<id>.html.\n",
+        ),
         "node-server" => Some(
             "Шаблон NODE-SERVER:\n\
 - runtime=server, command=[\"node\", \"server.js\"].\n\

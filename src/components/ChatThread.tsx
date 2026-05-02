@@ -139,7 +139,12 @@ type Route =
   | { kind: "home" }
   | { kind: "project"; project_id: string }
   | { kind: "topic"; thread_id: string }
-  | { kind: "apps" }
+  | {
+      kind: "apps";
+      initialTemplate?: string;
+      openCreate?: boolean;
+      createRequestId?: number;
+    }
   | { kind: "app"; app_id: string }
   | { kind: "memory"; project_id?: string }
   | { kind: "automations" }
@@ -992,6 +997,9 @@ export default function ChatThread() {
       case "apps":
         return (
           <AppsScreen
+            initialTemplate={r.initialTemplate}
+            openCreate={r.openCreate}
+            createRequestId={r.createRequestId}
             onOpenApp={(id) => navigate({ kind: "app", app_id: id })}
             onOpenTopic={(id) => navigate({ kind: "topic", thread_id: id })}
           />
@@ -1020,7 +1028,18 @@ export default function ChatThread() {
         );
       }
       case "automations":
-        return <AutomationsScreen />;
+        return (
+          <AutomationsScreen
+            onCreateAutomation={() =>
+              navigate({
+                kind: "apps",
+                initialTemplate: "automation",
+                openCreate: true,
+                createRequestId: Date.now(),
+              })
+            }
+          />
+        );
       case "browser":
         return (
           <BrowserScreen
@@ -1569,6 +1588,14 @@ const TEMPLATES: {
       "Например: показать issues из github.com/owner/repo; конвертер валют через open.er-api.com; …",
   },
   {
+    id: "automation",
+    icon: "⏱",
+    name: "Automation",
+    description: "Расписание, action и виджет для фоновой задачи",
+    placeholder:
+      "Например: раз в час проверять важные письма и сохранять краткую сводку; каждое утро собирать статус проектов; …",
+  },
+  {
     id: "node-server",
     icon: "🚀",
     name: "Node server",
@@ -1599,9 +1626,15 @@ function formatAgo(ms: number): string {
 }
 
 function AppsScreen({
+  initialTemplate,
+  openCreate,
+  createRequestId,
   onOpenApp,
   onOpenTopic,
 }: {
+  initialTemplate?: string;
+  openCreate?: boolean;
+  createRequestId?: number;
   onOpenApp: (id: string) => void;
   onOpenTopic: (id: string) => void;
 }) {
@@ -1616,6 +1649,16 @@ function AppsScreen({
   const [trash, setTrash] = useState<TrashEntry[]>([]);
   const [showTrash, setShowTrash] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openCreate) return;
+    const nextTemplate = TEMPLATES.some((t) => t.id === initialTemplate)
+      ? initialTemplate!
+      : "blank";
+    setTemplate(nextTemplate);
+    setStep("describe");
+    setShowModal(true);
+  }, [initialTemplate, openCreate, createRequestId]);
 
   async function importBundle() {
     if (importing) return;

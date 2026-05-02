@@ -8,7 +8,11 @@ import "./automations.css";
 
 type Tab = "schedules" | "history";
 
-export function AutomationsScreen() {
+export function AutomationsScreen({
+  onCreateAutomation,
+}: {
+  onCreateAutomation?: () => void;
+}) {
   const [tab, setTab] = useState<Tab>("schedules");
   const [items, setItems] = useState<ScheduleListItem[]>([]);
   const [running, setRunning] = useState<Set<string>>(new Set());
@@ -95,19 +99,29 @@ export function AutomationsScreen() {
     <div className="automations-root">
       <header className="automations-header">
         <h1>Automations</h1>
-        <div className="automations-tabs">
-          <button
-            className={tab === "schedules" ? "tab-on" : ""}
-            onClick={() => setTab("schedules")}
-          >
-            Расписания
-          </button>
-          <button
-            className={tab === "history" ? "tab-on" : ""}
-            onClick={() => setTab("history")}
-          >
-            История запусков
-          </button>
+        <div className="automations-header-actions">
+          {onCreateAutomation && (
+            <button
+              className="automations-primary-btn"
+              onClick={onCreateAutomation}
+            >
+              + Автоматизация
+            </button>
+          )}
+          <div className="automations-tabs">
+            <button
+              className={tab === "schedules" ? "tab-on" : ""}
+              onClick={() => setTab("schedules")}
+            >
+              Расписания
+            </button>
+            <button
+              className={tab === "history" ? "tab-on" : ""}
+              onClick={() => setTab("history")}
+            >
+              История запусков
+            </button>
+          </div>
         </div>
       </header>
 
@@ -116,8 +130,19 @@ export function AutomationsScreen() {
       {tab === "schedules" && (
         <section className="automations-list">
           {sortedItems.length === 0 ? (
-            <div className="automations-empty">
-              Расписаний нет. Добавь <code>schedules</code> в манифест приложения.
+            <div className="automations-empty automations-empty-panel">
+              <div>
+                Расписаний нет. Создай app из шаблона Automation, и Reflex
+                сам добавит <code>schedules</code> в его manifest.
+              </div>
+              {onCreateAutomation && (
+                <button
+                  className="automations-primary-btn"
+                  onClick={onCreateAutomation}
+                >
+                  Создать автоматизацию
+                </button>
+              )}
             </div>
           ) : (
             <table className="automations-table">
