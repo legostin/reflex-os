@@ -313,7 +313,8 @@ Core methods:
 - `apps.list()`.
 - `apps.create({ description, template?, projectId? })`; requires `apps.create`
   or `apps:*`. Passing `projectId` also requires `projects.write:<project>` or
-  `projects.write:*`.
+  `projects.write:*`. Built-in templates: `blank`, `chat`, `dashboard`,
+  `health-dashboard`, `form`, `api-client`, `automation`, and `node-server`.
 - `apps.export({ app_id, targetPath })` and `apps.import({ zipPath })`;
   require `apps.manage` or `apps:*`. Exports omit app storage, project metadata,
   `.git`, and dependency folders from the `.reflexapp` bundle.
