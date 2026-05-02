@@ -685,7 +685,17 @@ pub async fn dispatch_app_method(
             browser::browser_tabs_list(app.clone()).await
         }
         "browser.tab.open" | "browser.open" => browser_open_for_app(app, app_id, params).await,
+        "browser.tab.close" | "browser.close" => browser_close_for_app(app, app_id, params).await,
+        "browser.setActive" | "browser.set_active" => {
+            browser_set_active_for_app(app, app_id, params).await
+        }
         "browser.navigate" => browser_navigate_for_app(app, app_id, params).await,
+        "browser.back" => browser_back_for_app(app, app_id, params).await,
+        "browser.forward" => browser_forward_for_app(app, app_id, params).await,
+        "browser.reload" => browser_reload_for_app(app, app_id, params).await,
+        "browser.currentUrl" | "browser.current_url" => {
+            browser_current_url_for_app(app, app_id, params).await
+        }
         "browser.readText" | "browser.read_text" => {
             browser_read_text_for_app(app, app_id, params).await
         }
@@ -700,6 +710,10 @@ pub async fn dispatch_app_method(
             browser_click_selector_for_app(app, app_id, params).await
         }
         "browser.fill" => browser_fill_for_app(app, app_id, params).await,
+        "browser.scroll" => browser_scroll_for_app(app, app_id, params).await,
+        "browser.waitFor" | "browser.wait_for" => {
+            browser_wait_for_app(app, app_id, params).await
+        }
         "scheduler.list" => scheduler_list_for_app(app, app_id, params),
         "scheduler.upsert" => scheduler_upsert_for_app(app, app_id, params),
         "scheduler.delete" => scheduler_delete_for_app(app, app_id, params).await,
@@ -1303,13 +1317,21 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "project.browser.setEnabled",
                 "browser.tabs.list",
                 "browser.open",
+                "browser.close",
+                "browser.setActive",
                 "browser.navigate",
+                "browser.back",
+                "browser.forward",
+                "browser.reload",
+                "browser.currentUrl",
                 "browser.readText",
                 "browser.readOutline",
                 "browser.screenshot",
                 "browser.clickText",
                 "browser.clickSelector",
                 "browser.fill",
+                "browser.scroll",
+                "browser.waitFor",
             ],
         ),
         bridge_group(
@@ -1474,13 +1496,21 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexProjectBrowserSetEnabled",
                 "reflexBrowserTabs",
                 "reflexBrowserOpen",
+                "reflexBrowserClose",
+                "reflexBrowserSetActive",
                 "reflexBrowserNavigate",
+                "reflexBrowserBack",
+                "reflexBrowserForward",
+                "reflexBrowserReload",
+                "reflexBrowserCurrentUrl",
                 "reflexBrowserReadText",
                 "reflexBrowserReadOutline",
                 "reflexBrowserScreenshot",
                 "reflexBrowserClickText",
                 "reflexBrowserClickSelector",
                 "reflexBrowserFill",
+                "reflexBrowserScroll",
+                "reflexBrowserWaitFor",
             ],
         ),
         bridge_group(
@@ -4990,6 +5020,26 @@ async fn browser_open_for_app(
     browser::browser_tab_open(app.clone(), url).await
 }
 
+async fn browser_close_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    browser::browser_tab_close(app.clone(), tab_id).await
+}
+
+async fn browser_set_active_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    browser::browser_set_active_tab(app.clone(), tab_id).await
+}
+
 async fn browser_navigate_for_app(
     app: &AppHandle,
     app_id: &str,
@@ -4999,6 +5049,46 @@ async fn browser_navigate_for_app(
     let tab_id = required_string_param(&params, "tab_id", "tabId")?;
     let url = required_string_param(&params, "url", "url")?;
     browser::browser_navigate(app.clone(), tab_id, url).await
+}
+
+async fn browser_back_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    browser::browser_back(app.clone(), tab_id).await
+}
+
+async fn browser_forward_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    browser::browser_forward(app.clone(), tab_id).await
+}
+
+async fn browser_reload_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    browser::browser_reload(app.clone(), tab_id).await
+}
+
+async fn browser_current_url_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "read")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    browser::browser_current_url(app.clone(), tab_id).await
 }
 
 async fn browser_read_text_for_app(
@@ -5065,6 +5155,33 @@ async fn browser_fill_for_app(
     let selector = required_string_param(&params, "selector", "selector")?;
     let value = required_string_param(&params, "value", "value")?;
     browser::browser_fill(app.clone(), tab_id, selector, value).await
+}
+
+async fn browser_scroll_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    let dx = params.get("dx").and_then(|v| v.as_i64());
+    let dy = params.get("dy").and_then(|v| v.as_i64());
+    browser::browser_scroll(app.clone(), tab_id, dx, dy).await
+}
+
+async fn browser_wait_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "read")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    let selector = required_string_param(&params, "selector", "selector")?;
+    let timeout_ms = params
+        .get("timeout_ms")
+        .or_else(|| params.get("timeoutMs"))
+        .and_then(|v| v.as_u64());
+    browser::browser_wait_for(app.clone(), tab_id, selector, timeout_ms).await
 }
 
 fn ensure_browser_project_access(

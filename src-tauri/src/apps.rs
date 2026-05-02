@@ -1327,8 +1327,32 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexBrowserOpen = function(url) {
     return reflexInvokeRaw('browser.open', {url: url || null});
   };
+  window.reflexBrowserClose = function(tabIdOrParams) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.close', params);
+  };
+  window.reflexBrowserSetActive = function(tabIdOrParams) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.setActive', params);
+  };
   window.reflexBrowserNavigate = function(tabId, url) {
     return reflexInvokeRaw('browser.navigate', {tabId: tabId, url: url});
+  };
+  window.reflexBrowserBack = function(tabIdOrParams) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.back', params);
+  };
+  window.reflexBrowserForward = function(tabIdOrParams) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.forward', params);
+  };
+  window.reflexBrowserReload = function(tabIdOrParams) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.reload', params);
+  };
+  window.reflexBrowserCurrentUrl = function(tabIdOrParams) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.currentUrl', params);
   };
   window.reflexBrowserReadText = function(tabId) {
     return reflexInvokeRaw('browser.readText', {tabId: tabId});
@@ -1351,6 +1375,14 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexBrowserFill = function(tabIdOrParams, selector, value) {
     var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams, selector: selector, value: value} : (tabIdOrParams || {});
     return reflexInvokeRaw('browser.fill', params);
+  };
+  window.reflexBrowserScroll = function(tabIdOrParams, dx, dy) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams, dx: dx, dy: dy} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.scroll', params);
+  };
+  window.reflexBrowserWaitFor = function(tabIdOrParams, selector, timeoutMs) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams, selector: selector, timeoutMs: timeoutMs} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.waitFor', params);
   };
   window.reflexSchedulerList = function(params) {
     return reflexInvokeRaw('scheduler.list', params || {});
