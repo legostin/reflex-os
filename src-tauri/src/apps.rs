@@ -923,6 +923,13 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexEventEmit = function(topic, payload) {
     return reflexInvokeRaw('events.emit', {topic: topic, payload: payload});
   };
+  window.reflexEventRecent = function(topicOrParams, limit) {
+    var params = (typeof topicOrParams === 'string') ? {topic: topicOrParams, limit: limit} : (topicOrParams || {});
+    return reflexInvokeRaw('events.recent', params);
+  };
+  window.reflexEventSubscriptions = function() {
+    return reflexInvokeRaw('events.subscriptions', {});
+  };
   window.reflexEventClearSubscriptions = function() {
     eventHandlers = Object.create(null);
     return reflexInvokeRaw('events.clearSubscriptions', {});

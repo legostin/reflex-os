@@ -545,14 +545,14 @@ pub async fn dispatch_app_method(
             }))
         }
         "events.emit" => {
-            let topic = params
-                .get("topic")
-                .and_then(|v| v.as_str())
-                .ok_or("missing topic")?;
+            let topic = required_string_param(&params, "topic", "topic")?;
             let payload = params.get("payload").cloned().unwrap_or(serde_json::Value::Null);
             let bus = app.state::<memory::MemoryState>().bus.clone();
-            app_bus::emit_event(&bus, app_id, topic, payload).await?;
-            Ok(serde_json::json!({ "ok": true }))
+            app_bus::emit_event(&bus, app_id, &topic, payload.clone()).await?;
+            let bridge: AppBusBridge =
+                app.state::<AppBusBridge>().inner().clone();
+            let event = bridge.record_event(app_id, &topic, payload);
+            Ok(serde_json::json!({ "ok": true, "event": event }))
         }
         "events.subscribe" => {
             let topics = parse_topics(&params)?;
@@ -567,6 +567,19 @@ pub async fn dispatch_app_method(
                 app.state::<AppBusBridge>().inner().clone();
             bridge.unsubscribe(app_id, &topics);
             Ok(serde_json::json!({ "ok": true }))
+        }
+        "events.subscriptions" => {
+            let bridge: AppBusBridge =
+                app.state::<AppBusBridge>().inner().clone();
+            Ok(serde_json::json!({ "topics": bridge.subscriptions(app_id) }))
+        }
+        "events.recent" => {
+            let bridge: AppBusBridge =
+                app.state::<AppBusBridge>().inner().clone();
+            let topic = string_param(&params, "topic", "topic");
+            let limit = bounded_usize_param(&params, "limit", "limit", 50, 200);
+            let events = bridge.recent_events(app_id, topic.as_deref(), limit);
+            Ok(serde_json::json!({ "events": events }))
         }
         "events.clearSubscriptions" => {
             let bridge: AppBusBridge =
@@ -1346,6 +1359,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "events.emit",
                 "events.subscribe",
                 "events.unsubscribe",
+                "events.subscriptions",
+                "events.recent",
                 "events.clearSubscriptions",
                 "apps.list",
                 "apps.create",
@@ -1514,6 +1529,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexEventOn",
                 "reflexEventOff",
                 "reflexEventEmit",
+                "reflexEventRecent",
+                "reflexEventSubscriptions",
                 "reflexEventClearSubscriptions",
             ],
         ),
@@ -2668,7 +2685,7 @@ fn parse_topics(params: &serde_json::Value) -> Result<Vec<String>, String> {
         .ok_or("missing topics array")?;
     let mut out = Vec::with_capacity(arr.len());
     for t in arr {
-        if let Some(s) = t.as_str() {
+        if let Some(s) = t.as_str().map(str::trim).filter(|s| !s.is_empty()) {
             out.push(s.to_string());
         }
     }
@@ -5888,6 +5905,17 @@ mod tests {
         assert!(validate_action_def(&action)
             .unwrap_err()
             .contains("steps"));
+    }
+
+    #[test]
+    fn event_topics_are_trimmed_and_non_empty() {
+        let params = serde_json::json!({ "topics": [" alpha ", "", "beta"] });
+        assert_eq!(
+            parse_topics(&params).unwrap(),
+            vec!["alpha".to_string(), "beta".to_string()]
+        );
+
+        assert!(parse_topics(&serde_json::json!({ "topics": ["", "  "] })).is_err());
     }
 
     #[test]
