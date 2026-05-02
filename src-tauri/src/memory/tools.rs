@@ -1,6 +1,6 @@
 use crate::memory::agents::recall::{self, RecallRequest, RecallResult};
 use crate::memory::files::{self, IndexOutcome, PathStatus};
-use crate::memory::rag::{self, RagHit};
+use crate::memory::rag::{self, store::RagStats, RagHit};
 use crate::memory::schema::{MemoryKind, MemoryNote, MemoryScope, ScopeRoots};
 use crate::memory::store::{self, ListFilter, SaveRequest};
 use serde::Deserialize;
@@ -172,6 +172,15 @@ pub async fn memory_recall(
 pub async fn memory_reindex(_app: AppHandle, project_root: String) -> Result<usize, String> {
     rag::reindex_project(Path::new(&project_root))
         .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn memory_stats(_app: AppHandle, project_root: String) -> Result<RagStats, String> {
+    let project_root = PathBuf::from(project_root);
+    tokio::task::spawn_blocking(move || files::stats(&project_root))
+        .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 

@@ -41,6 +41,22 @@ type DeleteArgs = {
   [key: string]: unknown;
 };
 
+interface MemoryKindStats {
+  kind: string;
+  docs: number;
+  chunks: number;
+}
+
+interface MemoryStats {
+  docs: number;
+  chunks: number;
+  sources: number;
+  stale: number;
+  missing: number;
+  last_indexed_at_ms?: number | null;
+  kinds: MemoryKindStats[];
+}
+
 function relativeTime(ms: number): string {
   const diff = Date.now() - ms;
   if (diff < 0) return "just now";
@@ -56,6 +72,19 @@ function relativeTime(ms: number): string {
   if (mon < 12) return `${mon}mo ago`;
   const yr = Math.floor(day / 365);
   return `${yr}y ago`;
+}
+
+function indexedLabel(stats: MemoryStats | null, loading: boolean): string {
+  if (loading) return "loading";
+  if (!stats?.last_indexed_at_ms) return "not indexed";
+  return relativeTime(stats.last_indexed_at_ms);
+}
+
+function memoryHealthLabel(stats: MemoryStats | null): string {
+  if (!stats) return "RAG index";
+  if (stats.missing > 0) return `${stats.missing} missing`;
+  if (stats.stale > 0) return `${stats.stale} stale`;
+  return "healthy";
 }
 
 type EditorState =
@@ -85,6 +114,9 @@ export default function MemoryPanel({
   const [kindFilter, setKindFilter] = useState<MemoryKind | "all">("all");
   const [recallInput, setRecallInput] = useState<string>(defaultRecallQuery);
   const [recallQuery, setRecallQuery] = useState<string>(defaultRecallQuery);
+  const [stats, setStats] = useState<MemoryStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState<boolean>(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   const scopeRequiresProject = scope === "project" || scope === "topic";
   const scopeRequiresThread = scope === "topic";
@@ -102,6 +134,27 @@ export default function MemoryPanel({
     if (q) filter.query = q;
     return filter.kind || filter.tag || filter.query ? filter : undefined;
   }, [kindFilter, queryFilter, tagFilter]);
+
+  const refreshStats = useCallback(async () => {
+    if (!projectRoot) {
+      setStats(null);
+      setStatsError(null);
+      return;
+    }
+    setStatsLoading(true);
+    setStatsError(null);
+    try {
+      const nextStats = await invoke<MemoryStats>("memory_stats", {
+        projectRoot,
+      });
+      setStats(nextStats);
+    } catch (e) {
+      setStats(null);
+      setStatsError(String(e));
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [projectRoot]);
 
   const refresh = useCallback(async () => {
     if (missingProject || missingThread) {
@@ -141,6 +194,10 @@ export default function MemoryPanel({
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    void refreshStats();
+  }, [refreshStats]);
+
   function toggleExpanded(relPath: string) {
     setExpanded((prev) => ({ ...prev, [relPath]: !prev[relPath] }));
   }
@@ -163,6 +220,7 @@ export default function MemoryPanel({
       }
       await invoke<void>("memory_delete", args);
       setNotes((prev) => prev.filter((n) => n.rel_path !== note.rel_path));
+      if (projectRoot) void refreshStats();
     } catch (e) {
       setError(String(e));
     }
@@ -180,6 +238,7 @@ export default function MemoryPanel({
       );
     });
     if (saved.scope !== scope) setScope(saved.scope);
+    if (projectRoot) void refreshStats();
   }
 
   const newDisabled = useMemo(() => {
@@ -201,7 +260,7 @@ export default function MemoryPanel({
     setRecallQuery(q);
   }
 
-  function resetFilters() {
+function resetFilters() {
     setQueryFilter("");
     setTagFilter("");
     setKindFilter("all");
@@ -220,7 +279,10 @@ export default function MemoryPanel({
           <button
             type="button"
             className="memory-btn"
-            onClick={() => void refresh()}
+            onClick={() => {
+              void refresh();
+              void refreshStats();
+            }}
             disabled={loading}
             title="Refresh"
           >
@@ -250,6 +312,46 @@ export default function MemoryPanel({
           </span>
         )}
       </div>
+
+      {projectRoot && (
+        <div
+          className={`memory-stats-row ${
+            stats && (stats.stale > 0 || stats.missing > 0)
+              ? "memory-stats-row-attention"
+              : ""
+          }`}
+        >
+          <span className="memory-stat">
+            <strong>{stats?.docs ?? 0}</strong>
+            <span>docs</span>
+          </span>
+          <span className="memory-stat">
+            <strong>{stats?.chunks ?? 0}</strong>
+            <span>chunks</span>
+          </span>
+          <span className="memory-stat">
+            <strong>{stats?.sources ?? 0}</strong>
+            <span>sources</span>
+          </span>
+          <span className="memory-stat">
+            <strong>{stats?.stale ?? 0}</strong>
+            <span>stale</span>
+          </span>
+          <span className="memory-stat">
+            <strong>{stats?.missing ?? 0}</strong>
+            <span>missing</span>
+          </span>
+          <span className="memory-stat memory-stat-wide">
+            <strong>{indexedLabel(stats, statsLoading)}</strong>
+            <span>{memoryHealthLabel(stats)}</span>
+          </span>
+          {statsError && (
+            <span className="memory-stat-error" title={statsError}>
+              stats unavailable
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="memory-view-tabs" role="tablist" aria-label="Memory view">
         {(["notes", "recall", "search"] as MemoryView[]).map((v) => (

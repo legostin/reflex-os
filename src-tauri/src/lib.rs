@@ -2689,6 +2689,7 @@ pub fn run() {
             memory::tools::memory_delete,
             memory::tools::memory_search,
             memory::tools::memory_recall,
+            memory::tools::memory_stats,
             memory::tools::memory_reindex,
             memory::tools::memory_index_path,
             memory::tools::memory_path_status,

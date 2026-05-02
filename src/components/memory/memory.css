@@ -89,6 +89,59 @@
   font-size: 11px;
 }
 
+.memory-stats-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(70px, 1fr)) minmax(128px, 1.4fr);
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.memory-stat {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.065);
+}
+
+.memory-stat strong {
+  min-width: 0;
+  color: rgba(245, 245, 247, 0.92);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-stat span {
+  min-width: 0;
+  color: rgba(245, 245, 247, 0.48);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.memory-stats-row-attention .memory-stat:nth-child(4),
+.memory-stats-row-attention .memory-stat:nth-child(5) {
+  border-color: rgba(255, 190, 90, 0.2);
+}
+
+.memory-stat-wide strong {
+  font-size: 12px;
+}
+
+.memory-stat-error {
+  grid-column: 1 / -1;
+  color: #ff8b8b;
+  font-size: 11px;
+}
+
 .memory-view-tabs {
   display: inline-flex;
   align-self: flex-start;
@@ -571,6 +624,10 @@
 
   .memory-filter-bar {
     grid-template-columns: 1fr;
+  }
+
+  .memory-stats-row {
+    grid-template-columns: 1fr 1fr;
   }
 
   .memory-view-tabs {
