@@ -149,6 +149,7 @@ The injected runtime overlay provides:
 - `window.reflexAppsTrashList()`
 - `window.reflexAppsRestore(trashIdOrParams)`
 - `window.reflexAppsPurge(trashIdOrParams)`
+- `window.reflexAppsStatus(appIdOrParams)`
 - `window.reflexAppsServerStatus(appIdOrParams)`
 - `window.reflexAppsServerLogs(appIdOrParams)`
 - `window.reflexAppsServerStart(appIdOrParams)`
@@ -301,6 +302,8 @@ Core methods:
   `apps.restore({ trash_id })`, and `apps.purge({ trash_id })`; require
   `apps.manage` or `apps:*`. Delete moves an app to trash; purge permanently
   removes a trashed app.
+- `apps.status({ app_id })`; requires `apps.manage` or `apps:*` and returns
+  revision, dirty state, last commit message, and entry readiness.
 - `apps.server.status({ app_id })`, `apps.server.logs({ app_id })`,
   `apps.server.start({ app_id })`, `apps.server.stop({ app_id })`, and
   `apps.server.restart({ app_id })`; require `apps.manage` or `apps:*` and

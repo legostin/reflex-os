@@ -964,6 +964,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof trashIdOrParams === 'string') ? {trash_id: trashIdOrParams} : (trashIdOrParams || {});
     return reflexInvokeRaw('apps.purge', params);
   };
+  window.reflexAppsStatus = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.status', params);
+  };
   window.reflexAppsServerStatus = function(appIdOrParams) {
     var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
     return reflexInvokeRaw('apps.server.status', params);

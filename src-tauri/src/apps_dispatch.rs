@@ -601,6 +601,7 @@ pub async fn dispatch_app_method(
         "apps.trashList" => apps_trash_list_for_app(app, app_id),
         "apps.restore" => apps_restore_for_app(app, app_id, params),
         "apps.purge" => apps_purge_for_app(app, app_id, params),
+        "apps.status" => apps_status_for_app(app, app_id, params),
         "apps.server.status" => apps_server_status_for_app(app, app_id, params).await,
         "apps.server.logs" => apps_server_logs_for_app(app, app_id, params).await,
         "apps.server.start" => apps_server_start_for_app(app, app_id, params).await,
@@ -1348,6 +1349,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "apps.trashList",
                 "apps.restore",
                 "apps.purge",
+                "apps.status",
                 "apps.server.status",
                 "apps.server.logs",
                 "apps.server.start",
@@ -1486,6 +1488,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexAppsTrashList",
                 "reflexAppsRestore",
                 "reflexAppsPurge",
+                "reflexAppsStatus",
                 "reflexAppsServerStatus",
                 "reflexAppsServerLogs",
                 "reflexAppsServerStart",
@@ -2938,6 +2941,16 @@ fn apps_purge_for_app(
         .ok_or_else(|| "missing trash_id".to_string())?;
     crate::purge_trashed_app(app.clone(), trash_id)?;
     Ok(serde_json::json!({ "ok": true }))
+}
+
+fn apps_status_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    crate::app_status(app.clone(), target_app_id)
 }
 
 async fn apps_server_status_for_app(
