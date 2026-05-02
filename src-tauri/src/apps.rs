@@ -69,6 +69,7 @@ pub struct ScheduleDef {
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default = "default_catch_up")]
+    #[serde(alias = "catchUp")]
     pub catch_up: String,
     pub steps: Vec<Step>,
 }
@@ -1163,6 +1164,13 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   };
   window.reflexSchedulerList = function(params) {
     return reflexInvokeRaw('scheduler.list', params || {});
+  };
+  window.reflexSchedulerUpsert = function(scheduleOrParams) {
+    return reflexInvokeRaw('scheduler.upsert', scheduleOrParams || {});
+  };
+  window.reflexSchedulerDelete = function(scheduleIdOrParams) {
+    var params = (typeof scheduleIdOrParams === 'string') ? {scheduleId: scheduleIdOrParams} : (scheduleIdOrParams || {});
+    return reflexInvokeRaw('scheduler.delete', params);
   };
   window.reflexSchedulerRunNow = function(scheduleId) {
     return reflexInvokeRaw('scheduler.runNow', {scheduleId: scheduleId});

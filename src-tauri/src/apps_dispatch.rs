@@ -639,6 +639,8 @@ pub async fn dispatch_app_method(
         }
         "browser.fill" => browser_fill_for_app(app, app_id, params).await,
         "scheduler.list" => scheduler_list_for_app(app, app_id, params),
+        "scheduler.upsert" => scheduler_upsert_for_app(app, app_id, params),
+        "scheduler.delete" => scheduler_delete_for_app(app, app_id, params).await,
         "scheduler.runNow" | "scheduler.run_now" => {
             scheduler_run_now_for_app(app, app_id, params).await
         }
@@ -2509,6 +2511,167 @@ fn scheduler_list_for_app(
     serde_json::to_value(items).map_err(|e| e.to_string())
 }
 
+fn scheduler_upsert_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let schedule = parse_schedule_def(params)?;
+    let full_id = scheduler::make_full_id(app_id, &schedule.id);
+    let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let created = match manifest
+        .schedules
+        .iter()
+        .position(|existing| existing.id == schedule.id)
+    {
+        Some(idx) => {
+            manifest.schedules[idx] = schedule.clone();
+            false
+        }
+        None => {
+            manifest.schedules.push(schedule.clone());
+            true
+        }
+    };
+    apps::write_manifest(app, app_id, &manifest).map_err(|e| e.to_string())?;
+    emit_scheduler_manifest_changed(app, &full_id, "upsert");
+    Ok(serde_json::json!({
+        "ok": true,
+        "created": created,
+        "schedule_id": full_id,
+        "schedule": schedule,
+    }))
+}
+
+async fn scheduler_delete_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let raw_id = required_string_param(&params, "schedule_id", "scheduleId")?;
+    let local_id = own_local_schedule_id(app_id, &raw_id)?;
+    let full_id = scheduler::make_full_id(app_id, &local_id);
+    let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let before = manifest.schedules.len();
+    manifest
+        .schedules
+        .retain(|schedule| schedule.id != local_id);
+    let deleted = manifest.schedules.len() != before;
+    if deleted {
+        apps::write_manifest(app, app_id, &manifest).map_err(|e| e.to_string())?;
+        if let Some(handle) = app.try_state::<scheduler::SchedulerHandle>() {
+            let _guard = handle.inner().inner.state_lock.lock().await;
+            let mut state = scheduler::state::load_state(app).map_err(|e| e.to_string())?;
+            state.schedules.remove(&full_id);
+            scheduler::state::save_state(app, &state).map_err(|e| e.to_string())?;
+        }
+        emit_scheduler_manifest_changed(app, &full_id, "delete");
+    }
+    Ok(serde_json::json!({
+        "ok": true,
+        "deleted": deleted,
+        "schedule_id": full_id,
+    }))
+}
+
+fn parse_schedule_def(params: serde_json::Value) -> Result<apps::ScheduleDef, String> {
+    let mut value = params
+        .get("schedule")
+        .cloned()
+        .unwrap_or(params);
+    let obj = value
+        .as_object_mut()
+        .ok_or_else(|| "schedule must be a JSON object".to_string())?;
+    if !obj.contains_key("name") {
+        if let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
+            obj.insert("name".into(), serde_json::Value::String(id.to_string()));
+        }
+    }
+    if !obj.contains_key("catch_up") {
+        if let Some(catch_up) = obj.get("catchUp").cloned() {
+            obj.insert("catch_up".into(), catch_up);
+        }
+    }
+    let mut schedule: apps::ScheduleDef =
+        serde_json::from_value(value).map_err(|e| format!("invalid schedule: {e}"))?;
+    schedule.id = schedule.id.trim().to_string();
+    schedule.name = schedule.name.trim().to_string();
+    schedule.cron = schedule.cron.trim().to_string();
+    schedule.catch_up = schedule.catch_up.trim().to_string();
+    validate_schedule_def(&schedule)?;
+    Ok(schedule)
+}
+
+fn validate_schedule_def(schedule: &apps::ScheduleDef) -> Result<(), String> {
+    validate_local_schedule_id(&schedule.id)?;
+    if schedule.name.is_empty() {
+        return Err("schedule.name is required".into());
+    }
+    schedule
+        .cron
+        .parse::<cron::Schedule>()
+        .map_err(|e| format!("invalid schedule.cron: {e}"))?;
+    if schedule.steps.is_empty() {
+        return Err("schedule.steps must contain at least one step".into());
+    }
+    for step in &schedule.steps {
+        if step.method.trim().is_empty() {
+            return Err("schedule step method is required".into());
+        }
+        if scheduler::runner::is_method_blocked_in_unattended(&step.method) {
+            return Err(format!(
+                "schedule step method '{}' is not allowed in unattended workflows",
+                step.method
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn own_local_schedule_id(app_id: &str, raw_id: &str) -> Result<String, String> {
+    let local_id = if let Some((target_app, local_id)) = scheduler::split_full_id(raw_id) {
+        if target_app != app_id {
+            return Err("scheduler.delete can only delete schedules owned by this app".into());
+        }
+        local_id.to_string()
+    } else {
+        raw_id.to_string()
+    };
+    validate_local_schedule_id(&local_id)?;
+    Ok(local_id)
+}
+
+fn validate_local_schedule_id(id: &str) -> Result<(), String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("schedule.id is required".into());
+    }
+    if id.len() > 80 {
+        return Err("schedule.id must be 80 characters or fewer".into());
+    }
+    if !id
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    {
+        return Err("schedule.id may contain only ASCII letters, numbers, '-', '_' or '.'".into());
+    }
+    Ok(())
+}
+
+fn emit_scheduler_manifest_changed(app: &AppHandle, schedule_id: &str, operation: &str) {
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    if let Some(handle) = app.try_state::<scheduler::SchedulerHandle>() {
+        handle.inner().rescan();
+    }
+    let _ = app.emit(
+        "reflex://scheduler-state-changed",
+        &serde_json::json!({
+            "schedule_id": schedule_id,
+            "operation": operation,
+        }),
+    );
+}
+
 async fn scheduler_run_now_for_app(
     app: &AppHandle,
     app_id: &str,
@@ -2879,5 +3042,36 @@ mod tests {
         assert!(is_app_log_source("app:foo:widget", "foo"));
         assert!(!is_app_log_source("app:foo2", "foo"));
         assert!(!is_app_log_source("browser", "foo"));
+    }
+
+    #[test]
+    fn schedule_validation_blocks_ui_and_recursive_methods() {
+        let schedule = apps::ScheduleDef {
+            id: "poll".into(),
+            name: "Poll".into(),
+            cron: "0 */5 * * * *".into(),
+            enabled: true,
+            catch_up: "once".into(),
+            steps: vec![apps::Step {
+                method: "scheduler.upsert".into(),
+                params: serde_json::json!({}),
+                save_as: None,
+            }],
+        };
+
+        assert!(validate_schedule_def(&schedule)
+            .unwrap_err()
+            .contains("not allowed"));
+    }
+
+    #[test]
+    fn schedule_id_rejects_full_or_escape_like_ids() {
+        for id in ["app::daily", "../daily", "daily:bad", ""] {
+            assert!(validate_local_schedule_id(id).is_err(), "{id} should fail");
+        }
+        assert_eq!(
+            own_local_schedule_id("app", "app::daily").unwrap(),
+            "daily".to_string()
+        );
     }
 }

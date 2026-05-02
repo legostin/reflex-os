@@ -18,10 +18,12 @@ const SCHEDULE_STEP_METHOD_BLACKLIST: &[&str] = &[
     "dialog.openFile",
     "dialog.saveFile",
     "projects.open",
+    "scheduler.delete",
     "scheduler.runNow",
     "scheduler.run_now",
     "scheduler.setPaused",
     "scheduler.set_paused",
+    "scheduler.upsert",
     "system.openPath",
     "system.openUrl",
     "system.open_path",
@@ -31,6 +33,10 @@ const SCHEDULE_STEP_METHOD_BLACKLIST: &[&str] = &[
     "threads.open",
     "topics.open",
 ];
+
+pub fn is_method_blocked_in_unattended(method: &str) -> bool {
+    SCHEDULE_STEP_METHOD_BLACKLIST.contains(&method)
+}
 
 tokio::task_local! {
     static INVOKE_DEPTH: usize;
@@ -157,9 +163,7 @@ async fn run_workflow_inner(
             .clone()
             .unwrap_or_else(|| format!("step_{idx}"));
 
-        if block_unattended_methods
-            && SCHEDULE_STEP_METHOD_BLACKLIST.contains(&step.method.as_str())
-        {
+        if block_unattended_methods && is_method_blocked_in_unattended(&step.method) {
             let now = now_ms();
             record.steps.push(StepTrace {
                 name: step_name.clone(),
@@ -311,10 +315,12 @@ mod tests {
             "dialog.openFile",
             "dialog.saveFile",
             "projects.open",
+            "scheduler.delete",
             "scheduler.runNow",
             "scheduler.run_now",
             "scheduler.setPaused",
             "scheduler.set_paused",
+            "scheduler.upsert",
             "system.openPath",
             "system.openUrl",
             "system.open_path",
@@ -325,7 +331,7 @@ mod tests {
             "topics.open",
         ] {
             assert!(
-                SCHEDULE_STEP_METHOD_BLACKLIST.contains(&method),
+                is_method_blocked_in_unattended(method),
                 "{method} should be blocked in unattended scheduler workflows"
             );
         }

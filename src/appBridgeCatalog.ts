@@ -95,6 +95,8 @@ export const BRIDGE_API_GROUPS = [
     title: "Автоматизации",
     methods: [
       "scheduler.list",
+      "scheduler.upsert",
+      "scheduler.delete",
       "scheduler.runNow",
       "scheduler.setPaused",
       "scheduler.runs",
@@ -196,6 +198,8 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexMemoryPathStatus",
       "reflexMemoryForgetPath",
       "reflexSchedulerList",
+      "reflexSchedulerUpsert",
+      "reflexSchedulerDelete",
       "reflexSchedulerRunNow",
       "reflexSchedulerSetPaused",
       "reflexSchedulerRuns",
@@ -233,8 +237,8 @@ export const BRIDGE_RECIPE_CARDS = [
   {
     title: "Автоматизация",
     body: "Schedule steps используют тот же bridge, кроме UI-only методов.",
-    calls: ["scheduler.runs", "agent.task", "notify.show"],
-    example: 'steps: [{ method: "agent.task", params: { prompt } }]',
+    calls: ["scheduler.upsert", "scheduler.runs", "agent.task"],
+    example: "await reflexSchedulerUpsert({ id, cron, steps });",
   },
   {
     title: "Browser sidecar",

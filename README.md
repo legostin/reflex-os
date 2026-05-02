@@ -92,6 +92,8 @@ The injected runtime overlay provides:
 - `window.reflexBrowserClickSelector(tabIdOrParams, selector?)`
 - `window.reflexBrowserFill(tabIdOrParams, selector?, value?)`
 - `window.reflexSchedulerList(params)`
+- `window.reflexSchedulerUpsert(scheduleOrParams)`
+- `window.reflexSchedulerDelete(scheduleIdOrParams)`
 - `window.reflexSchedulerRunNow(scheduleId)`
 - `window.reflexSchedulerSetPaused(scheduleId, paused)`
 - `window.reflexSchedulerRuns(params)`
@@ -188,6 +190,9 @@ requires a linked project or `browser.project:<project>`.
 Scheduler methods:
 
 - `scheduler.list({ appId?, includeAll? })`.
+- `scheduler.upsert({ id, name?, cron, enabled?, catch_up?, steps })` or
+  `scheduler.upsert({ schedule })` -> create/update this app's own schedule.
+- `scheduler.delete({ scheduleId })` -> delete this app's own schedule.
 - `scheduler.runNow({ scheduleId })`; accepts a local schedule id or
   `<app_id>::<schedule_id>`.
 - `scheduler.setPaused({ scheduleId, paused })`.
@@ -231,8 +236,9 @@ Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,
 `clipboard.*`, `system.openUrl`, `system.openPath`, `system.revealPath`, and
 `apps.open` are not valid inside schedules. `projects.open`, `topics.open`,
-`scheduler.runNow`, and `scheduler.setPaused` are also blocked inside schedule
-steps to prevent unattended recursive runs.
+`scheduler.runNow`, `scheduler.setPaused`, `scheduler.upsert`, and
+`scheduler.delete` are also blocked inside schedule steps to prevent unattended
+recursive runs.
 
 ## Development
 
