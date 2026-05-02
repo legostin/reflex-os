@@ -146,6 +146,15 @@ pub async fn dispatch_app_method(
             let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
             Ok(serde_json::json!({ "content": text }))
         }
+        "fs.list" => {
+            let path = string_param(&params, "path", "path").unwrap_or_default();
+            let recursive = bool_param(&params, "recursive", "recursive").unwrap_or(false);
+            let include_hidden =
+                bool_param(&params, "include_hidden", "includeHidden").unwrap_or(false);
+            let entries = apps::list_app_files(app, app_id, &path, recursive, include_hidden)
+                .map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({ "entries": entries }))
+        }
         "fs.write" => {
             let path = params
                 .get("path")
@@ -158,6 +167,16 @@ pub async fn dispatch_app_method(
             apps::write_app_file(app, app_id, path, content.as_bytes())
                 .map_err(|e| e.to_string())?;
             Ok(serde_json::json!({ "ok": true }))
+        }
+        "fs.delete" => {
+            let path = params
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or("missing path")?;
+            let recursive = bool_param(&params, "recursive", "recursive").unwrap_or(false);
+            let kind =
+                apps::delete_app_path(app, app_id, path, recursive).map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({ "ok": true, "path": path, "kind": kind }))
         }
         "notify.show" => {
             let title = params

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 use tauri::{AppHandle, Manager};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -339,6 +340,14 @@ pub struct AppListing {
     pub ready: bool,
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct AppFileEntry {
+    pub path: String,
+    pub kind: String,
+    pub size: Option<u64>,
+    pub modified_at_ms: Option<u128>,
+}
+
 pub fn list_apps(app: &AppHandle) -> io::Result<Vec<AppListing>> {
     let dir = apps_dir(app)?;
     let mut out = Vec::new();
@@ -400,16 +409,7 @@ pub fn write_manifest(app: &AppHandle, id: &str, manifest: &AppManifest) -> io::
 
 /// Read a file under apps/<id>/ with path-traversal protection.
 pub fn read_app_file(app: &AppHandle, id: &str, relative: &str) -> io::Result<Vec<u8>> {
-    let dir = app_dir(app, id)?;
-    let candidate = dir.join(relative.trim_start_matches('/'));
-    let dir_canon = dir.canonicalize()?;
-    let cand_canon = candidate.canonicalize()?;
-    if !cand_canon.starts_with(&dir_canon) {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "path traversal",
-        ));
-    }
+    let (_, cand_canon) = resolve_existing_app_path(app, id, relative)?;
     fs::read(cand_canon)
 }
 
@@ -437,6 +437,141 @@ pub fn write_app_file(
         ));
     }
     fs::write(&candidate, bytes)
+}
+
+pub fn list_app_files(
+    app: &AppHandle,
+    id: &str,
+    relative: &str,
+    recursive: bool,
+    include_hidden: bool,
+) -> io::Result<Vec<AppFileEntry>> {
+    let (root, target) = resolve_existing_app_path(app, id, relative)?;
+    let meta = fs::symlink_metadata(&target)?;
+    let mut out = Vec::new();
+    if meta.is_file() || meta.file_type().is_symlink() {
+        if include_hidden || !path_is_hidden(&target) {
+            out.push(app_file_entry(&root, &target, &meta)?);
+        }
+        return Ok(out);
+    }
+    collect_app_file_entries(&root, &target, recursive, include_hidden, &mut out)?;
+    Ok(out)
+}
+
+pub fn delete_app_path(
+    app: &AppHandle,
+    id: &str,
+    relative: &str,
+    recursive: bool,
+) -> io::Result<String> {
+    let trimmed = relative.trim().trim_start_matches('/');
+    if trimmed.is_empty() || trimmed == "." {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "refusing to delete app root",
+        ));
+    }
+    let (root, target) = resolve_existing_app_path(app, id, trimmed)?;
+    if target == root {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "refusing to delete app root",
+        ));
+    }
+    let meta = fs::symlink_metadata(&target)?;
+    let kind = app_file_kind(&meta);
+    if meta.is_dir() && !meta.file_type().is_symlink() {
+        if recursive {
+            fs::remove_dir_all(&target)?;
+        } else {
+            fs::remove_dir(&target)?;
+        }
+    } else {
+        fs::remove_file(&target)?;
+    }
+    Ok(kind)
+}
+
+fn resolve_existing_app_path(
+    app: &AppHandle,
+    id: &str,
+    relative: &str,
+) -> io::Result<(PathBuf, PathBuf)> {
+    let dir = app_dir(app, id)?;
+    let candidate = dir.join(relative.trim_start_matches('/'));
+    let dir_canon = dir.canonicalize()?;
+    let cand_canon = candidate.canonicalize()?;
+    if !cand_canon.starts_with(&dir_canon) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "path traversal",
+        ));
+    }
+    Ok((dir_canon, cand_canon))
+}
+
+fn collect_app_file_entries(
+    root: &Path,
+    dir: &Path,
+    recursive: bool,
+    include_hidden: bool,
+    out: &mut Vec<AppFileEntry>,
+) -> io::Result<()> {
+    let mut entries = fs::read_dir(dir)?.collect::<io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        if !include_hidden && path_is_hidden(&path) {
+            continue;
+        }
+        let meta = fs::symlink_metadata(&path)?;
+        out.push(app_file_entry(root, &path, &meta)?);
+        if recursive && meta.is_dir() && !meta.file_type().is_symlink() {
+            collect_app_file_entries(root, &path, recursive, include_hidden, out)?;
+        }
+    }
+    Ok(())
+}
+
+fn app_file_entry(
+    root: &Path,
+    path: &Path,
+    meta: &fs::Metadata,
+) -> io::Result<AppFileEntry> {
+    let rel = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    let modified_at_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis());
+    Ok(AppFileEntry {
+        path: rel,
+        kind: app_file_kind(meta),
+        size: meta.is_file().then_some(meta.len()),
+        modified_at_ms,
+    })
+}
+
+fn app_file_kind(meta: &fs::Metadata) -> String {
+    if meta.file_type().is_symlink() {
+        "symlink".into()
+    } else if meta.is_dir() {
+        "directory".into()
+    } else {
+        "file".into()
+    }
+}
+
+fn path_is_hidden(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.starts_with('.'))
+        .unwrap_or(false)
 }
 
 pub fn read_storage(app: &AppHandle, id: &str) -> io::Result<serde_json::Value> {
@@ -913,9 +1048,17 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
     return reflexInvokeRaw('fs.read', params);
   };
+  window.reflexFsList = function(pathOrParams, recursive) {
+    var params = (typeof pathOrParams === 'string') ? {path: pathOrParams, recursive: !!recursive} : (pathOrParams || {});
+    return reflexInvokeRaw('fs.list', params);
+  };
   window.reflexFsWrite = function(pathOrParams, content) {
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams, content: content} : (pathOrParams || {});
     return reflexInvokeRaw('fs.write', params);
+  };
+  window.reflexFsDelete = function(pathOrParams, recursive) {
+    var params = (typeof pathOrParams === 'string') ? {path: pathOrParams, recursive: !!recursive} : (pathOrParams || {});
+    return reflexInvokeRaw('fs.delete', params);
   };
   window.reflexNetFetch = function(urlOrParams, options) {
     var params = (typeof urlOrParams === 'string') ? Object.assign({url: urlOrParams}, options || {}) : (urlOrParams || {});

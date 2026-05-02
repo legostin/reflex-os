@@ -60,7 +60,9 @@ The injected runtime overlay provides:
 - `window.reflexStorageList(params)`
 - `window.reflexStorageDelete(keyOrParams)`
 - `window.reflexFsRead(pathOrParams)`
+- `window.reflexFsList(pathOrParams, recursive?)`
 - `window.reflexFsWrite(pathOrParams, content?)`
+- `window.reflexFsDelete(pathOrParams, recursive?)`
 - `window.reflexNetFetch(urlOrParams, options?)`
 - `window.reflexDialogOpenDirectory(params)`
 - `window.reflexDialogOpenFile(params)`
@@ -120,6 +122,9 @@ Core methods:
 - `storage.list({ prefix? })` -> `{ keys, entries }`.
 - `storage.delete({ key })` or `storage.delete({ keys })` -> `{ ok, deleted, missing }`.
 - `fs.read({ path })`, `fs.write({ path, content })` inside the app folder.
+- `fs.list({ path?, recursive?, includeHidden? })` -> `{ entries }`.
+- `fs.delete({ path, recursive? })` -> `{ ok, path, kind }`; deleting the app
+  root is blocked.
 - `dialog.openDirectory`, `dialog.openFile`, `dialog.saveFile`.
 - `notify.show({ title, body })`.
 - `net.fetch({ url, method?, headers?, body?, timeoutMs? })`; requires
