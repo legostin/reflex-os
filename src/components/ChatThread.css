@@ -649,6 +649,10 @@
   font-size: 13px;
 }
 
+.setting-row-block {
+  align-items: flex-start;
+}
+
 .setting-label {
   flex: 0 0 220px;
   font-size: 12px;
@@ -687,6 +691,92 @@
 .setting-hint-warn {
   color: #f0c674;
   font-style: normal;
+}
+
+.setting-mcp-summary {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.setting-empty {
+  color: rgba(245, 245, 247, 0.42);
+  font-size: 12px;
+}
+
+.setting-chip {
+  background: rgba(80, 140, 255, 0.14);
+  border: 1px solid rgba(80, 140, 255, 0.26);
+  color: #cfd8ff;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.setting-action {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: rgba(245, 245, 247, 0.86);
+  border-radius: 7px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.setting-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.setting-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.setting-action-primary {
+  background: rgba(80, 140, 255, 0.18);
+  border-color: rgba(80, 140, 255, 0.34);
+  color: #cfd8ff;
+}
+
+.setting-editor {
+  flex: 1 0 100%;
+  margin-left: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setting-textarea {
+  width: min(100%, 720px);
+  resize: vertical;
+  background: rgba(0, 0, 0, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: rgba(245, 245, 247, 0.92);
+  padding: 8px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.setting-textarea:focus {
+  border-color: rgba(74, 140, 255, 0.42);
+}
+
+.setting-error {
+  color: #ff9b9b;
+  font-size: 12px;
+}
+
+.setting-editor-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .chat-header-actions {

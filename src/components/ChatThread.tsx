@@ -3179,6 +3179,10 @@ function ProjectScreen({
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [installedApps, setInstalledApps] = useState<AppManifest[]>([]);
   const [showLinkPicker, setShowLinkPicker] = useState(false);
+  const [mcpEditing, setMcpEditing] = useState(false);
+  const [mcpDraft, setMcpDraft] = useState("{}");
+  const [mcpSaving, setMcpSaving] = useState(false);
+  const [mcpError, setMcpError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -3363,6 +3367,46 @@ function ProjectScreen({
     }
   }
 
+  function openMcpEditor() {
+    setMcpDraft(JSON.stringify(project?.mcp_servers ?? {}, null, 2));
+    setMcpError(null);
+    setMcpEditing(true);
+  }
+
+  async function saveMcpServers() {
+    if (!project || mcpSaving) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(mcpDraft.trim() || "{}");
+    } catch (e) {
+      setMcpError(`JSON parse error: ${String(e)}`);
+      return;
+    }
+    if (
+      parsed !== null &&
+      (typeof parsed !== "object" || Array.isArray(parsed))
+    ) {
+      setMcpError("MCP config must be a JSON object.");
+      return;
+    }
+    setMcpSaving(true);
+    setMcpError(null);
+    try {
+      const updated = await invoke<Project>("update_project_mcp_servers", {
+        projectId: project.id,
+        mcpServers: parsed,
+      });
+      onProjectUpdated(updated);
+      setMcpEditing(false);
+    } catch (e) {
+      setMcpError(String(e));
+    } finally {
+      setMcpSaving(false);
+    }
+  }
+
+  const mcpServerNames = Object.keys(project?.mcp_servers ?? {});
+
   return (
     <div className="project-root">
       <header className="project-header">
@@ -3544,6 +3588,51 @@ function ProjectScreen({
                 Встроенный Reflex browser bridge подключится при следующем
                 старте или resume треда.
               </span>
+            )}
+          </div>
+          <div className="setting-row setting-row-block">
+            <label className="setting-label">MCP servers</label>
+            <div className="setting-mcp-summary">
+              {mcpServerNames.length === 0 ? (
+                <span className="setting-empty">none</span>
+              ) : (
+                mcpServerNames.map((name) => (
+                  <span key={name} className="setting-chip">
+                    {name}
+                  </span>
+                ))
+              )}
+              <button className="setting-action" onClick={openMcpEditor}>
+                Edit JSON
+              </button>
+            </div>
+            {mcpEditing && (
+              <div className="setting-editor">
+                <textarea
+                  className="setting-textarea"
+                  value={mcpDraft}
+                  spellCheck={false}
+                  onChange={(e) => setMcpDraft(e.currentTarget.value)}
+                  rows={8}
+                />
+                {mcpError && <div className="setting-error">{mcpError}</div>}
+                <div className="setting-editor-actions">
+                  <button
+                    className="setting-action"
+                    onClick={() => setMcpEditing(false)}
+                    disabled={mcpSaving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="setting-action setting-action-primary"
+                    onClick={() => void saveMcpServers()}
+                    disabled={mcpSaving}
+                  >
+                    {mcpSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </section>

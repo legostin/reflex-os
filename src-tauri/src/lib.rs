@@ -1157,6 +1157,30 @@ fn update_project_browser(
     Ok(p)
 }
 
+#[tauri::command]
+fn update_project_mcp_servers(
+    app: AppHandle,
+    project_id: String,
+    mcp_servers: Option<serde_json::Value>,
+) -> Result<project::Project, String> {
+    let mut p = project::get_by_id(&app, &project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+
+    let next = match mcp_servers {
+        Some(serde_json::Value::Object(obj)) if !obj.is_empty() => {
+            Some(serde_json::Value::Object(obj))
+        }
+        Some(serde_json::Value::Object(_)) | Some(serde_json::Value::Null) | None => None,
+        Some(_) => return Err("mcp_servers must be a JSON object or null".into()),
+    };
+
+    p.mcp_servers = next;
+    project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
+    project::register(&app, &p).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+
 #[derive(Serialize)]
 struct DirEntry {
     name: String,
@@ -2289,6 +2313,7 @@ pub fn run() {
             find_project_for_path,
             update_project_sandbox,
             update_project_browser,
+            update_project_mcp_servers,
             list_apps,
             read_app_html,
             app_invoke,
