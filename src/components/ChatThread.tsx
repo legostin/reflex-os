@@ -34,6 +34,8 @@ type Project = {
   apps?: string[];
 };
 
+export type BrowserTabSnapshot = { url: string; title: string };
+
 type ThreadCreated = {
   id: string;
   project_id: string;
@@ -43,6 +45,8 @@ type ThreadCreated = {
   ctx: QuickContext;
   created_at_ms: number;
   plan_mode?: boolean;
+  source?: string;
+  browser_tabs?: BrowserTabSnapshot[];
 };
 
 type CodexEventPayload = {
@@ -85,6 +89,8 @@ type Thread = {
   pending_questions: ThreadQuestion[];
   plan_mode: boolean;
   plan_confirmed: boolean;
+  source: string;
+  browser_tabs: BrowserTabSnapshot[];
 };
 
 type ThreadMetaUpdated = {
@@ -118,6 +124,8 @@ type StoredThreadMeta = {
   goal: string | null;
   plan_mode?: boolean;
   plan_confirmed?: boolean;
+  source?: string;
+  browser_tabs?: BrowserTabSnapshot[];
 };
 
 type ProjectThread = {
@@ -330,6 +338,8 @@ function fromProjectThread(pt: ProjectThread): Thread {
     pending_questions: [],
     plan_mode: !!pt.thread.meta.plan_mode,
     plan_confirmed: !!pt.thread.meta.plan_confirmed,
+    source: pt.thread.meta.source ?? "quick",
+    browser_tabs: pt.thread.meta.browser_tabs ?? [],
   };
 }
 
@@ -377,7 +387,21 @@ export default function ChatThread() {
   const [installedAppsLite, setInstalledAppsLite] = useState<
     { id: string; name: string; icon?: string | null }[]
   >([]);
+  const [activeProjectId, setActiveProjectIdState] = useState<string | null>(
+    null,
+  );
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const setActiveProject = async (id: string | null) => {
+    setActiveProjectIdState(id);
+    try {
+      await invoke("set_active_project", { projectId: id });
+    } catch (e) {
+      console.error("[reflex] set_active_project failed", e);
+    }
+    // Browser session is re-bound when BrowserScreen remounts on key change —
+    // no need to eagerly start the sidecar here.
+  };
 
   const focusPane = (paneId: PaneId) =>
     setLayout((prev) =>
@@ -646,10 +670,62 @@ export default function ChatThread() {
     }
   };
 
+  const openInSidePane = (url: string) => {
+    setLayout((prev) => {
+      const browserPane = prev.panes.find((p) =>
+        p.tabs.some((t) => t.kind === "browser"),
+      );
+      if (browserPane) {
+        return {
+          ...prev,
+          panes: prev.panes.map((p) =>
+            p.id === browserPane.id
+              ? { ...p, activeKey: "browser" }
+              : p,
+          ),
+          focusedPaneId: browserPane.id,
+        };
+      }
+      const id = nextPaneId();
+      return {
+        panes: [
+          ...prev.panes,
+          { id, tabs: [{ kind: "browser" } as Route], activeKey: "browser" },
+        ],
+        paneSizes: { ...prev.paneSizes, [id]: 1 },
+        focusedPaneId: id,
+      };
+    });
+    void invoke("browser_tab_open", { url }).catch((e) =>
+      console.error("[reflex] browser_tab_open from link failed", e),
+    );
+  };
+
+  const openLinkFromThread = (
+    threadId: string,
+    url: string,
+    _ev: React.MouseEvent<HTMLAnchorElement>,
+  ) => {
+    const thread = threads.find((t) => t.id === threadId);
+    if (
+      !thread ||
+      !activeProjectId ||
+      thread.project_id !== activeProjectId
+    ) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    openInSidePane(url);
+  };
+
   const createNewTopic = async (
     projectId: string,
     prompt: string,
     planMode: boolean,
+    options?: {
+      source?: string;
+      browserTabs?: BrowserTabSnapshot[];
+    },
   ) => {
     const project = projects.find((p) => p.id === projectId);
     const ctx = {
@@ -661,6 +737,8 @@ export default function ChatThread() {
       ctx,
       projectId,
       planMode,
+      source: options?.source,
+      browserTabs: options?.browserTabs,
     });
     // backend emits reflex://thread-created which our listener will route into the focused pane.
   };
@@ -683,6 +761,13 @@ export default function ChatThread() {
     };
 
     refreshProjects();
+
+    invoke<string | null>("get_active_project")
+      .then((id) => {
+        if (!mounted) return;
+        setActiveProjectIdState(id ?? null);
+      })
+      .catch((e) => console.warn("[reflex] get_active_project failed", e));
 
     invoke<ProjectThread[]>("list_threads")
       .then((stored) => {
@@ -710,6 +795,8 @@ export default function ChatThread() {
         pending_questions: [],
         plan_mode: !!e.payload.plan_mode,
         plan_confirmed: false,
+        source: e.payload.source ?? "quick",
+        browser_tabs: e.payload.browser_tabs ?? [],
       };
       setThreads((prev) => upsertThread(prev, t));
       // refresh project list (project may have just been created) and jump to topic
@@ -822,6 +909,34 @@ export default function ChatThread() {
       return copy;
     });
 
+  useEffect(() => {
+    if (projects.length === 0) {
+      if (activeProjectId !== null) setActiveProjectIdState(null);
+      return;
+    }
+    if (
+      activeProjectId &&
+      projects.some((p) => p.id === activeProjectId)
+    ) {
+      return;
+    }
+    void setActiveProject(projects[0].id);
+  }, [projects, activeProjectId]);
+
+  const projectsLoadedRef = useRef(false);
+  const firstRunPromptedRef = useRef(false);
+  useEffect(() => {
+    if (firstRunPromptedRef.current) return;
+    if (!projectsLoadedRef.current) {
+      projectsLoadedRef.current = true;
+      return;
+    }
+    if (projects.length === 0 && !newProjectPath && !creatingProject) {
+      firstRunPromptedRef.current = true;
+      void createNewProject();
+    }
+  }, [projects, newProjectPath, creatingProject]);
+
   const openAppIds = useMemo(() => {
     const ids = new Set<string>();
     for (const pane of layout.panes) {
@@ -869,6 +984,7 @@ export default function ChatThread() {
             thread_id={r.thread_id}
             threads={threads}
             projects={projects}
+            onOpenLink={openLinkFromThread}
           />
         );
       case "apps":
@@ -904,7 +1020,22 @@ export default function ChatThread() {
       case "automations":
         return <AutomationsScreen />;
       case "browser":
-        return <BrowserScreen />;
+        return (
+          <BrowserScreen
+            key={activeProjectId ?? "_none"}
+            projectId={activeProjectId}
+            projectName={
+              projects.find((p) => p.id === activeProjectId)?.name ?? null
+            }
+            onStartChat={async (prompt, browserTabs) => {
+              if (!activeProjectId) return;
+              await createNewTopic(activeProjectId, prompt, false, {
+                source: "browser",
+                browserTabs,
+              });
+            }}
+          />
+        );
       case "settings":
         return <SettingsScreen />;
     }
@@ -917,6 +1048,8 @@ export default function ChatThread() {
         route={currentRoute}
         threads={threads}
         projects={projects}
+        activeProjectId={activeProjectId}
+        onSelectActiveProject={(id) => void setActiveProject(id)}
         onNavigate={navigate}
         onAddPane={addPane}
         onCreateProject={() => void createNewProject()}
@@ -1026,6 +1159,8 @@ function Header({
   route,
   threads,
   projects,
+  activeProjectId,
+  onSelectActiveProject,
   onNavigate,
   onAddPane,
   onCreateProject,
@@ -1033,6 +1168,8 @@ function Header({
   route: Route;
   threads: Thread[];
   projects: Project[];
+  activeProjectId: string | null;
+  onSelectActiveProject: (id: string) => void;
   onNavigate: (r: Route) => void;
   onAddPane: () => void;
   onCreateProject: () => void;
@@ -1134,6 +1271,33 @@ function Header({
         >
           Automations
         </button>
+        <select
+          className="header-tab header-project-select"
+          value={activeProjectId ?? ""}
+          onChange={(e) => {
+            const v = e.currentTarget.value;
+            if (v) onSelectActiveProject(v);
+          }}
+          disabled={projects.length === 0}
+          title="Активный проект"
+        >
+          {projects.length === 0 ? (
+            <option value="">Нет проектов</option>
+          ) : (
+            <>
+              {!activeProjectId && (
+                <option value="" disabled>
+                  Выбери проект
+                </option>
+              )}
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </>
+          )}
+        </select>
         <button
           className={`header-tab ${route.kind === "browser" ? "active" : ""}`}
           onClick={() => onNavigate({ kind: "browser" })}
@@ -3657,10 +3821,16 @@ function TopicScreen({
   thread_id,
   threads,
   projects,
+  onOpenLink,
 }: {
   thread_id: string;
   threads: Thread[];
   projects: Project[];
+  onOpenLink?: (
+    threadId: string,
+    url: string,
+    ev: React.MouseEvent<HTMLAnchorElement>,
+  ) => void;
 }) {
   const thread = threads.find((t) => t.id === thread_id);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -3707,7 +3877,7 @@ function TopicScreen({
           />
         </li>
       )}
-      <ThreadCard thread={thread} />
+      <ThreadCard thread={thread} onOpenLink={onOpenLink} />
       <div ref={bottomRef} />
     </ol>
   );
@@ -3732,7 +3902,17 @@ function isPlanApprovalText(text: string): boolean {
   );
 }
 
-function ThreadCard({ thread }: { thread: Thread }) {
+function ThreadCard({
+  thread,
+  onOpenLink,
+}: {
+  thread: Thread;
+  onOpenLink?: (
+    threadId: string,
+    url: string,
+    ev: React.MouseEvent<HTMLAnchorElement>,
+  ) => void;
+}) {
   const [followup, setFollowup] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -3863,9 +4043,34 @@ function ThreadCard({ thread }: { thread: Thread }) {
           </span>
         </div>
       )}
+      {thread.source === "browser" && thread.browser_tabs.length > 0 && (
+        <div className="chat-item-ctx chat-item-tabs">
+          <span className="chat-chip chat-chip-source">🌐 browser</span>
+          {thread.browser_tabs.map((t, i) => (
+            <a
+              key={i}
+              href={t.url}
+              target="_blank"
+              rel="noreferrer"
+              className="chat-chip chat-chip-tab"
+              title={t.url}
+            >
+              {t.title?.trim() || t.url}
+            </a>
+          ))}
+        </div>
+      )}
       <ul className="chat-events">
         {groupEvents(thread.events).map((it) => (
-          <RenderRow key={`${it.kind}:${it.seq}`} item={it} />
+          <RenderRow
+            key={`${it.kind}:${it.seq}`}
+            item={it}
+            onLinkClick={
+              onOpenLink
+                ? (url, ev) => onOpenLink(thread.id, url, ev)
+                : undefined
+            }
+          />
         ))}
         {!thread.done && (thread.pending_questions ?? []).length === 0 && (
           <li className="chat-event chat-event-spinner">…</li>
@@ -4341,26 +4546,76 @@ function groupEvents(events: ThreadEvent[]): RenderItem[] {
   return out;
 }
 
-const MD_COMPONENTS = {
-  // links open externally; iframe sandbox would block anyway.
-  a: ({ href, children }: any) => (
-    <a href={href} target="_blank" rel="noreferrer">
-      {children}
-    </a>
-  ),
-};
+type LinkClickHandler = (
+  url: string,
+  ev: React.MouseEvent<HTMLAnchorElement>,
+) => void;
 
-function MarkdownText({ text }: { text: string }) {
+function makeMdComponents(onLinkClick?: LinkClickHandler) {
+  return {
+    a: ({ href, children }: any) => {
+      const handleClick = (ev: React.MouseEvent<HTMLAnchorElement>) => {
+        if (!href || !onLinkClick) return;
+        // Let the user keep modifier-clicks for the system browser.
+        if (
+          ev.metaKey ||
+          ev.ctrlKey ||
+          ev.shiftKey ||
+          ev.altKey ||
+          ev.button !== 0
+        ) {
+          return;
+        }
+        ev.preventDefault();
+        onLinkClick(String(href), ev);
+      };
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          onClick={handleClick}
+          onAuxClick={(ev) => {
+            // middle-click — leave alone, browser opens in new window
+            void ev;
+          }}
+        >
+          {children}
+        </a>
+      );
+    },
+  };
+}
+
+const DEFAULT_MD_COMPONENTS = makeMdComponents();
+
+function MarkdownText({
+  text,
+  onLinkClick,
+}: {
+  text: string;
+  onLinkClick?: LinkClickHandler;
+}) {
+  const components = useMemo(
+    () => (onLinkClick ? makeMdComponents(onLinkClick) : DEFAULT_MD_COMPONENTS),
+    [onLinkClick],
+  );
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {text}
       </ReactMarkdown>
     </div>
   );
 }
 
-function RenderRow({ item }: { item: RenderItem }) {
+function RenderRow({
+  item,
+  onLinkClick,
+}: {
+  item: RenderItem;
+  onLinkClick?: LinkClickHandler;
+}) {
   if (item.kind === "user") {
     return (
       <li className="chat-event chat-event-user">
@@ -4378,7 +4633,7 @@ function RenderRow({ item }: { item: RenderItem }) {
           agent{item.partial ? " · streaming" : ""}
         </span>
         <div className="chat-event-text">
-          <MarkdownText text={item.text} />
+          <MarkdownText text={item.text} onLinkClick={onLinkClick} />
         </div>
       </li>
     );

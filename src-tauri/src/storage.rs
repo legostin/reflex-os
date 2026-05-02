@@ -5,6 +5,12 @@ use std::path::{Path, PathBuf};
 
 use crate::project;
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct BrowserTab {
+    pub url: String,
+    pub title: String,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ThreadMeta {
     pub id: String,
@@ -29,6 +35,17 @@ pub struct ThreadMeta {
     /// approval banner after execution; a later user task resets it.
     #[serde(default)]
     pub plan_confirmed: bool,
+    /// "quick" (default) or "browser" — where the thread originated from.
+    #[serde(default = "default_source")]
+    pub source: String,
+    /// Snapshot of browser tabs at the moment of thread creation
+    /// (only when source == "browser").
+    #[serde(default)]
+    pub browser_tabs: Vec<BrowserTab>,
+}
+
+fn default_source() -> String {
+    "quick".into()
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -136,6 +153,14 @@ pub fn reopen_thread(project_root: &Path, thread_id: &str) -> io::Result<()> {
     meta.done = false;
     meta.exit_code = None;
     fs::write(path, serde_json::to_string_pretty(&meta).map_err(io_err)?)
+}
+
+pub fn delete_thread(project_root: &Path, thread_id: &str) -> io::Result<()> {
+    let dir = project::topics_dir(project_root).join(thread_id);
+    if dir.exists() {
+        fs::remove_dir_all(dir)?;
+    }
+    Ok(())
 }
 
 pub fn read_all_threads(project_root: &Path) -> io::Result<Vec<StoredThread>> {

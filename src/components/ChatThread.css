@@ -713,6 +713,36 @@
   color: #cfd8ff;
 }
 
+.header-project-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 22px;
+  max-width: 200px;
+  text-overflow: ellipsis;
+  background-image: linear-gradient(
+      45deg,
+      transparent 50%,
+      rgba(245, 245, 247, 0.55) 50%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(245, 245, 247, 0.55) 50%,
+      transparent 50%
+    );
+  background-position:
+    calc(100% - 12px) 9px,
+    calc(100% - 8px) 9px;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+}
+
+.header-project-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .apps-root {
   display: flex;
   flex-direction: column;
@@ -2154,6 +2184,30 @@
   direction: rtl;
   text-align: left;
   white-space: nowrap;
+}
+
+.chat-item-tabs {
+  margin-top: 4px;
+}
+
+.chat-chip-source {
+  background: rgba(80, 140, 255, 0.18);
+  color: #cfd8ff;
+}
+
+.chat-chip-tab {
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-chip-tab:hover {
+  background: rgba(255, 255, 255, 0.10);
+  color: #cfd8ff;
 }
 
 .chat-events {

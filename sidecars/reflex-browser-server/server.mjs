@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import readline from "node:readline";
 import net from "node:net";
 
-const STATE_PATH =
+let statePath =
   process.env.REFLEX_BROWSER_STATE ||
   `${homedir()}/Library/Application Support/reflex-os/browser/storageState.json`;
 const SOCK_PATH =
@@ -45,11 +45,11 @@ async function ensureBrowser({ headless = true } = {}) {
     context = null;
     tabs.clear();
   }
-  mkdirSync(dirname(STATE_PATH), { recursive: true });
+  mkdirSync(dirname(statePath), { recursive: true });
   let storageState;
-  if (existsSync(STATE_PATH)) {
+  if (existsSync(statePath)) {
     try {
-      storageState = JSON.parse(readFileSync(STATE_PATH, "utf-8"));
+      storageState = JSON.parse(readFileSync(statePath, "utf-8"));
     } catch (e) {
       logErr("storageState read failed", e);
     }
@@ -150,10 +150,43 @@ async function saveState() {
   if (!context) return;
   try {
     const state = await context.storageState();
-    writeFileSync(STATE_PATH, JSON.stringify(state));
+    mkdirSync(dirname(statePath), { recursive: true });
+    writeFileSync(statePath, JSON.stringify(state));
   } catch (e) {
     logErr("saveState err", e);
   }
+}
+
+async function useStateFile(newPath) {
+  if (!newPath || typeof newPath !== "string") {
+    throw new Error("state_path required");
+  }
+  if (newPath === statePath) {
+    return { ok: true, state_path: statePath, switched: false };
+  }
+  if (browser) {
+    try {
+      await saveState();
+    } catch (e) {
+      logErr("saveState before switch", e);
+    }
+    for (const id of [...screencasts.keys()]) {
+      try {
+        await stopScreencast(id);
+      } catch {}
+    }
+    try {
+      await browser.close();
+    } catch (e) {
+      logErr("close on switch", e);
+    }
+    browser = null;
+    context = null;
+    tabs.clear();
+    activeTabId = null;
+  }
+  statePath = newPath;
+  return { ok: true, state_path: statePath, switched: true };
 }
 
 function getTab(tabId) {
@@ -194,8 +227,19 @@ async function handle(msg, sendFn) {
     let result;
     switch (method) {
       case "browser.init": {
+        if (params.state_path) {
+          await useStateFile(params.state_path);
+        }
         await ensureBrowser({ headless: params.headless ?? false });
-        result = { ok: true, headless: headlessMode };
+        result = {
+          ok: true,
+          headless: headlessMode,
+          state_path: statePath,
+        };
+        break;
+      }
+      case "browser.use_state": {
+        result = await useStateFile(params.state_path);
         break;
       }
       case "browser.shutdown": {
@@ -228,6 +272,7 @@ async function handle(msg, sendFn) {
             logErr("initial nav failed", e);
           }
         }
+        sendEvent("tabs.opened", { tab_id: tabId, url: page.url() });
         result = { tab_id: tabId, url: page.url() };
         break;
       }

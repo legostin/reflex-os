@@ -32,16 +32,35 @@ interface TabFrame {
   meta?: FramePayload["metadata"];
 }
 
-export function BrowserScreen() {
+export interface BrowserScreenProps {
+  projectId: string | null;
+  projectName: string | null;
+  onStartChat: (
+    prompt: string,
+    tabs: { url: string; title: string }[],
+  ) => Promise<void> | void;
+}
+
+export function BrowserScreen({
+  projectId,
+  projectName,
+  onStartChat,
+}: BrowserScreenProps) {
   const [tabs, setTabs] = useState<TabSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [urlDraft, setUrlDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [framesByTab, setFramesByTab] = useState<Record<string, TabFrame>>({});
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatSubmitting, setChatSubmitting] = useState(false);
   const initRef = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const activeIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
   const frameSrc = activeId ? framesByTab[activeId]?.src ?? "" : "";
   const frameMeta = activeId ? framesByTab[activeId]?.meta : undefined;
 
@@ -61,19 +80,26 @@ export function BrowserScreen() {
     setBusy(true);
     setError(null);
     try {
-      await invoke("browser_init", { headless: true });
-      const res = await invoke<{ tab_id: string; url: string }>(
-        "browser_tab_open",
-        { url: HOME_URL },
-      );
+      await invoke("browser_init", { headless: true, projectId });
+      const list = await invoke<TabSummary[]>("browser_tabs_list");
+      let firstId: string;
+      if (list.length === 0) {
+        const res = await invoke<{ tab_id: string; url: string }>(
+          "browser_tab_open",
+          { url: HOME_URL },
+        );
+        firstId = res.tab_id;
+      } else {
+        firstId = list[0].tab_id;
+      }
       await invoke("browser_set_viewport", {
-        tabId: res.tab_id,
+        tabId: firstId,
         width: VIEWPORT_W,
         height: VIEWPORT_H,
       });
-      setActiveId(res.tab_id);
+      setActiveId(firstId);
       await invoke("browser_screencast_start", {
-        tabId: res.tab_id,
+        tabId: firstId,
         quality: 60,
         maxWidth: VIEWPORT_W,
         maxHeight: VIEWPORT_H,
@@ -84,6 +110,30 @@ export function BrowserScreen() {
       setError(String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function submitChat() {
+    const prompt = chatDraft.trim();
+    if (!prompt || chatSubmitting) return;
+    if (!projectId) {
+      setError("Активный проект не выбран — выбери проект в шапке.");
+      return;
+    }
+    setChatSubmitting(true);
+    setError(null);
+    try {
+      const list = await invoke<TabSummary[]>("browser_tabs_list");
+      const snapshot = list.map((t) => ({
+        url: t.url,
+        title: t.title,
+      }));
+      await onStartChat(prompt, snapshot);
+      setChatDraft("");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setChatSubmitting(false);
     }
   }
 
@@ -107,7 +157,17 @@ export function BrowserScreen() {
   useEffect(() => {
     const subs: Promise<() => void>[] = [];
     subs.push(
-      listen("reflex://browser/tabs-opened", () => void refreshTabs()),
+      listen<{ tab_id: string; url: string }>(
+        "reflex://browser/tabs-opened",
+        (ev) => {
+          void refreshTabs();
+          const payload = ev.payload;
+          if (!payload?.tab_id) return;
+          if (payload.url && payload.url !== HOME_URL) {
+            void switchActive(payload.tab_id);
+          }
+        },
+      ),
     );
     subs.push(
       listen("reflex://browser/tabs-closed", () => void refreshTabs()),
@@ -151,13 +211,15 @@ export function BrowserScreen() {
   }, []);
 
   async function switchActive(id: string) {
-    if (id === activeId) return;
-    if (activeId) {
+    const prev = activeIdRef.current;
+    if (id === prev) return;
+    if (prev) {
       try {
-        await invoke("browser_screencast_stop", { tabId: activeId });
+        await invoke("browser_screencast_stop", { tabId: prev });
       } catch {}
     }
     setActiveId(id);
+    activeIdRef.current = id;
     try {
       await invoke("browser_set_active_tab", { tabId: id });
       await invoke("browser_set_viewport", {
@@ -373,9 +435,25 @@ export function BrowserScreen() {
     }
   }
 
+  if (!projectId) {
+    return (
+      <div className="browser-root">
+        <div className="browser-empty">
+          Чтобы открыть браузер, выбери активный проект в шапке.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="browser-root">
       <header className="browser-header">
+        <div className="browser-project-line">
+          <span className="browser-project-label">Проект:</span>
+          <span className="browser-project-name">
+            {projectName ?? projectId}
+          </span>
+        </div>
         <div className="browser-tab-bar">
           {tabs.map((t) => (
             <button
@@ -469,6 +547,33 @@ export function BrowserScreen() {
           </div>
         )}
       </div>
+      <footer className="browser-chat-bar">
+        <input
+          className="browser-chat-input"
+          value={chatDraft}
+          placeholder={
+            tabs.length === 0
+              ? "Открой страницу и начни чат с агентом…"
+              : `Запустить чат по ${tabs.length} вкладк${tabs.length === 1 ? "е" : "ам"}…`
+          }
+          onChange={(e) => setChatDraft(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void submitChat();
+            }
+          }}
+          disabled={chatSubmitting}
+        />
+        <button
+          className="browser-chat-send"
+          onClick={() => void submitChat()}
+          disabled={chatSubmitting || !chatDraft.trim()}
+          title="Создать чат с контекстом текущих вкладок"
+        >
+          {chatSubmitting ? "…" : "Чат"}
+        </button>
+      </footer>
     </div>
   );
 }

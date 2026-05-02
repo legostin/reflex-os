@@ -35,7 +35,15 @@ pub async fn dispatch_app_method(
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
             let ctx = QuickContext::default();
-            let thread_id = crate::submit_quick_impl(app.clone(), prompt.into(), ctx, project_id, None)?;
+            let thread_id = crate::submit_quick_impl(
+                app.clone(),
+                prompt.into(),
+                ctx,
+                project_id,
+                None,
+                None,
+                None,
+            )?;
             Ok(serde_json::json!({ "threadId": thread_id }))
         }
         "storage.get" => {

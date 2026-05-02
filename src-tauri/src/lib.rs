@@ -50,6 +50,10 @@ struct ThreadCreated {
     created_at_ms: u128,
     #[serde(default)]
     plan_mode: bool,
+    #[serde(default)]
+    source: String,
+    #[serde(default)]
+    browser_tabs: Vec<storage::BrowserTab>,
 }
 
 #[derive(Serialize, Clone)]
@@ -61,6 +65,76 @@ struct ProjectThread {
 #[tauri::command]
 async fn capture_context(app: AppHandle) -> QuickContext {
     context::capture(&app).await
+}
+
+fn ui_state_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?;
+    std::fs::create_dir_all(&base).map_err(|e| format!("mkdir app_data_dir: {e}"))?;
+    Ok(base.join("ui-state.json"))
+}
+
+fn read_ui_state(app: &AppHandle) -> serde_json::Value {
+    let path = match ui_state_path(app) {
+        Ok(p) => p,
+        Err(_) => return serde_json::json!({}),
+    };
+    if !path.exists() {
+        return serde_json::json!({});
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_else(|_| serde_json::json!({})),
+        Err(_) => serde_json::json!({}),
+    }
+}
+
+fn write_ui_state(app: &AppHandle, state: &serde_json::Value) -> Result<(), String> {
+    let path = ui_state_path(app)?;
+    let s = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
+    std::fs::write(path, s).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_active_project(app: AppHandle) -> Result<Option<String>, String> {
+    let state = read_ui_state(&app);
+    let id = state
+        .get("active_project_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    if let Some(ref pid) = id {
+        if project::get_by_id(&app, pid).ok().flatten().is_none() {
+            return Ok(None);
+        }
+    }
+    Ok(id)
+}
+
+#[tauri::command]
+fn set_active_project(app: AppHandle, project_id: Option<String>) -> Result<(), String> {
+    let mut state = read_ui_state(&app);
+    let map = state
+        .as_object_mut()
+        .ok_or_else(|| "ui-state.json is not an object".to_string())?;
+    match project_id {
+        Some(id) if !id.trim().is_empty() => {
+            if project::get_by_id(&app, &id)
+                .map_err(|e| e.to_string())?
+                .is_none()
+            {
+                return Err(format!("project not found: {id}"));
+            }
+            map.insert(
+                "active_project_id".into(),
+                serde_json::Value::String(id),
+            );
+        }
+        _ => {
+            map.remove("active_project_id");
+        }
+    }
+    write_ui_state(&app, &state)
 }
 
 #[tauri::command]
@@ -334,6 +408,8 @@ fn build_empty_app_thread(
         goal: Some("Доработка утилиты".into()),
         plan_mode: true,
         plan_confirmed: false,
+        source: "quick".into(),
+        browser_tabs: Vec::new(),
     };
     storage::write_meta(&dir, &meta).map_err(|e| e.to_string())?;
 
@@ -346,6 +422,8 @@ fn build_empty_app_thread(
         ctx: QuickContext::default(),
         created_at_ms: now_ms,
         plan_mode: meta.plan_mode,
+        source: meta.source.clone(),
+        browser_tabs: meta.browser_tabs.clone(),
     };
     let _ = app.emit(THREAD_CREATED_EVENT, &payload);
 
@@ -555,6 +633,8 @@ async fn create_app(
         goal: Some(format!("Написать Reflex app: {trimmed}")),
         plan_mode: true,
         plan_confirmed: false,
+        source: "quick".into(),
+        browser_tabs: Vec::new(),
     };
     let _ = storage::write_meta(&project_root, &meta);
 
@@ -567,6 +647,8 @@ async fn create_app(
         ctx: QuickContext::default(),
         created_at_ms: now_ms,
         plan_mode: meta.plan_mode,
+        source: meta.source.clone(),
+        browser_tabs: meta.browser_tabs.clone(),
     };
     let _ = app.emit(THREAD_CREATED_EVENT, &payload);
 
@@ -1329,8 +1411,10 @@ fn submit_quick(
     ctx: QuickContext,
     project_id: Option<String>,
     plan_mode: Option<bool>,
+    source: Option<String>,
+    browser_tabs: Option<Vec<storage::BrowserTab>>,
 ) -> Result<String, String> {
-    submit_quick_impl(app, prompt, ctx, project_id, plan_mode)
+    submit_quick_impl(app, prompt, ctx, project_id, plan_mode, source, browser_tabs)
 }
 
 pub(crate) fn submit_quick_impl(
@@ -1339,12 +1423,20 @@ pub(crate) fn submit_quick_impl(
     ctx: QuickContext,
     project_id: Option<String>,
     plan_mode: Option<bool>,
+    source: Option<String>,
+    browser_tabs: Option<Vec<storage::BrowserTab>>,
 ) -> Result<String, String> {
     let plan_mode = plan_mode.unwrap_or(false);
+    let source = source
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "quick".into());
+    let browser_tabs = browser_tabs.unwrap_or_default();
     eprintln!(
-        "[reflex] submit_quick: prompt_len={} project_id={:?} ctx={:?}/{:?}",
+        "[reflex] submit_quick: prompt_len={} project_id={:?} source={} tabs={} ctx={:?}/{:?}",
         prompt.len(),
         project_id,
+        source,
+        browser_tabs.len(),
         ctx.frontmost_app,
         ctx.finder_target
     );
@@ -1377,6 +1469,8 @@ pub(crate) fn submit_quick_impl(
         goal: None,
         plan_mode,
         plan_confirmed: false,
+        source: source.clone(),
+        browser_tabs: browser_tabs.clone(),
     };
     if let Err(e) = storage::write_meta(&project_root, &meta) {
         eprintln!("[reflex] write_meta failed: {e}");
@@ -1400,6 +1494,8 @@ pub(crate) fn submit_quick_impl(
         ctx,
         created_at_ms: now_ms,
         plan_mode,
+        source: source.clone(),
+        browser_tabs: browser_tabs.clone(),
     };
     if let Err(e) = app.emit(THREAD_CREATED_EVENT, &payload) {
         eprintln!("[reflex] emit thread-created failed: {e}");
@@ -1417,10 +1513,26 @@ pub(crate) fn submit_quick_impl(
         });
     }
 
-    let codex_prompt = if plan_mode {
-        wrap_with_plan_mode(&prompt)
+    let prompt_with_browser = if source == "browser" && !browser_tabs.is_empty() {
+        let mut buf = String::from("Контекст из встроенного браузера (открытые вкладки на момент запуска):\n");
+        for (i, tab) in browser_tabs.iter().enumerate() {
+            let title = if tab.title.trim().is_empty() {
+                "(без заголовка)"
+            } else {
+                tab.title.trim()
+            };
+            buf.push_str(&format!("{}. {} — {}\n", i + 1, title, tab.url));
+        }
+        buf.push_str("\nЗАДАЧА:\n");
+        buf.push_str(&prompt);
+        buf
     } else {
         prompt.clone()
+    };
+    let codex_prompt = if plan_mode {
+        wrap_with_plan_mode(&prompt_with_browser)
+    } else {
+        prompt_with_browser
     };
     let app_handle = app.clone();
     let reflex_id = thread_id.clone();
@@ -1813,6 +1925,43 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+fn prune_orphan_threads(app: &AppHandle) {
+    let projects = match project::list_registered(app) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[reflex] prune: list_registered failed: {e}");
+            return;
+        }
+    };
+    let valid_ids: std::collections::HashSet<String> =
+        projects.iter().map(|p| p.id.clone()).collect();
+    for p in &projects {
+        let root = PathBuf::from(&p.root);
+        let threads = match storage::read_all_threads(&root) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("[reflex] prune: read_all_threads({}) failed: {e}", p.root);
+                continue;
+            }
+        };
+        for t in threads {
+            let belongs = match &t.meta.project_id {
+                Some(pid) => valid_ids.contains(pid) && pid == &p.id,
+                None => false,
+            };
+            if !belongs {
+                eprintln!(
+                    "[reflex] prune orphan thread {} (project_id={:?}, project_root={})",
+                    t.meta.id, t.meta.project_id, p.root
+                );
+                if let Err(e) = storage::delete_thread(&root, &t.meta.id) {
+                    eprintln!("[reflex] prune: delete_thread {} failed: {e}", t.meta.id);
+                }
+            }
+        }
+    }
+}
+
 async fn resume_interrupted_threads(app: AppHandle, server: app_server::AppServerClient) {
     let projects = match project::list_registered(&app) {
         Ok(p) => p,
@@ -2071,6 +2220,8 @@ pub fn run() {
                 eprintln!("[reflex] ensure_sample_app failed: {e}");
             }
 
+            prune_orphan_threads(app.handle());
+
             let app_handle_for_server = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 match app_server::AppServerClient::start(app_handle_for_server.clone()).await {
@@ -2112,6 +2263,8 @@ pub fn run() {
             submit_quick,
             list_threads,
             list_projects,
+            get_active_project,
+            set_active_project,
             create_project,
             update_project_description,
             link_app_to_project,
@@ -2172,6 +2325,7 @@ pub fn run() {
             scheduler::commands::scheduler_runs,
             scheduler::commands::scheduler_run_detail,
             browser::browser_init,
+            browser::browser_switch_project,
             browser::browser_shutdown,
             browser::browser_tabs_list,
             browser::browser_tab_open,

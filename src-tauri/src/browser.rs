@@ -38,7 +38,7 @@ impl BrowserSidecar {
             .parent()
             .ok_or_else(|| "sidecar script has no parent".to_string())?
             .to_path_buf();
-        let state_path = browser_state_path(app)?;
+        let state_path = fallback_browser_state_path(app)?;
         let node_bin = resolve_node_binary()?;
 
         eprintln!(
@@ -345,7 +345,7 @@ fn resolve_node_binary() -> Result<String, String> {
     Err("node binary not found (tried REFLEX_NODE_BIN env, common paths, and login shell)".into())
 }
 
-fn browser_state_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn fallback_browser_state_path(app: &AppHandle) -> Result<PathBuf, String> {
     let base = app
         .path()
         .app_data_dir()
@@ -355,16 +355,60 @@ fn browser_state_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("storageState.json"))
 }
 
+fn project_browser_state_path(
+    app: &AppHandle,
+    project_id: &str,
+) -> Result<PathBuf, String> {
+    let project = crate::project::get_by_id(app, project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    let dir = std::path::PathBuf::from(&project.root)
+        .join(".reflex")
+        .join("browser");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {e}"))?;
+    Ok(dir.join("storageState.json"))
+}
+
+fn resolve_state_path(
+    app: &AppHandle,
+    project_id: Option<&str>,
+) -> Result<PathBuf, String> {
+    if let Some(id) = project_id {
+        return project_browser_state_path(app, id);
+    }
+    fallback_browser_state_path(app)
+}
+
 #[tauri::command]
 pub async fn browser_init(
     app: AppHandle,
     headless: Option<bool>,
+    project_id: Option<String>,
 ) -> Result<Value, String> {
     let s = app.state::<BrowserSidecar>();
+    let state_path = resolve_state_path(&app, project_id.as_deref())?;
     s.request(
         &app,
         "browser.init",
-        serde_json::json!({ "headless": headless.unwrap_or(false) }),
+        serde_json::json!({
+            "headless": headless.unwrap_or(false),
+            "state_path": state_path,
+        }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn browser_switch_project(
+    app: AppHandle,
+    project_id: Option<String>,
+) -> Result<Value, String> {
+    let s = app.state::<BrowserSidecar>();
+    let state_path = resolve_state_path(&app, project_id.as_deref())?;
+    s.request(
+        &app,
+        "browser.use_state",
+        serde_json::json!({ "state_path": state_path }),
     )
     .await
 }
