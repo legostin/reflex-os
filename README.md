@@ -50,6 +50,7 @@ The injected runtime overlay provides:
 - `window.reflexSystemOpenUrl(urlOrParams)`
 - `window.reflexSystemOpenPath(pathOrParams)`
 - `window.reflexSystemRevealPath(pathOrParams)`
+- `window.reflexLog(levelOrParams, message?)`
 - `window.reflexManifestGet()`
 - `window.reflexManifestUpdate(patch)`
 - `window.reflexCapabilities()`
@@ -122,6 +123,8 @@ Core methods:
   paths resolve from the app folder.
 - `system.revealPath({ path })` -> reveal an existing local file/folder in
   Finder; relative paths resolve from the app folder.
+- `logs.write({ level?, source?, message })` -> write an app-scoped diagnostic
+  event into Settings -> Logs.
 - `manifest.get()` -> current `manifest.json`.
 - `manifest.update({ patch })` -> merge-update this app's manifest; useful for
   adding `actions`, `widgets`, `schedules`, permissions, or network hosts.

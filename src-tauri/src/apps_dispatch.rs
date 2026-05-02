@@ -6,7 +6,7 @@ use crate::memory::files;
 use crate::memory::rag;
 use crate::memory::schema::{MemoryKind, MemoryScope, ScopeRoots};
 use crate::memory::store::{self, ListFilter, SaveRequest};
-use crate::{browser, memory, project, storage};
+use crate::{browser, logs, memory, project, storage};
 use crate::scheduler;
 use crate::QuickContext;
 use std::path::{Path, PathBuf};
@@ -24,6 +24,7 @@ pub async fn dispatch_app_method(
         "system.openUrl" | "system.open_url" => system_open_url(app, &params),
         "system.openPath" | "system.open_path" => system_open_path(app, app_id, &params),
         "system.revealPath" | "system.reveal_path" => system_reveal_path(app, app_id, &params),
+        "logs.write" => logs_write_for_app(app, app_id, &params),
         "clipboard.readText" | "clipboard.read_text" => clipboard_read_text(app, app_id),
         "clipboard.writeText" | "clipboard.write_text" => {
             clipboard_write_text(app, app_id, &params)
@@ -806,6 +807,48 @@ fn resolve_system_path(
     }
 
     Ok(path)
+}
+
+fn logs_write_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let level = match string_param(params, "level", "level")
+        .unwrap_or_else(|| "info".to_string())
+        .to_lowercase()
+        .as_str()
+    {
+        "trace" => logs::LogLevel::Trace,
+        "debug" => logs::LogLevel::Debug,
+        "warn" | "warning" => logs::LogLevel::Warn,
+        "error" | "err" => logs::LogLevel::Error,
+        _ => logs::LogLevel::Info,
+    };
+    let message = params
+        .get("message")
+        .or_else(|| params.get("body"))
+        .and_then(|v| v.as_str())
+        .ok_or("missing message")?;
+    let mut message: String = message.chars().take(2_000).collect();
+    if message.trim().is_empty() {
+        message = "(empty app log message)".into();
+    }
+
+    let source_suffix = string_param(params, "source", "source")
+        .map(|s| {
+            s.chars()
+                .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':'))
+                .take(48)
+                .collect::<String>()
+        })
+        .filter(|s| !s.is_empty());
+    let source = source_suffix
+        .map(|suffix| format!("app:{app_id}:{suffix}"))
+        .unwrap_or_else(|| format!("app:{app_id}"));
+
+    logs::log_with(app, level, &source, message);
+    Ok(serde_json::json!({ "ok": true }))
 }
 
 fn clipboard_read_text(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {

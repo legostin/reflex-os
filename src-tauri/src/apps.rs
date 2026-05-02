@@ -952,6 +952,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
     return reflexInvokeRaw('system.revealPath', params);
   };
+  window.reflexLog = function(levelOrParams, message) {
+    var params = (typeof levelOrParams === 'string') ? {level: levelOrParams, message: message || ''} : (levelOrParams || {});
+    return reflexInvokeRaw('logs.write', params);
+  };
   window.reflexManifestGet = function() {
     return reflexInvokeRaw('manifest.get', {});
   };
