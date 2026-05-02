@@ -558,7 +558,7 @@ fn app_revise(
   • agent.ask({{prompt}}) → {{answer}}\n\
   • agent.task({{prompt, sandbox?, cwd?}}) → {{threadId, result}} — изолированный sub-агент; cwd может быть app root или linked project, чужой project требует agent.project:<project>|*, произвольный cwd требует agent.cwd:*\n\
   • agent.stream({{prompt, sandbox?, cwd?}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}; cwd rules как у agent.task\n\
-  • storage.get/set, fs.read/write (в app-папке)\n\
+  • storage.get/set/list/delete, fs.read/write (в app-папке)\n\
   • projects.list / topics.list — read-only обзор доступных проектов и топиков; чужие требуют permission projects.read/topics.read\n\
   • skills.list / mcp.servers — preferred skills и MCP server names; raw MCP config требует permission mcp.read:<project>|*\n\
   • browser.init/tabs.list/open/navigate/readText/readOutline/screenshot/clickText/clickSelector/fill — встроенный browser sidecar; требует browser.read/control\n\
@@ -567,7 +567,7 @@ fn app_revise(
   • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
   • notify.show — macOS push\n\
   • net.fetch({{url, method?, headers?, body?}}) — требует manifest.network.allowed_hosts (поддержка \"*.foo.com\")\n\
-- Overlay helpers: reflexInvoke, reflexSystemContext, reflexManifestGet/Update, reflexCapabilities, reflexAgentAsk/StartTopic/Task/Stream/StreamAbort, reflexStorageGet/Set, reflexFsRead/Write, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsList, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
+- Overlay helpers: reflexInvoke, reflexSystemContext, reflexManifestGet/Update, reflexCapabilities, reflexAgentAsk/StartTopic/Task/Stream/StreamAbort, reflexStorageGet/Set/List/Delete, reflexFsRead/Write, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsList, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
 - iframe sandbox=\"allow-scripts allow-forms\" (для server runtime + allow-same-origin). Никаких внешних CDN — только inline или локальные файлы.\n\
 - Reflex автоматически инжектит overlay-скрипт в HTML: ловит window.onerror/unhandledrejection (юзер увидит ✨Fix), и режим Inspector (юзер кликает → ты получишь selector + outerHTML). Не пиши свой обработчик с теми же типами событий.\n\
 - После твоих правок iframe перезагрузится сам (file watcher), для server runtime — процесс перезапустится. Не требуй ручного reload.\n\
@@ -958,6 +958,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  agent.stream({prompt, sandbox?, cwd?}) -> {streamId, threadId}  — стрим токенов: app слушает window 'message' от parent с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done' с {streamId, result}. По завершении вызывай agent.streamAbort({threadId}) при размонтаже. cwd rules как у agent.task.\n");
     p.push_str("  storage.get({key}) -> {value}                         — persist в storage.json\n");
     p.push_str("  storage.set({key, value}) -> {ok}\n");
+    p.push_str("  storage.list({prefix?}) -> {keys, entries}; storage.delete({key}) или storage.delete({keys}) -> {ok, deleted, missing}\n");
     p.push_str("  fs.read({path}) -> {content}                          — читать файл в app-папке\n");
     p.push_str("  fs.write({path, content}) -> {ok}                     — писать файл в app-папке\n");
     p.push_str("  notify.show({title, body}) -> {ok}                    — macOS push\n");
@@ -993,7 +994,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("- scope: \"project\" по умолчанию. Если app привязан ровно к одному проекту, project scope попадёт в память этого проекта; иначе — в память самого app.\n");
     p.push_str("- Для выбора проекта вызови system.context() и передай projectId из linked_projects. Для global scope добавь permission \"memory.global.read\" или \"memory.global.write\".\n");
     p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexManifestGet(), reflexManifestUpdate(patch), reflexCapabilities(), reflexProjectsList(params), reflexTopicsList(params), reflexSkillsList(params), reflexMcpServers(params), reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit.\n");
-    p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set(...), reflexFsRead/Write(...), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
+    p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set/List/Delete(...), reflexFsRead/Write(...), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
     p.push_str("  Browser helpers: reflexBrowserInit(params), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserNavigate(tabId, url), reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?), reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?).\n");
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
     p.push_str("MANIFEST.network (для net.fetch):\n");
@@ -1064,7 +1065,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  window.reflexSystemContext()\n");
     p.push_str("  window.reflexManifestGet(), reflexManifestUpdate(patch), reflexCapabilities() // manifest summary + hasPermission()/hasNetworkHost()\n");
     p.push_str("  window.reflexAgentAsk(promptOrParams), reflexAgentStartTopic(promptOrParams, projectId?), reflexAgentTask(promptOrParams), reflexAgentStream(promptOrParams), reflexAgentStreamAbort(threadIdOrParams)\n");
-    p.push_str("  window.reflexStorageGet(keyOrParams), reflexStorageSet(keyOrParams, value?)\n");
+    p.push_str("  window.reflexStorageGet(keyOrParams), reflexStorageSet(keyOrParams, value?), reflexStorageList(params), reflexStorageDelete(keyOrParams)\n");
     p.push_str("  window.reflexFsRead(pathOrParams), reflexFsWrite(pathOrParams, content?)\n");
     p.push_str("  window.reflexNetFetch(urlOrParams, options?), reflexNotifyShow(titleOrParams, body?)\n");
     p.push_str("  window.reflexDialogOpenDirectory(params), reflexDialogOpenFile(params), reflexDialogSaveFile(params)\n");

@@ -74,11 +74,68 @@ pub async fn dispatch_app_method(
                 .cloned()
                 .unwrap_or(serde_json::Value::Null);
             let mut store = apps::read_storage(app, app_id).map_err(|e| e.to_string())?;
-            if let Some(obj) = store.as_object_mut() {
-                obj.insert(key.to_string(), value);
+            if !store.is_object() {
+                store = serde_json::json!({});
             }
+            store
+                .as_object_mut()
+                .expect("storage object")
+                .insert(key.to_string(), value);
             apps::write_storage(app, app_id, &store).map_err(|e| e.to_string())?;
             Ok(serde_json::json!({ "ok": true }))
+        }
+        "storage.list" => {
+            let prefix = string_param(&params, "prefix", "prefix");
+            let store = apps::read_storage(app, app_id).map_err(|e| e.to_string())?;
+            let mut keys: Vec<String> = store
+                .as_object()
+                .map(|obj| {
+                    obj.keys()
+                        .filter(|key| {
+                            prefix
+                                .as_ref()
+                                .map(|prefix| key.starts_with(prefix))
+                                .unwrap_or(true)
+                        })
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default();
+            keys.sort();
+
+            let mut entries = serde_json::Map::new();
+            if let Some(obj) = store.as_object() {
+                for key in &keys {
+                    if let Some(value) = obj.get(key) {
+                        entries.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+
+            Ok(serde_json::json!({ "keys": keys, "entries": entries }))
+        }
+        "storage.delete" => {
+            let keys = parse_storage_keys(&params)?;
+            let mut store = apps::read_storage(app, app_id).map_err(|e| e.to_string())?;
+            if !store.is_object() {
+                store = serde_json::json!({});
+            }
+            let obj = store.as_object_mut().expect("storage object");
+            let mut deleted = Vec::new();
+            let mut missing = Vec::new();
+            for key in keys {
+                if obj.remove(&key).is_some() {
+                    deleted.push(key);
+                } else {
+                    missing.push(key);
+                }
+            }
+            apps::write_storage(app, app_id, &store).map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({
+                "ok": true,
+                "deleted": deleted,
+                "missing": missing,
+            }))
         }
         "fs.read" => {
             let path = params
@@ -1171,6 +1228,31 @@ fn parse_topics(params: &serde_json::Value) -> Result<Vec<String>, String> {
     }
     if out.is_empty() {
         return Err("topics must be non-empty array of strings".into());
+    }
+    Ok(out)
+}
+
+fn parse_storage_keys(params: &serde_json::Value) -> Result<Vec<String>, String> {
+    if let Some(key) = params.get("key").and_then(|v| v.as_str()) {
+        let key = key.trim();
+        if !key.is_empty() {
+            return Ok(vec![key.to_string()]);
+        }
+    }
+
+    let keys = params
+        .get("keys")
+        .and_then(|v| v.as_array())
+        .ok_or("missing key or keys")?;
+    let out: Vec<String> = keys
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    if out.is_empty() {
+        return Err("keys must include at least one non-empty string".into());
     }
     Ok(out)
 }

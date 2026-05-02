@@ -902,6 +902,13 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof keyOrParams === 'string') ? {key: keyOrParams, value: value} : (keyOrParams || {});
     return reflexInvokeRaw('storage.set', params);
   };
+  window.reflexStorageList = function(params) {
+    return reflexInvokeRaw('storage.list', params || {});
+  };
+  window.reflexStorageDelete = function(keyOrParams) {
+    var params = (typeof keyOrParams === 'string') ? {key: keyOrParams} : (keyOrParams || {});
+    return reflexInvokeRaw('storage.delete', params);
+  };
   window.reflexFsRead = function(pathOrParams) {
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
     return reflexInvokeRaw('fs.read', params);

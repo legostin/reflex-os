@@ -57,6 +57,8 @@ The injected runtime overlay provides:
 - `window.reflexAgentStreamAbort(threadIdOrParams)`
 - `window.reflexStorageGet(keyOrParams)`
 - `window.reflexStorageSet(keyOrParams, value?)`
+- `window.reflexStorageList(params)`
+- `window.reflexStorageDelete(keyOrParams)`
 - `window.reflexFsRead(pathOrParams)`
 - `window.reflexFsWrite(pathOrParams, content?)`
 - `window.reflexNetFetch(urlOrParams, options?)`
@@ -115,6 +117,8 @@ Core methods:
   `agent.project:<project>` or `agent.project:*`, and arbitrary cwd requires
   `agent.cwd:*`. Project cwd automatically receives that project's MCP config.
 - `storage.get({ key })`, `storage.set({ key, value })`.
+- `storage.list({ prefix? })` -> `{ keys, entries }`.
+- `storage.delete({ key })` or `storage.delete({ keys })` -> `{ ok, deleted, missing }`.
 - `fs.read({ path })`, `fs.write({ path, content })` inside the app folder.
 - `dialog.openDirectory`, `dialog.openFile`, `dialog.saveFile`.
 - `notify.show({ title, body })`.

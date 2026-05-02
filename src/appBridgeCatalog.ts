@@ -15,7 +15,14 @@ export const BRIDGE_API_GROUPS = [
   },
   {
     title: "Данные app и файлы",
-    methods: ["storage.get", "storage.set", "fs.read", "fs.write"],
+    methods: [
+      "storage.get",
+      "storage.set",
+      "storage.list",
+      "storage.delete",
+      "fs.read",
+      "fs.write",
+    ],
   },
   {
     title: "Проекты и топики",
@@ -111,6 +118,8 @@ export const BRIDGE_HELPER_GROUPS = [
     helpers: [
       "reflexStorageGet",
       "reflexStorageSet",
+      "reflexStorageList",
+      "reflexStorageDelete",
       "reflexFsRead",
       "reflexFsWrite",
       "reflexNetFetch",
