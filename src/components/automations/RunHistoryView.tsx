@@ -3,12 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { RunSummary } from "./types";
 import { callerLabel, runStatusLabel } from "./labels";
+import { useI18n } from "../../i18n";
 
 export function RunHistoryView({
   onSelect,
 }: {
   onSelect: (runId: string) => void;
 }) {
+  const { t } = useI18n();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [tick, setTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -75,12 +77,12 @@ export function RunHistoryView({
           className="automations-select"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.currentTarget.value)}
-          aria-label="Фильтр статуса запуска"
+          aria-label={t("automations.statusFilterAria")}
         >
-          <option value="all">Все статусы</option>
+          <option value="all">{t("automations.allStatuses")}</option>
           {statusOptions.map((status) => (
             <option key={status} value={status}>
-              {runStatusLabel(status)}
+              {runStatusLabel(status, t)}
             </option>
           ))}
         </select>
@@ -88,9 +90,9 @@ export function RunHistoryView({
           className="automations-select"
           value={appFilter}
           onChange={(e) => setAppFilter(e.currentTarget.value)}
-          aria-label="Фильтр утилиты"
+          aria-label={t("automations.appFilterAria")}
         >
-          <option value="all">Все утилиты</option>
+          <option value="all">{t("automations.allUtilities")}</option>
           {appOptions.map((appId) => (
             <option key={appId} value={appId}>
               {appId}
@@ -101,7 +103,7 @@ export function RunHistoryView({
           className="automations-search"
           type="search"
           value={query}
-          placeholder="ID запуска, утилита, расписание, ошибка..."
+          placeholder={t("automations.searchRuns")}
           onChange={(e) => setQuery(e.currentTarget.value)}
         />
         <button
@@ -109,7 +111,7 @@ export function RunHistoryView({
           type="button"
           onClick={() => setTick((n) => n + 1)}
         >
-          Обновить
+          {t("automations.refresh")}
         </button>
         <span className="automations-count">
           {filteredRuns.length} / {runs.length}
@@ -117,23 +119,23 @@ export function RunHistoryView({
       </div>
       {error && <div className="automations-error">{error}</div>}
       {runs.length === 0 ? (
-        <div className="automations-empty">Запусков ещё не было.</div>
+        <div className="automations-empty">{t("automations.noRuns")}</div>
       ) : filteredRuns.length === 0 ? (
         <div className="automations-empty">
           {hasFilters
-            ? "Нет запусков под текущие фильтры."
-            : "Запусков ещё не было."}
+            ? t("automations.noRunsForFilters")
+            : t("automations.noRuns")}
         </div>
       ) : (
         <table className="automations-table">
           <thead>
             <tr>
-              <th>Время</th>
-              <th>Утилита</th>
-              <th>Расписание / действие</th>
-              <th>Инициатор</th>
-              <th>Статус</th>
-              <th>Длительность</th>
+              <th>{t("automations.time")}</th>
+              <th>{t("automations.utility")}</th>
+              <th>{t("automations.scheduleAction")}</th>
+              <th>{t("automations.caller")}</th>
+              <th>{t("automations.status")}</th>
+              <th>{t("automations.duration")}</th>
             </tr>
           </thead>
           <tbody>
@@ -148,17 +150,21 @@ export function RunHistoryView({
                 <td>
                   <code>{r.schedule_id ?? r.action_id ?? "—"}</code>
                 </td>
-                <td>{callerLabel(r.caller)}</td>
+                <td>{callerLabel(r.caller, t)}</td>
                 <td>
                   <span className={`pill pill-${r.status}`}>
-                    {runStatusLabel(r.status)}
+                    {runStatusLabel(r.status, t)}
                   </span>
                   {r.error_preview && (
                     <div className="run-err">{r.error_preview}</div>
                   )}
                 </td>
                 <td>
-                  {r.ended_ms ? `${r.ended_ms - r.started_ms} мс` : "…"}
+                  {r.ended_ms
+                    ? t("automations.ms", {
+                        count: r.ended_ms - r.started_ms,
+                      })
+                    : "..."}
                 </td>
               </tr>
             ))}

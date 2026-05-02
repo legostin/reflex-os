@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { ScheduleListItem, SchedulerStats } from "./types";
 import { RunHistoryView } from "./RunHistoryView";
 import { RunDetailPanel } from "./RunDetailPanel";
+import { useI18n, type Translate } from "../../i18n";
 import "./automations.css";
 
 type Tab = "schedules" | "history";
@@ -13,6 +14,7 @@ export function AutomationsScreen({
 }: {
   onCreateAutomation?: () => void;
 }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("schedules");
   const [items, setItems] = useState<ScheduleListItem[]>([]);
   const [schedulerStats, setSchedulerStats] = useState<SchedulerStats | null>(
@@ -150,14 +152,14 @@ export function AutomationsScreen({
   return (
     <div className="automations-root">
       <header className="automations-header">
-        <h1>Автоматизации</h1>
+        <h1>{t("nav.automations")}</h1>
         <div className="automations-header-actions">
           {onCreateAutomation && (
             <button
               className="automations-primary-btn"
               onClick={onCreateAutomation}
             >
-              + Автоматизация
+              {t("automations.create")}
             </button>
           )}
           <div className="automations-tabs">
@@ -165,13 +167,13 @@ export function AutomationsScreen({
               className={tab === "schedules" ? "tab-on" : ""}
               onClick={() => setTab("schedules")}
             >
-              Расписания
+              {t("automations.schedules")}
             </button>
             <button
               className={tab === "history" ? "tab-on" : ""}
               onClick={() => setTab("history")}
             >
-              История запусков
+              {t("automations.history")}
             </button>
           </div>
         </div>
@@ -179,28 +181,34 @@ export function AutomationsScreen({
 
       {error && <div className="automations-error">{error}</div>}
 
-      <section className="automations-summary" aria-label="Сводка автоматизаций">
+      <section
+        className="automations-summary"
+        aria-label={t("automations.summaryAria")}
+      >
         <SummaryCard
-          label="Всего"
+          label={t("automations.total")}
           value={stats.total}
-          detail={`${stats.enabled} включено`}
+          detail={t("automations.enabledDetail", { count: stats.enabled })}
         />
-        <SummaryCard label="Активные" value={stats.active} tone="ok" />
-        <SummaryCard label="Запущены" value={stats.running} tone="run" />
-        <SummaryCard label="На паузе" value={stats.paused} />
-        <SummaryCard label="Ошибки cron" value={stats.invalid} tone="bad" />
+        <SummaryCard label={t("automations.active")} value={stats.active} tone="ok" />
+        <SummaryCard label={t("automations.running")} value={stats.running} tone="run" />
+        <SummaryCard label={t("automations.paused")} value={stats.paused} />
+        <SummaryCard label={t("automations.cronErrors")} value={stats.invalid} tone="bad" />
         <SummaryCard
-          label="Следующий запуск"
+          label={t("automations.nextRun")}
           value={formatCompactDateTime(stats.nextFireMs)}
-          detail={formatFullDateTime(stats.nextFireMs)}
+          detail={formatFullDateTime(stats.nextFireMs, t)}
         />
         <SummaryCard
-          label="Ошибки запусков"
+          label={t("automations.runErrors")}
           value={stats.recentErrors}
           detail={
             lastError
-              ? `Последняя: ${lastErrorTarget}`
-              : `${stats.recentOk}/${stats.recentSample} успешно`
+              ? t("automations.lastError", { target: lastErrorTarget ?? "?" })
+              : t("automations.successRatio", {
+                  ok: stats.recentOk,
+                  sample: stats.recentSample,
+                })
           }
           tone={stats.recentErrors > 0 ? "bad" : "ok"}
           onClick={
@@ -215,15 +223,14 @@ export function AutomationsScreen({
           {sortedItems.length === 0 ? (
             <div className="automations-empty automations-empty-panel">
               <div>
-                Расписаний нет. Создай утилиту из шаблона «Автоматизация», и
-                Reflex сам добавит <code>schedules</code> в её manifest.
+                {t("automations.noSchedules")}
               </div>
               {onCreateAutomation && (
                 <button
                   className="automations-primary-btn"
                   onClick={onCreateAutomation}
                 >
-                  Создать автоматизацию
+                  {t("automations.createAutomation")}
                 </button>
               )}
             </div>
@@ -231,11 +238,11 @@ export function AutomationsScreen({
             <table className="automations-table">
               <thead>
                 <tr>
-                  <th>Состояние</th>
-                  <th>Утилита / расписание</th>
+                  <th>{t("automations.state")}</th>
+                  <th>{t("automations.utilitySchedule")}</th>
                   <th>cron</th>
-                  <th>Следующий запуск</th>
-                  <th>Последний</th>
+                  <th>{t("automations.nextRun")}</th>
+                  <th>{t("automations.lastRun")}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -328,8 +335,11 @@ function formatCompactDateTime(ms: number | null | undefined) {
   });
 }
 
-function formatFullDateTime(ms: number | null | undefined) {
-  if (!ms) return "нет активных расписаний";
+function formatFullDateTime(
+  ms: number | null | undefined,
+  t: Translate,
+) {
+  if (!ms) return t("automations.noActiveSchedules");
   return new Date(ms).toLocaleString();
 }
 
@@ -346,13 +356,14 @@ function ScheduleRow({
   onRunNow: (id: string) => void;
   onOpenLastRun: () => void;
 }) {
+  const { t } = useI18n();
   const stateLabel = !s.valid
-    ? "ошибка cron"
+    ? t("automations.stateCronError")
     : s.paused
-      ? "пауза"
+      ? t("automations.statePaused")
       : isRunning
-        ? "идёт запуск"
-        : "активно";
+        ? t("automations.stateRunning")
+        : t("automations.stateActive");
   const stateClass = !s.valid
     ? "row-invalid"
     : s.paused
@@ -397,7 +408,7 @@ function ScheduleRow({
         <button
           className="icon-btn"
           onClick={() => onSetPaused(s.schedule_id, !s.paused)}
-          title={s.paused ? "Возобновить" : "Поставить на паузу"}
+          title={s.paused ? t("automations.resume") : t("automations.pause")}
         >
           {s.paused ? "▶" : "⏸"}
         </button>
@@ -405,7 +416,7 @@ function ScheduleRow({
           className="icon-btn"
           disabled={!s.valid || s.paused || isRunning}
           onClick={() => onRunNow(s.schedule_id)}
-          title="Запустить сейчас"
+          title={t("automations.runNow")}
         >
           ⚡
         </button>
