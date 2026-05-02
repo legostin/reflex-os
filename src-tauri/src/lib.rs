@@ -556,8 +556,8 @@ fn app_revise(
   • system.context() → {{app_id, app_root, manifest, app_project, linked_projects, memory_defaults}}; app_project/linked_projects are summaries with skills and mcp_server_names, not raw MCP config\n\
   • manifest.get() / manifest.update({{patch}}) — безопасно читать/обновлять собственный manifest.json\n\
   • agent.ask({{prompt}}) → {{answer}}\n\
-  • agent.task({{prompt, sandbox?, cwd?}}) → {{threadId, result}} — изолированный sub-агент\n\
-  • agent.stream({{prompt}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}\n\
+  • agent.task({{prompt, sandbox?, cwd?}}) → {{threadId, result}} — изолированный sub-агент; cwd может быть app root или linked project, чужой project требует agent.project:<project>|*, произвольный cwd требует agent.cwd:*\n\
+  • agent.stream({{prompt, sandbox?, cwd?}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}; cwd rules как у agent.task\n\
   • storage.get/set, fs.read/write (в app-папке)\n\
   • projects.list / topics.list — read-only обзор доступных проектов и топиков; чужие требуют permission projects.read/topics.read\n\
   • skills.list / mcp.servers — preferred skills и MCP server names; raw MCP config требует permission mcp.read:<project>|*\n\
@@ -954,8 +954,8 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  manifest.get() -> AppManifest; manifest.update({patch}) -> {ok, manifest} — безопасно обновить собственный manifest.json (id всегда остаётся текущим app)\n");
     p.push_str("  agent.ask({prompt}) -> {answer}                       — короткий one-shot вопрос агенту\n");
     p.push_str("  agent.startTopic({prompt, projectId?}) -> {threadId}   — создать полноценный тред\n");
-    p.push_str("  agent.task({prompt, sandbox?, cwd?}) -> {threadId, result}  — sub-агент изолированно; sandbox: read-only|workspace-write; ждёт turn.completed и возвращает финальный текст\n");
-    p.push_str("  agent.stream({prompt, sandbox?, cwd?}) -> {streamId, threadId}  — стрим токенов: app слушает window 'message' от parent с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done' с {streamId, result}. По завершении вызывай agent.streamAbort({threadId}) при размонтаже.\n");
+    p.push_str("  agent.task({prompt, sandbox?, cwd?}) -> {threadId, result}  — sub-агент изолированно; sandbox: read-only|workspace-write; ждёт turn.completed и возвращает финальный текст. cwd может быть app root или linked project; чужой project требует permission \"agent.project:<project>\" / \"agent.project:*\", произвольный cwd — \"agent.cwd:*\". Project cwd автоматически получает MCP config проекта.\n");
+    p.push_str("  agent.stream({prompt, sandbox?, cwd?}) -> {streamId, threadId}  — стрим токенов: app слушает window 'message' от parent с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done' с {streamId, result}. По завершении вызывай agent.streamAbort({threadId}) при размонтаже. cwd rules как у agent.task.\n");
     p.push_str("  storage.get({key}) -> {value}                         — persist в storage.json\n");
     p.push_str("  storage.set({key, value}) -> {ok}\n");
     p.push_str("  fs.read({path}) -> {content}                          — читать файл в app-папке\n");

@@ -247,16 +247,13 @@ pub async fn dispatch_app_method(
                 .and_then(|v| v.as_str())
                 .unwrap_or("read-only")
                 .to_string();
-            let cwd_str = params.get("cwd").and_then(|v| v.as_str());
-            let cwd_path = match cwd_str {
-                Some(p) => PathBuf::from(p),
-                None => apps::app_dir(app, app_id).map_err(|e| e.to_string())?,
-            };
+            let cwd_target =
+                resolve_agent_cwd_for_app(app, app_id, params.get("cwd").and_then(|v| v.as_str()))?;
 
             let handle = app.state::<app_server::AppServerHandle>();
             let server = handle.wait().await;
             let app_thread_id = server
-                .thread_start(&cwd_path, &sandbox, None)
+                .thread_start(&cwd_target.cwd, &sandbox, cwd_target.mcp_servers.as_ref())
                 .await
                 .map_err(|e| format!("thread_start: {e}"))?;
 
@@ -329,16 +326,13 @@ pub async fn dispatch_app_method(
                 .and_then(|v| v.as_str())
                 .unwrap_or("read-only")
                 .to_string();
-            let cwd_str = params.get("cwd").and_then(|v| v.as_str());
-            let cwd_path = match cwd_str {
-                Some(p) => PathBuf::from(p),
-                None => apps::app_dir(app, app_id).map_err(|e| e.to_string())?,
-            };
+            let cwd_target =
+                resolve_agent_cwd_for_app(app, app_id, params.get("cwd").and_then(|v| v.as_str()))?;
 
             let handle = app.state::<app_server::AppServerHandle>();
             let server = handle.wait().await;
             let app_thread_id = server
-                .thread_start(&cwd_path, &sandbox, None)
+                .thread_start(&cwd_target.cwd, &sandbox, cwd_target.mcp_servers.as_ref())
                 .await
                 .map_err(|e| format!("thread_start: {e}"))?;
             let _ = server.turn_start(&app_thread_id, prompt).await;
@@ -678,6 +672,58 @@ fn default_memory_project(
     }
     let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
     Ok(project::find_project_for(&app_root))
+}
+
+struct AgentCwdTarget {
+    cwd: PathBuf,
+    mcp_servers: Option<serde_json::Value>,
+}
+
+fn resolve_agent_cwd_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    cwd: Option<&str>,
+) -> Result<AgentCwdTarget, String> {
+    let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
+    let cwd_path = cwd
+        .map(PathBuf::from)
+        .unwrap_or_else(|| app_root.clone());
+
+    if same_path(&cwd_path, &app_root) {
+        let project = project::find_project_for(&cwd_path);
+        return Ok(AgentCwdTarget {
+            cwd: cwd_path,
+            mcp_servers: project.and_then(|p| p.mcp_servers),
+        });
+    }
+
+    if let Some(project) = project::find_project_for(&cwd_path) {
+        if project_is_linked_to_app(app, app_id, &project)
+            || scoped_permission_allowed(app, app_id, "agent.project", &project.id)
+        {
+            return Ok(AgentCwdTarget {
+                cwd: cwd_path,
+                mcp_servers: project.mcp_servers,
+            });
+        }
+
+        return Err(format!(
+            "permission denied: agent cwd in project '{}' requires linked project or manifest.permissions entry 'agent.project:{}' / 'agent.project:*'",
+            project.id, project.id
+        ));
+    }
+
+    if app_has_permission(app, app_id, "agent.cwd:*") {
+        return Ok(AgentCwdTarget {
+            cwd: cwd_path,
+            mcp_servers: None,
+        });
+    }
+
+    Err(
+        "permission denied: agent cwd must be this app root, a linked project, or require manifest.permissions entry 'agent.cwd:*'"
+            .into(),
+    )
 }
 
 fn app_has_permission(app: &AppHandle, app_id: &str, permission: &str) -> bool {

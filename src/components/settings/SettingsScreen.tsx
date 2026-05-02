@@ -229,6 +229,9 @@ const HELPER_GROUPS = [
 ] as const;
 
 const PERMISSION_EXAMPLES = [
+  "agent.project:<project>",
+  "agent.project:*",
+  "agent.cwd:*",
   "memory.global.read",
   "memory.global.write",
   "memory.project:*",
