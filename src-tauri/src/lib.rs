@@ -747,6 +747,65 @@ fn wrap_with_plan_revision(feedback: &str) -> String {
     )
 }
 
+fn project_agent_profile_preface(project: &project::Project) -> String {
+    let description = project.description.as_deref().unwrap_or("").trim();
+    let instructions = project
+        .agent_instructions
+        .as_deref()
+        .unwrap_or("")
+        .trim();
+    let skills: Vec<&str> = project
+        .skills
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mcp_names: Vec<String> = project
+        .mcp_servers
+        .as_ref()
+        .and_then(|v| v.as_object())
+        .map(|obj| obj.keys().cloned().collect())
+        .unwrap_or_default();
+
+    if description.is_empty()
+        && instructions.is_empty()
+        && skills.is_empty()
+        && mcp_names.is_empty()
+    {
+        return String::new();
+    }
+
+    let mut buf = String::from("## Reflex project profile\n");
+    buf.push_str(&format!("- Project: {}\n", project.name));
+    if !description.is_empty() {
+        buf.push_str(&format!("- Description: {description}\n"));
+    }
+    if !skills.is_empty() {
+        buf.push_str("- Preferred skills: ");
+        buf.push_str(&skills.join(", "));
+        buf.push('\n');
+    }
+    if !mcp_names.is_empty() {
+        buf.push_str("- MCP servers available in this project: ");
+        buf.push_str(&mcp_names.join(", "));
+        buf.push('\n');
+    }
+    if !instructions.is_empty() {
+        buf.push_str("\n### Project instructions\n");
+        buf.push_str(instructions);
+        buf.push('\n');
+    }
+    buf
+}
+
+fn wrap_with_project_agent_profile(profile: &str, prompt: &str) -> String {
+    if profile.trim().is_empty() {
+        prompt.to_string()
+    } else {
+        format!("{profile}\n---\n\n{prompt}")
+    }
+}
+
 fn stored_event_has_agent_output(ev: &storage::StoredEvent) -> bool {
     if ev.stream != "stdout" {
         return false;
@@ -1051,6 +1110,33 @@ fn update_project_description(
     p.description = description
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+    project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
+    project::register(&app, &p).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+
+#[tauri::command]
+fn update_project_agent_profile(
+    app: AppHandle,
+    project_id: String,
+    agent_instructions: Option<String>,
+    skills: Vec<String>,
+) -> Result<project::Project, String> {
+    let mut p = project::get_by_id(&app, &project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    p.agent_instructions = agent_instructions
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let mut seen = std::collections::HashSet::new();
+    p.skills = skills
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .filter(|s| seen.insert(s.to_ascii_lowercase()))
+        .collect();
+
     project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
     project::register(&app, &p).map_err(|e| e.to_string())?;
     Ok(p)
@@ -1579,6 +1665,13 @@ pub(crate) fn submit_quick_impl(
     let root_for_task = project_root.clone();
     let project_id_for_task = project.id.clone();
     tauri::async_runtime::spawn(async move {
+        let project_now = project::get_by_id(&app_handle, &project_id_for_task)
+            .ok()
+            .flatten();
+        let profile = project_now
+            .as_ref()
+            .map(project_agent_profile_preface)
+            .unwrap_or_default();
         let codex_prompt = match crate::memory::injection::build_preface(
             &root_for_task,
             &reflex_id,
@@ -1592,11 +1685,9 @@ pub(crate) fn submit_quick_impl(
                 codex_prompt
             }
         };
+        let codex_prompt = wrap_with_project_agent_profile(&profile, &codex_prompt);
         let handle = app_handle.state::<app_server::AppServerHandle>();
         let server = handle.wait().await;
-        let project_now = project::get_by_id(&app_handle, &project_id_for_task)
-            .ok()
-            .flatten();
         let sandbox = project_now
             .as_ref()
             .map(|p| p.sandbox.clone())
@@ -1773,6 +1864,13 @@ fn continue_thread(
     let root_for_task = project_root.clone();
     let project_id_for_task = project_id.clone();
     tauri::async_runtime::spawn(async move {
+        let proj_now = project::get_by_id(&app_handle, &project_id_for_task)
+            .ok()
+            .flatten();
+        let profile = proj_now
+            .as_ref()
+            .map(project_agent_profile_preface)
+            .unwrap_or_default();
         let prompt_owned = match crate::memory::injection::build_preface(
             &root_for_task,
             &id_for_task,
@@ -1786,13 +1884,11 @@ fn continue_thread(
                 prompt_owned
             }
         };
+        let prompt_owned = wrap_with_project_agent_profile(&profile, &prompt_owned);
         let handle = app_handle.state::<app_server::AppServerHandle>();
         let server = handle.wait().await;
         let initial_seq = storage::count_events(&root_for_task, &id_for_task).unwrap_or(0);
 
-        let proj_now = project::get_by_id(&app_handle, &project_id_for_task)
-            .ok()
-            .flatten();
         let sandbox = proj_now
             .as_ref()
             .map(|p| p.sandbox.clone())
@@ -2046,6 +2142,21 @@ async fn resume_interrupted_threads(app: AppHandle, server: app_server::AppServe
             eprintln!("[reflex] auto-resume thread={reflex_id} session={session_id}");
 
             memory_kick_topic(&app, &root, &reflex_id);
+            let resume_prompt = match crate::memory::injection::build_preface(
+                &root,
+                &reflex_id,
+                RESUME_PROMPT,
+            )
+            .await
+            {
+                Ok(r) => crate::memory::injection::wrap_user_prompt(&r.preface, RESUME_PROMPT),
+                Err(e) => {
+                    eprintln!("[reflex] memory inject failed (resume): {e}");
+                    RESUME_PROMPT.to_string()
+                }
+            };
+            let profile = project_agent_profile_preface(&p);
+            let resume_prompt = wrap_with_project_agent_profile(&profile, &resume_prompt);
 
             let now_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2108,7 +2219,7 @@ async fn resume_interrupted_threads(app: AppHandle, server: app_server::AppServe
                 user_seq,
             );
 
-            if let Err(e) = server.turn_start(&session_id, RESUME_PROMPT).await {
+            if let Err(e) = server.turn_start(&session_id, &resume_prompt).await {
                 eprintln!("[reflex] auto-resume turn_start failed for {reflex_id}: {e}");
                 let _ = storage::finalize_thread(&root, &reflex_id, Some(-1), None);
                 let _ = app.emit(
@@ -2307,6 +2418,7 @@ pub fn run() {
             set_active_project,
             create_project,
             update_project_description,
+            update_project_agent_profile,
             link_app_to_project,
             unlink_app_from_project,
             suggester::suggest_apps_for_project,

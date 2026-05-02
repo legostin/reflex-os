@@ -6,8 +6,9 @@ bridge, long-term memory, file indexing, widgets, and app-driven automations.
 
 ## Core Surfaces
 
-- **Projects**: registered folders with sandbox settings, MCP config, topics,
-  linked utilities, widgets, files, and RAG indexing state.
+- **Projects**: registered folders with sandbox settings, MCP config, agent
+  profile instructions, preferred skills, topics, linked utilities, widgets,
+  files, and RAG indexing state.
 - **Topics**: Codex-backed agent threads persisted under `.reflex/topics`.
 - **Browser**: project-scoped Playwright sidecar with an MCP bridge and a
   "start chat from tabs" flow.
@@ -17,6 +18,21 @@ bridge, long-term memory, file indexing, widgets, and app-driven automations.
   files, and selected images.
 - **Automations**: manifest-defined schedules and actions executed through the
   same bridge methods that apps use.
+
+## Project Agent Profile
+
+Each project can define:
+
+- `description`: human context for the project.
+- `agent_instructions`: project-specific operating rules injected into every
+  new, continued, and auto-resumed topic.
+- `skills`: preferred Codex skills or workflow names to consider before work.
+- `mcp_servers`: project-scoped MCP server config passed to Codex sessions.
+
+The profile is stored in `.reflex/project.json` and is surfaced in the Project
+settings screen. Reflex injects it into the final prompt together with memory
+recall, so the agent sees the project's operating rules, available MCP servers,
+preferred skills, and long-term memory in one context block.
 
 ## Generated App Runtime
 

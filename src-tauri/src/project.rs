@@ -22,6 +22,10 @@ pub struct Project {
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
+    pub agent_instructions: Option<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
     pub apps: Vec<String>,
 }
 
@@ -100,6 +104,8 @@ pub fn create_project(
         sandbox: default_sandbox(),
         mcp_servers: None,
         description: description.filter(|s| !s.trim().is_empty()),
+        agent_instructions: None,
+        skills: Vec::new(),
         apps: Vec::new(),
     };
     let path = project_dir(root).join(PROJECT_FILE);

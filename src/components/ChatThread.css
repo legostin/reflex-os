@@ -717,6 +717,12 @@
   font-size: 11px;
 }
 
+.setting-chip-muted {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(245, 245, 247, 0.7);
+}
+
 .setting-action {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -751,6 +757,11 @@
   gap: 8px;
 }
 
+.setting-editor-label {
+  font-size: 11px;
+  color: rgba(245, 245, 247, 0.52);
+}
+
 .setting-textarea {
   width: min(100%, 720px);
   resize: vertical;
@@ -763,6 +774,10 @@
   font-size: 12px;
   line-height: 1.45;
   outline: none;
+}
+
+.setting-textarea-compact {
+  min-height: 74px;
 }
 
 .setting-textarea:focus {

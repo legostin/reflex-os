@@ -31,6 +31,8 @@ type Project = {
   sandbox?: string;
   mcp_servers?: Record<string, any> | null;
   description?: string | null;
+  agent_instructions?: string | null;
+  skills?: string[];
   apps?: string[];
 };
 
@@ -3179,6 +3181,11 @@ function ProjectScreen({
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [installedApps, setInstalledApps] = useState<AppManifest[]>([]);
   const [showLinkPicker, setShowLinkPicker] = useState(false);
+  const [profileEditing, setProfileEditing] = useState(false);
+  const [profileInstructionsDraft, setProfileInstructionsDraft] = useState("");
+  const [profileSkillsDraft, setProfileSkillsDraft] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [mcpEditing, setMcpEditing] = useState(false);
   const [mcpDraft, setMcpDraft] = useState("{}");
   const [mcpSaving, setMcpSaving] = useState(false);
@@ -3367,6 +3374,43 @@ function ProjectScreen({
     }
   }
 
+  function openAgentProfileEditor() {
+    setProfileInstructionsDraft(project?.agent_instructions ?? "");
+    setProfileSkillsDraft((project?.skills ?? []).join("\n"));
+    setProfileError(null);
+    setProfileEditing(true);
+  }
+
+  async function saveAgentProfile() {
+    if (!project || profileSaving) return;
+    const seen = new Set<string>();
+    const skills = profileSkillsDraft
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .filter((s) => {
+        const key = s.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    setProfileSaving(true);
+    setProfileError(null);
+    try {
+      const updated = await invoke<Project>("update_project_agent_profile", {
+        projectId: project.id,
+        agentInstructions: profileInstructionsDraft.trim() || null,
+        skills,
+      });
+      onProjectUpdated(updated);
+      setProfileEditing(false);
+    } catch (e) {
+      setProfileError(String(e));
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
   function openMcpEditor() {
     setMcpDraft(JSON.stringify(project?.mcp_servers ?? {}, null, 2));
     setMcpError(null);
@@ -3406,6 +3450,10 @@ function ProjectScreen({
   }
 
   const mcpServerNames = Object.keys(project?.mcp_servers ?? {});
+  const projectSkills = project?.skills ?? [];
+  const hasAgentProfile = !!(
+    project?.agent_instructions?.trim() || projectSkills.length > 0
+  );
 
   return (
     <div className="project-root">
@@ -3571,6 +3619,84 @@ function ProjectScreen({
               <span className="setting-hint setting-hint-warn">
                 Агент работает без macOS Seatbelt — полные права доступа.
               </span>
+            )}
+          </div>
+          <div className="setting-row setting-row-block">
+            <label className="setting-label">Agent profile</label>
+            <div className="setting-mcp-summary">
+              {hasAgentProfile ? (
+                <>
+                  {project?.agent_instructions?.trim() && (
+                    <span className="setting-chip setting-chip-muted">
+                      instructions
+                    </span>
+                  )}
+                  {projectSkills.map((skill) => (
+                    <span key={skill} className="setting-chip">
+                      {skill}
+                    </span>
+                  ))}
+                </>
+              ) : (
+                <span className="setting-empty">default Codex behavior</span>
+              )}
+              <button
+                className="setting-action"
+                onClick={openAgentProfileEditor}
+              >
+                Edit profile
+              </button>
+            </div>
+            {profileEditing && (
+              <div className="setting-editor">
+                <label className="setting-editor-label">
+                  Project instructions injected into every topic
+                </label>
+                <textarea
+                  className="setting-textarea"
+                  value={profileInstructionsDraft}
+                  spellCheck={false}
+                  onChange={(e) =>
+                    setProfileInstructionsDraft(e.currentTarget.value)
+                  }
+                  rows={6}
+                  placeholder="Example: Always prefer small focused changes. Use browser MCP for visual verification. Keep answers in Russian unless code/API names require English."
+                />
+                <label className="setting-editor-label">
+                  Preferred skills, one per line or comma-separated
+                </label>
+                <textarea
+                  className="setting-textarea setting-textarea-compact"
+                  value={profileSkillsDraft}
+                  spellCheck={false}
+                  onChange={(e) =>
+                    setProfileSkillsDraft(e.currentTarget.value)
+                  }
+                  rows={3}
+                  placeholder={
+                    "build-web-apps:react-best-practices\nplaywright\nopenai-docs"
+                  }
+                />
+                {profileError && (
+                  <div className="setting-error">{profileError}</div>
+                )}
+                <div className="setting-editor-actions">
+                  <button
+                    className="setting-action"
+                    onClick={() => setProfileEditing(false)}
+                    disabled={profileSaving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="setting-action setting-action-primary"
+                    onClick={() => void saveAgentProfile()}
+                    disabled={profileSaving}
+                  >
+                    {profileSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
           <div className="setting-row">
