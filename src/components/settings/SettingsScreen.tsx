@@ -480,7 +480,7 @@ async function copyTextToClipboard(text: string): Promise<void> {
   textarea.select();
   const ok = document.execCommand("copy");
   document.body.removeChild(textarea);
-  if (!ok) throw new Error("не удалось скопировать");
+  if (!ok) throw new Error("Copy failed");
 }
 
 function LogsPane() {

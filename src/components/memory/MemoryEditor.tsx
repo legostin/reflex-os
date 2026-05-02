@@ -7,6 +7,7 @@ import {
   MEMORY_KINDS,
   MEMORY_SCOPES,
 } from "../../types/memory";
+import { useI18n, type Translate } from "../../i18n";
 
 interface MemoryEditorProps {
   initialScope: MemoryScope;
@@ -37,23 +38,24 @@ function parseTags(input: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-function scopeLabel(scope: MemoryScope): string {
-  if (scope === "global") return "Глобальная";
-  if (scope === "project") return "Проект";
-  return "Топик";
+function scopeLabel(scope: MemoryScope, t: Translate): string {
+  if (scope === "global") return t("memory.scope.global");
+  if (scope === "project") return t("memory.scope.project");
+  return t("memory.scope.topic");
 }
 
-function kindLabel(kind: MemoryKind): string {
-  if (kind === "user") return "Пользователь";
-  if (kind === "project") return "Проект";
-  if (kind === "feedback") return "Обратная связь";
-  if (kind === "reference") return "Справка";
-  if (kind === "tool") return "Инструмент";
-  if (kind === "system") return "Система";
-  return "Факт";
+function kindLabel(kind: MemoryKind, t: Translate): string {
+  if (kind === "user") return t("memory.kind.user");
+  if (kind === "project") return t("memory.kind.project");
+  if (kind === "feedback") return t("memory.kind.feedback");
+  if (kind === "reference") return t("memory.kind.reference");
+  if (kind === "tool") return t("memory.kind.tool");
+  if (kind === "system") return t("memory.kind.system");
+  return t("memory.kind.fact");
 }
 
 export default function MemoryEditor(props: MemoryEditorProps) {
+  const { t } = useI18n();
   const { initialScope, projectRoot, threadId, existing, onSaved, onCancel } =
     props;
 
@@ -88,7 +90,7 @@ export default function MemoryEditor(props: MemoryEditorProps) {
   async function handleSave() {
     if (saving) return;
     if (!name.trim()) {
-      setError("Укажи название");
+      setError(t("memory.editor.nameRequired"));
       return;
     }
     setSaving(true);
@@ -124,7 +126,7 @@ export default function MemoryEditor(props: MemoryEditorProps) {
       <div className="memory-editor-row-inline">
         <div className="memory-editor-row">
           <label className="memory-label" htmlFor="memory-scope">
-            Область
+            {t("memory.editor.scope")}
           </label>
           <select
             id="memory-scope"
@@ -135,14 +137,14 @@ export default function MemoryEditor(props: MemoryEditorProps) {
           >
             {MEMORY_SCOPES.map((s) => (
               <option key={s} value={s}>
-                {scopeLabel(s)}
+                {scopeLabel(s, t)}
               </option>
             ))}
           </select>
         </div>
         <div className="memory-editor-row">
           <label className="memory-label" htmlFor="memory-kind">
-            Тип
+            {t("memory.editor.kind")}
           </label>
           <select
             id="memory-kind"
@@ -152,7 +154,7 @@ export default function MemoryEditor(props: MemoryEditorProps) {
           >
             {MEMORY_KINDS.map((k) => (
               <option key={k} value={k}>
-                {kindLabel(k)}
+                {kindLabel(k, t)}
               </option>
             ))}
           </select>
@@ -161,35 +163,35 @@ export default function MemoryEditor(props: MemoryEditorProps) {
 
       <div className="memory-editor-row">
         <label className="memory-label" htmlFor="memory-name">
-          Название
+          {t("memory.editor.name")}
         </label>
         <input
           id="memory-name"
           className="memory-input"
           type="text"
           value={name}
-          placeholder="Короткое понятное название"
+          placeholder={t("memory.editor.namePlaceholder")}
           onChange={(e) => setName(e.currentTarget.value)}
         />
       </div>
 
       <div className="memory-editor-row">
         <label className="memory-label" htmlFor="memory-description">
-          Описание
+          {t("memory.editor.description")}
         </label>
         <input
           id="memory-description"
           className="memory-input"
           type="text"
           value={description}
-          placeholder="Краткое описание в одну строку"
+          placeholder={t("memory.editor.descriptionPlaceholder")}
           onChange={(e) => setDescription(e.currentTarget.value)}
         />
       </div>
 
       <div className="memory-editor-row">
         <label className="memory-label" htmlFor="memory-tags">
-          Теги через запятую
+          {t("memory.editor.tags")}
         </label>
         <input
           id="memory-tags"
@@ -203,13 +205,13 @@ export default function MemoryEditor(props: MemoryEditorProps) {
 
       <div className="memory-editor-row">
         <label className="memory-label" htmlFor="memory-body">
-          Текст заметки
+          {t("memory.editor.body")}
         </label>
         <textarea
           id="memory-body"
           className="memory-textarea"
           value={body}
-          placeholder="Напиши заметку в Markdown..."
+          placeholder={t("memory.editor.bodyPlaceholder")}
           onChange={(e) => setBody(e.currentTarget.value)}
         />
       </div>
@@ -223,7 +225,7 @@ export default function MemoryEditor(props: MemoryEditorProps) {
           onClick={onCancel}
           disabled={saving}
         >
-          Отмена
+          {t("memory.editor.cancel")}
         </button>
         <button
           type="button"
@@ -231,7 +233,11 @@ export default function MemoryEditor(props: MemoryEditorProps) {
           onClick={() => void handleSave()}
           disabled={saving}
         >
-          {saving ? "Сохранение..." : isEdit ? "Сохранить" : "Создать заметку"}
+          {saving
+            ? t("memory.editor.saving")
+            : isEdit
+              ? t("memory.editor.save")
+              : t("memory.editor.createNote")}
         </button>
       </div>
     </div>
