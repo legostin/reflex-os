@@ -33,6 +33,7 @@ function recordDiff(failures, title, missing) {
 const catalog = read("src/appBridgeCatalog.ts");
 const appsRs = read("src-tauri/src/apps.rs");
 const dispatch = read("src-tauri/src/apps_dispatch.rs");
+const libRs = read("src-tauri/src/lib.rs");
 const readme = read("README.md");
 
 const apiBlock = sliceBetween(
@@ -49,6 +50,11 @@ const readmeOverlayBlock = sliceBetween(
   "## App Bridge API",
 );
 const dispatchBlock = sliceBetween(dispatch, "match method {", "other => Err");
+const promptHelperBlock = sliceBetween(
+  libRs,
+  "В iframe runtime overlay уже есть helpers",
+  "Permissions для apps.invoke",
+);
 
 const catalogMethods = setFromMatches(
   apiBlock,
@@ -63,6 +69,7 @@ const readmeHelpers = setFromMatches(
   readmeOverlayBlock,
   /window\.(reflex[A-Za-z0-9_]+)/g,
 );
+const promptHelpers = setFromMatches(promptHelperBlock, /\b(reflex[A-Za-z0-9_]+)\b/g);
 
 const dispatchMethods = new Set();
 for (const arm of dispatchBlock.matchAll(
@@ -126,6 +133,16 @@ recordDiff(
   failures,
   "README overlay helpers missing from src/appBridgeCatalog.ts",
   difference(readmeHelpers, catalogHelpers),
+);
+recordDiff(
+  failures,
+  "Catalog helpers missing from app creation prompt",
+  difference(catalogHelpers, promptHelpers),
+);
+recordDiff(
+  failures,
+  "App creation prompt helpers missing from src/appBridgeCatalog.ts",
+  difference(promptHelpers, catalogHelpers),
 );
 
 if (failures.length > 0) {
