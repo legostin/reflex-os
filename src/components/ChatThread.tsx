@@ -16,7 +16,7 @@ import { WidgetGrid, type WidgetSource } from "./widgets/WidgetGrid";
 import { SuggesterModal } from "./projects/SuggesterModal";
 import { BrowserScreen } from "./browser/BrowserScreen";
 import { SettingsScreen } from "./settings/SettingsScreen";
-import { BRIDGE_HELPER_GROUPS } from "../appBridgeCatalog";
+import { BRIDGE_HELPER_GROUPS, BRIDGE_RECIPE_CARDS } from "../appBridgeCatalog";
 import "./ChatThread.css";
 
 const BRIDGE_HELPER_COUNT = BRIDGE_HELPER_GROUPS.reduce(
@@ -2464,10 +2464,26 @@ function AppViewer({
       ),
     })).filter((group) => group.helpers.length > 0);
   }, [normalizedBridgeQuery]);
+  const visibleBridgeRecipes = useMemo(() => {
+    if (!normalizedBridgeQuery) return BRIDGE_RECIPE_CARDS;
+    return BRIDGE_RECIPE_CARDS.filter((recipe) => {
+      const haystack = [
+        recipe.title,
+        recipe.body,
+        recipe.example,
+        ...recipe.calls,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedBridgeQuery);
+    });
+  }, [normalizedBridgeQuery]);
   const visibleBridgeHelperCount = visibleBridgeHelperGroups.reduce(
     (sum, group) => sum + group.helpers.length,
     0,
   );
+  const hasBridgeMatches =
+    visibleBridgeHelperGroups.length > 0 || visibleBridgeRecipes.length > 0;
 
   const attachNested = (tid: string) => {
     setNestedTabs((prev) => (prev.includes(tid) ? prev : [...prev, tid]));
@@ -3087,21 +3103,36 @@ function AppViewer({
               {visibleBridgeHelperCount}/{BRIDGE_HELPER_COUNT}
             </span>
           </div>
-          {visibleBridgeHelperGroups.length === 0 ? (
-            <div className="appviewer-bridge-empty">No matching helpers.</div>
+          {!hasBridgeMatches ? (
+            <div className="appviewer-bridge-empty">No matching bridge items.</div>
           ) : (
-            <div className="appviewer-bridge-grid">
-              {visibleBridgeHelperGroups.map((group) => (
-                <div className="appviewer-bridge-group" key={group.title}>
-                  <div className="appviewer-bridge-title">{group.title}</div>
-                  <div className="appviewer-bridge-list">
-                    {group.helpers.map((helper) => (
-                      <code key={helper}>{helper}</code>
-                    ))}
-                  </div>
+            <>
+              {visibleBridgeRecipes.length > 0 && (
+                <div className="appviewer-bridge-recipes">
+                  {visibleBridgeRecipes.map((recipe) => (
+                    <div className="appviewer-bridge-recipe" key={recipe.title}>
+                      <div className="appviewer-bridge-title">{recipe.title}</div>
+                      <p>{recipe.body}</p>
+                      <code>{recipe.example}</code>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+              {visibleBridgeHelperGroups.length > 0 && (
+                <div className="appviewer-bridge-grid">
+                  {visibleBridgeHelperGroups.map((group) => (
+                    <div className="appviewer-bridge-group" key={group.title}>
+                      <div className="appviewer-bridge-title">{group.title}</div>
+                      <div className="appviewer-bridge-list">
+                        {group.helpers.map((helper) => (
+                          <code key={helper}>{helper}</code>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

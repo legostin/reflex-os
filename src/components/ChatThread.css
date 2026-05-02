@@ -2158,6 +2158,42 @@
   gap: 8px;
 }
 
+.appviewer-bridge-recipes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.appviewer-bridge-recipe {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(80, 140, 255, 0.18);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.appviewer-bridge-recipe p {
+  margin: 0;
+  color: rgba(210, 224, 255, 0.68);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.appviewer-bridge-recipe code {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 5px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(235, 240, 255, 0.86);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .appviewer-bridge-empty {
   min-height: 42px;
   display: flex;

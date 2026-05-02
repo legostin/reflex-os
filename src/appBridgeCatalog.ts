@@ -208,3 +208,42 @@ export const BRIDGE_HELPER_GROUPS = [
     ],
   },
 ] as const;
+
+export const BRIDGE_RECIPE_CARDS = [
+  {
+    title: "Контекстный sub-agent",
+    body: "Project cwd подключает MCP, preferred skills, project profile и memory/RAG.",
+    calls: ["agent.task", "reflexAgentTask", "mcp.servers"],
+    example: "await reflexAgentTask({ prompt, cwd: projectRoot, memoryThreadId });",
+  },
+  {
+    title: "Долгая память",
+    body: "Сохраняй новые факты и обновляй известный relPath без дублей.",
+    calls: ["memory.save", "memory.update", "reflexMemoryUpdate"],
+    example: 'await reflexMemoryUpdate("facts/user.md", { body, tags: ["profile"] });',
+  },
+  {
+    title: "App как сервис",
+    body: "Публикуй manifest.actions и вызывай их из других apps или schedules.",
+    calls: ["apps.invoke", "apps.list_actions", "events.emit"],
+    example: 'await reflexAppsInvoke("health-stats", "today", {});',
+  },
+  {
+    title: "Автоматизация",
+    body: "Schedule steps используют тот же bridge, кроме UI-only методов.",
+    calls: ["scheduler.runs", "agent.task", "notify.show"],
+    example: 'steps: [{ method: "agent.task", params: { prompt } }]',
+  },
+  {
+    title: "Browser sidecar",
+    body: "Открывай страницу, читай текст/outline, кликай и заполняй формы.",
+    calls: ["browser.open", "browser.readText", "browser.fill"],
+    example: "const tab = await reflexBrowserOpen(url);",
+  },
+  {
+    title: "MCP и skills проекта",
+    body: "Покажи доступные skills и MCP names без раскрытия raw config.",
+    calls: ["system.context", "skills.list", "mcp.servers"],
+    example: "const ctx = await reflexSystemContext();",
+  },
+] as const;

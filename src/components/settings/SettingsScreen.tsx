@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { BRIDGE_API_GROUPS, BRIDGE_HELPER_GROUPS } from "../../appBridgeCatalog";
+import {
+  BRIDGE_API_GROUPS,
+  BRIDGE_HELPER_GROUPS,
+  BRIDGE_RECIPE_CARDS,
+} from "../../appBridgeCatalog";
 import "./settings.css";
 
 type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
@@ -199,6 +203,29 @@ function CapabilitiesPane() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="settings-section settings-section-open">
+        <div className="settings-section-title-row">
+          <h2>Рабочие связки bridge</h2>
+          <span className="settings-section-meta">
+            {BRIDGE_RECIPE_CARDS.length} patterns
+          </span>
+        </div>
+        <div className="settings-recipe-grid">
+          {BRIDGE_RECIPE_CARDS.map((recipe) => (
+            <article className="settings-recipe-card" key={recipe.title}>
+              <h3>{recipe.title}</h3>
+              <p>{recipe.body}</p>
+              <div className="settings-method-list">
+                {recipe.calls.map((call) => (
+                  <code key={call}>{call}</code>
+                ))}
+              </div>
+              <code className="settings-recipe-example">{recipe.example}</code>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="settings-section settings-section-open">
