@@ -1582,6 +1582,7 @@ const TEMPLATES: {
   name: string;
   description: string;
   placeholder: string;
+  badges: string[];
 }[] = [
   {
     id: "blank",
@@ -1590,6 +1591,7 @@ const TEMPLATES: {
     description: "Пустой app, codex решает структуру",
     placeholder:
       "Например: счётчик с кнопкой сохранения в storage; виджет погоды; …",
+    badges: ["static", "custom"],
   },
   {
     id: "chat",
@@ -1598,6 +1600,7 @@ const TEMPLATES: {
     description: "Чат с агентом, стриминг ответа",
     placeholder:
       "Например: ассистент по моему календарю; помощник с переводом; …",
+    badges: ["agent.stream", "storage"],
   },
   {
     id: "dashboard",
@@ -1606,6 +1609,7 @@ const TEMPLATES: {
     description: "Данные через agent.task в виде таблицы/карточек",
     placeholder:
       "Например: статус всех проектов из ~/projects; список последних коммитов; …",
+    badges: ["agent.task", "cards/table"],
   },
   {
     id: "form",
@@ -1614,6 +1618,7 @@ const TEMPLATES: {
     description: "Поля → Run → результат через agent.task",
     placeholder:
       "Например: переписать текст в нужном стиле; сгенерить regex по описанию; …",
+    badges: ["form", "agent.task"],
   },
   {
     id: "api-client",
@@ -1622,6 +1627,7 @@ const TEMPLATES: {
     description: "Запросы к внешнему API через net.fetch",
     placeholder:
       "Например: показать issues из github.com/owner/repo; конвертер валют через open.er-api.com; …",
+    badges: ["net.fetch", "network"],
   },
   {
     id: "automation",
@@ -1630,6 +1636,7 @@ const TEMPLATES: {
     description: "Расписание, action и виджет для фоновой задачи",
     placeholder:
       "Например: раз в час проверять важные письма и сохранять краткую сводку; каждое утро собирать статус проектов; …",
+    badges: ["schedules", "actions", "widgets"],
   },
   {
     id: "node-server",
@@ -1638,6 +1645,7 @@ const TEMPLATES: {
     description: "runtime=server: своё backend на Node.js stdlib",
     placeholder:
       "Например: WebSocket-чат комната; sqlite-просмотрщик; превью markdown; …",
+    badges: ["server", "stdlib"],
   },
 ];
 
@@ -2022,6 +2030,11 @@ function AppsScreen({
                       <div className="template-icon">{t.icon}</div>
                       <div className="template-name">{t.name}</div>
                       <div className="template-desc">{t.description}</div>
+                      <div className="template-badges">
+                        {t.badges.map((badge) => (
+                          <span key={badge}>{badge}</span>
+                        ))}
+                      </div>
                     </button>
                   ))}
                 </div>
