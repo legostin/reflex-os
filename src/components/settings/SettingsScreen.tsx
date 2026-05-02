@@ -6,6 +6,7 @@ import {
   BRIDGE_HELPER_GROUPS,
   BRIDGE_RECIPE_CARDS,
 } from "../../appBridgeCatalog";
+import { useI18n, type LanguageSetting } from "../../i18n";
 import "./settings.css";
 
 type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
@@ -30,28 +31,28 @@ type Tab = "capabilities" | "logs";
 
 const CAPABILITY_GROUPS = [
   {
-    title: "Проекты",
-    body: "Папки с sandbox, browser MCP, MCP servers, профилем агента, preferred skills, связанными утилитами, widgets и indexed files.",
+    titleKey: "cap.projects.title",
+    bodyKey: "cap.projects.body",
   },
   {
-    title: "Топики",
-    body: "Codex threads с профилем проекта, memory recall и продолжением рабочей сессии.",
+    titleKey: "cap.topics.title",
+    bodyKey: "cap.topics.body",
   },
   {
-    title: "Генерируемые утилиты",
-    body: "Static или local server apps с manifest, storage, actions, widgets и Reflex bridge APIs.",
+    titleKey: "cap.apps.title",
+    bodyKey: "cap.apps.body",
   },
   {
-    title: "Память",
-    body: "Глобальные, проектные и topic notes, плюс RAG по индексированным файлам и сохранённым фактам.",
+    titleKey: "cap.memory.title",
+    bodyKey: "cap.memory.body",
   },
   {
-    title: "Автоматизации",
-    body: "Manifest schedules и actions, которые исполняются теми же bridge methods, что доступны утилитам.",
+    titleKey: "cap.automations.title",
+    bodyKey: "cap.automations.body",
   },
   {
-    title: "MCP и skills",
-    body: "Project-scoped MCP JSON и preferred skills внедряются в новые, продолженные и auto-resumed topics.",
+    titleKey: "cap.mcp.title",
+    bodyKey: "cap.mcp.body",
   },
 ] as const;
 
@@ -106,46 +107,62 @@ const PERMISSION_COUNT = PERMISSION_EXAMPLES.length;
 
 const SYSTEM_STATS = [
   {
-    label: "Методы bridge",
+    labelKey: "stats.bridgeMethods",
     value: BRIDGE_API_COUNT,
-    detail: "dispatch API",
+    detailKey: "stats.dispatchApi",
   },
   {
-    label: "Хелперы overlay",
+    labelKey: "stats.overlayHelpers",
     value: BRIDGE_HELPER_COUNT,
-    detail: "window.reflex*",
+    detailKey: "stats.windowReflex",
   },
   {
-    label: "Связки",
+    labelKey: "stats.workflows",
     value: BRIDGE_RECIPE_CARDS.length,
-    detail: "рабочие связки",
+    detailKey: "stats.bridgeWorkflows",
   },
   {
-    label: "Формы прав",
+    labelKey: "stats.permissionForms",
     value: PERMISSION_COUNT,
-    detail: "manifest grants",
+    detailKey: "stats.manifestGrants",
   },
 ] as const;
 
 export function SettingsScreen() {
   const [tab, setTab] = useState<Tab>("capabilities");
+  const { language, setLanguage, t } = useI18n();
   return (
     <div className="settings-root">
       <header className="settings-header">
-        <h1>Настройки</h1>
-        <div className="settings-tabs">
-          <button
-            className={tab === "capabilities" ? "tab-on" : ""}
-            onClick={() => setTab("capabilities")}
-          >
-            Возможности
-          </button>
-          <button
-            className={tab === "logs" ? "tab-on" : ""}
-            onClick={() => setTab("logs")}
-          >
-            Логи и события
-          </button>
+        <h1>{t("settings.title")}</h1>
+        <div className="settings-header-actions">
+          <label className="settings-language-control">
+            <span>{t("settings.languageLabel")}</span>
+            <select
+              value={language}
+              onChange={(e) =>
+                setLanguage(e.currentTarget.value as LanguageSetting)
+              }
+            >
+              <option value="auto">{t("language.auto")}</option>
+              <option value="en">{t("language.en")}</option>
+              <option value="ru">{t("language.ru")}</option>
+            </select>
+          </label>
+          <div className="settings-tabs">
+            <button
+              className={tab === "capabilities" ? "tab-on" : ""}
+              onClick={() => setTab("capabilities")}
+            >
+              {t("settings.capabilities")}
+            </button>
+            <button
+              className={tab === "logs" ? "tab-on" : ""}
+              onClick={() => setTab("logs")}
+            >
+              {t("settings.logs")}
+            </button>
+          </div>
         </div>
       </header>
       {tab === "capabilities" ? <CapabilitiesPane /> : <LogsPane />}
@@ -154,6 +171,7 @@ export function SettingsScreen() {
 }
 
 function CapabilitiesPane() {
+  const { t } = useI18n();
   const [bridgeQuery, setBridgeQuery] = useState("");
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const normalizedBridgeQuery = bridgeQuery.trim().toLowerCase();
@@ -219,31 +237,30 @@ function CapabilitiesPane() {
   return (
     <div className="settings-pane capabilities-pane">
       <section className="settings-section">
-        <h2>Слой Reflex OS</h2>
-        <p>
-          Reflex — локальная macOS-надстройка над Codex CLI: проекты, темы,
-          browser/MCP bridge, генерируемые утилиты, widgets, memory, RAG и
-          запланированные автоматизации живут в одном workspace.
-        </p>
+        <h2>{t("settings.layerTitle")}</h2>
+        <p>{t("settings.layerBody")}</p>
       </section>
 
-      <div className="settings-stat-grid" aria-label="Сводка Reflex OS">
+      <div
+        className="settings-stat-grid"
+        aria-label={t("settings.summaryLabel")}
+      >
         {SYSTEM_STATS.map((stat) => (
-          <article className="settings-stat-card" key={stat.label}>
-            <span>{stat.label}</span>
+          <article className="settings-stat-card" key={stat.labelKey}>
+            <span>{t(stat.labelKey)}</span>
             <strong>{stat.value}</strong>
-            <small>{stat.detail}</small>
+            <small>{t(stat.detailKey)}</small>
           </article>
         ))}
       </div>
 
       <section className="settings-section settings-section-open">
-        <h2>Карта системы</h2>
+        <h2>{t("settings.systemMap")}</h2>
         <div className="settings-cap-grid">
           {CAPABILITY_GROUPS.map((group) => (
-            <article className="settings-cap-card" key={group.title}>
-              <h3>{group.title}</h3>
-              <p>{group.body}</p>
+            <article className="settings-cap-card" key={group.titleKey}>
+              <h3>{t(group.titleKey)}</h3>
+              <p>{t(group.bodyKey)}</p>
             </article>
           ))}
         </div>
@@ -251,21 +268,26 @@ function CapabilitiesPane() {
 
       <section className="settings-section settings-section-open">
         <div className="settings-section-title-row">
-          <h2>Bridge для генерируемых утилит</h2>
+          <h2>{t("settings.bridgeTitle")}</h2>
           <div className="settings-section-controls">
             <input
               className="settings-bridge-search"
-              placeholder="Поиск API, helpers, permissions…"
+              placeholder={t("settings.bridgeSearch")}
               value={bridgeQuery}
               onChange={(e) => setBridgeQuery(e.currentTarget.value)}
             />
             <span className="settings-section-meta">
-              {visibleApiCount}/{BRIDGE_API_COUNT} методов
+              {t("settings.methodsCount", {
+                visible: visibleApiCount,
+                total: BRIDGE_API_COUNT,
+              })}
             </span>
           </div>
         </div>
         {visibleApiGroups.length === 0 ? (
-          <div className="settings-empty-inline">Нет совпадений.</div>
+          <div className="settings-empty-inline">
+            {t("settings.noMatches")}
+          </div>
         ) : (
           <div className="settings-api-grid">
             {visibleApiGroups.map((group) => (
@@ -289,13 +311,18 @@ function CapabilitiesPane() {
 
       <section className="settings-section settings-section-open">
         <div className="settings-section-title-row">
-          <h2>Рабочие связки bridge</h2>
+          <h2>{t("settings.recipesTitle")}</h2>
           <span className="settings-section-meta">
-            {visibleRecipeCards.length}/{BRIDGE_RECIPE_CARDS.length} связок
+            {t("settings.recipesCount", {
+              visible: visibleRecipeCards.length,
+              total: BRIDGE_RECIPE_CARDS.length,
+            })}
           </span>
         </div>
         {visibleRecipeCards.length === 0 ? (
-          <div className="settings-empty-inline">Нет совпадений.</div>
+          <div className="settings-empty-inline">
+            {t("settings.noMatches")}
+          </div>
         ) : (
           <div className="settings-recipe-grid">
             {visibleRecipeCards.map((recipe) => (
@@ -326,13 +353,18 @@ function CapabilitiesPane() {
 
       <section className="settings-section settings-section-open">
         <div className="settings-section-title-row">
-          <h2>Runtime helpers</h2>
+          <h2>{t("settings.helpersTitle")}</h2>
           <span className="settings-section-meta">
-            {visibleHelperCount}/{BRIDGE_HELPER_COUNT} helpers
+            {t("settings.helpersCount", {
+              visible: visibleHelperCount,
+              total: BRIDGE_HELPER_COUNT,
+            })}
           </span>
         </div>
         {visibleHelperGroups.length === 0 ? (
-          <div className="settings-empty-inline">Нет совпадений.</div>
+          <div className="settings-empty-inline">
+            {t("settings.noMatches")}
+          </div>
         ) : (
           <div className="settings-helper-grid">
             {visibleHelperGroups.map((group) => (
@@ -352,22 +384,23 @@ function CapabilitiesPane() {
             ))}
           </div>
         )}
-        <p className="settings-hint">
-          Генерируемым утилитам стоит использовать эти helpers вместо ручного
-          postMessage; permissions и правила manifest.network всё равно
-          применяются к базовому bridge method.
-        </p>
+        <p className="settings-hint">{t("settings.helpersHint")}</p>
       </section>
 
       <section className="settings-section">
         <div className="settings-section-title-row">
-          <h2>Разрешения</h2>
+          <h2>{t("settings.permissionsTitle")}</h2>
           <span className="settings-section-meta">
-            {visiblePermissionExamples.length}/{PERMISSION_COUNT} manifest grants
+            {t("settings.grantsCount", {
+              visible: visiblePermissionExamples.length,
+              total: PERMISSION_COUNT,
+            })}
           </span>
         </div>
         {visiblePermissionExamples.length === 0 ? (
-          <div className="settings-empty-inline">Нет совпадений.</div>
+          <div className="settings-empty-inline">
+            {t("settings.noMatches")}
+          </div>
         ) : (
           <div className="settings-token-list">
             {visiblePermissionExamples.map((permission) => (
@@ -384,18 +417,14 @@ function CapabilitiesPane() {
       </section>
 
       <section className="settings-section">
-        <h2>Поток автоматизации</h2>
+        <h2>{t("settings.automationFlow")}</h2>
         <div className="settings-flow">
-          <span>manifest.schedules</span>
-          <span>scheduler runner</span>
-          <span>bridge steps</span>
-          <span>история запусков</span>
+          <span>{t("settings.flowSchedules")}</span>
+          <span>{t("settings.flowRunner")}</span>
+          <span>{t("settings.flowBridge")}</span>
+          <span>{t("settings.flowHistory")}</span>
         </div>
-        <p className="settings-hint">
-          Генерируемые утилиты могут обновлять собственный manifest, добавлять
-          schedules/actions, смотреть runs и отдавать widgets или public actions
-          другим apps.
-        </p>
+        <p className="settings-hint">{t("settings.automationHint")}</p>
       </section>
     </div>
   );
@@ -412,11 +441,12 @@ function CopyToken({
   onCopy: (value: string) => void | Promise<void>;
   variant?: "token" | "permission" | "example";
 }) {
+  const { t } = useI18n();
   return (
     <button
       className={`settings-copy-token settings-copy-${variant} ${copied ? "copied" : ""}`}
       onClick={() => void onCopy(value)}
-      title={copied ? "Скопировано" : "Скопировать"}
+      title={copied ? t("settings.copied") : t("settings.copy")}
       type="button"
     >
       {value}
@@ -442,6 +472,7 @@ async function copyTextToClipboard(text: string): Promise<void> {
 }
 
 function LogsPane() {
+  const { t } = useI18n();
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [paused, setPaused] = useState(false);
   const [filterText, setFilterText] = useState("");
@@ -520,7 +551,7 @@ function LogsPane() {
           value={filterSource}
           onChange={(e) => setFilterSource(e.currentTarget.value)}
         >
-          <option value="all">все источники</option>
+          <option value="all">{t("settings.allSources")}</option>
           {sources.map((s) => (
             <option key={s} value={s}>
               {s}
@@ -529,24 +560,26 @@ function LogsPane() {
         </select>
         <input
           className="logs-search"
-          placeholder="Поиск по тексту…"
+          placeholder={t("settings.logSearch")}
           value={filterText}
           onChange={(e) => setFilterText(e.currentTarget.value)}
         />
         <button onClick={() => setPaused((p) => !p)}>
-          {paused ? "▶ Возобновить" : "⏸ Пауза"}
+          {paused ? `▶ ${t("settings.resume")}` : `⏸ ${t("settings.pause")}`}
         </button>
         <button
           onClick={() => setEntries([])}
-          title="Очистить вид (буфер бэка не трогается)"
+          title={t("settings.clearTitle")}
         >
-          Очистить
+          {t("settings.clear")}
         </button>
-        <span className="logs-count">{visible.length} строк</span>
+        <span className="logs-count">
+          {t("settings.rows", { count: visible.length })}
+        </span>
       </div>
       <div className="logs-list" ref={listRef}>
         {visible.length === 0 ? (
-          <div className="logs-empty">Логов нет.</div>
+          <div className="logs-empty">{t("settings.noLogs")}</div>
         ) : (
           visible.map((e) => (
             <div key={e.seq} className={`log-row log-${e.level}`}>

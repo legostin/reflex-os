@@ -21,6 +21,7 @@ import {
   BRIDGE_HELPER_GROUPS,
   BRIDGE_RECIPE_CARDS,
 } from "../appBridgeCatalog";
+import { useI18n, type Translate } from "../i18n";
 import "./ChatThread.css";
 
 const BRIDGE_API_COUNT = BRIDGE_API_GROUPS.reduce(
@@ -270,12 +271,13 @@ function tabLabel(
   r: Route,
   projects: Project[],
   threads: Thread[],
+  t: Translate,
 ): string {
   switch (r.kind) {
     case "home":
-      return "Домой";
+      return t("nav.home");
     case "apps":
-      return "Утилиты";
+      return t("nav.apps");
     case "project": {
       const p = projects.find((x) => x.id === r.project_id);
       return p?.name ?? r.project_id;
@@ -288,19 +290,21 @@ function tabLabel(
       return r.app_id;
     case "memory": {
       if (r.thread_id) {
-        const t = threads.find((x) => x.id === r.thread_id);
-        return `Память · ${t?.title ?? t?.prompt?.slice(0, 32) ?? r.thread_id}`;
+        const thread = threads.find((x) => x.id === r.thread_id);
+        return t("nav.memoryWithName", {
+          name: thread?.title ?? thread?.prompt?.slice(0, 32) ?? r.thread_id,
+        });
       }
-      if (!r.project_id) return "Память";
+      if (!r.project_id) return t("nav.memory");
       const p = projects.find((x) => x.id === r.project_id);
-      return `Память · ${p?.name ?? r.project_id}`;
+      return t("nav.memoryWithName", { name: p?.name ?? r.project_id });
     }
     case "automations":
-      return "Автоматизации";
+      return t("nav.automations");
     case "browser":
-      return "Браузер";
+      return t("nav.browser");
     case "settings":
-      return "Настройки";
+      return t("nav.settings");
   }
 }
 
@@ -1556,6 +1560,7 @@ function Header({
   onAddPane: () => void;
   onCreateProject: () => void;
 }) {
+  const { t } = useI18n();
   const crumbs: { label: string; route: Route | null }[] = [
     { label: "Reflex", route: { kind: "home" } },
   ];
@@ -1574,9 +1579,9 @@ function Header({
       crumbs.push({ label: route.thread_id, route: null });
     }
   } else if (route.kind === "apps") {
-    crumbs.push({ label: "Утилиты", route: null });
+    crumbs.push({ label: t("nav.apps"), route: null });
   } else if (route.kind === "app") {
-    crumbs.push({ label: "Утилиты", route: { kind: "apps" } });
+    crumbs.push({ label: t("nav.apps"), route: { kind: "apps" } });
     crumbs.push({ label: route.app_id, route: null });
   } else if (route.kind === "memory") {
     const thread = route.thread_id
@@ -1596,7 +1601,7 @@ function Header({
         route: { kind: "topic", thread_id: thread.id },
       });
     }
-    crumbs.push({ label: "Память", route: null });
+    crumbs.push({ label: t("nav.memory"), route: null });
   }
 
   return (
@@ -1622,22 +1627,22 @@ function Header({
         <button
           className="header-tab"
           onClick={onCreateProject}
-          title="Новый проект"
+          title={t("nav.newProjectTitle")}
         >
-          + Проект
+          {t("nav.newProject")}
         </button>
         <button
           className="header-tab"
           onClick={onAddPane}
-          title="Добавить панель"
+          title={t("nav.newPaneTitle")}
         >
-          + Панель
+          {t("nav.newPane")}
         </button>
         <button
           className={`header-tab ${route.kind === "apps" || route.kind === "app" ? "active" : ""}`}
           onClick={() => onNavigate({ kind: "apps" })}
         >
-          Утилиты
+          {t("nav.apps")}
         </button>
         <button
           className={`header-tab ${route.kind === "memory" ? "active" : ""}`}
@@ -1663,16 +1668,16 @@ function Header({
               thread_id: activeThread?.id,
             });
           }}
-          title="Память"
+          title={t("nav.memory")}
         >
-          Память
+          {t("nav.memory")}
         </button>
         <button
           className={`header-tab ${route.kind === "automations" ? "active" : ""}`}
           onClick={() => onNavigate({ kind: "automations" })}
-          title="Расписания и история запусков"
+          title={t("nav.automations")}
         >
-          Автоматизации
+          {t("nav.automations")}
         </button>
         <select
           className="header-tab header-project-select"
@@ -1682,15 +1687,15 @@ function Header({
             if (v) onSelectActiveProject(v);
           }}
           disabled={projects.length === 0}
-          title="Активный проект"
+          title={t("nav.activeProject")}
         >
           {projects.length === 0 ? (
-            <option value="">Нет проектов</option>
+            <option value="">{t("nav.noProjects")}</option>
           ) : (
             <>
               {!activeProjectId && (
                 <option value="" disabled>
-                  Выбери проект
+                  {t("nav.chooseProject")}
                 </option>
               )}
               {projects.map((p) => (
@@ -1704,20 +1709,20 @@ function Header({
         <button
           className={`header-tab ${route.kind === "browser" ? "active" : ""}`}
           onClick={() => onNavigate({ kind: "browser" })}
-          title="Встроенный браузер"
+          title={t("nav.browser")}
         >
-          Browser
+          {t("nav.browser")}
         </button>
         <button
           className={`header-tab ${route.kind === "settings" ? "active" : ""}`}
           onClick={() => onNavigate({ kind: "settings" })}
-          title="Настройки и логи"
+          title={t("nav.settings")}
         >
           ⚙
         </button>
         <span className="chat-subtitle">
-          {threads.length} thread{threads.length === 1 ? "" : "s"} ·{" "}
-          {projects.length} project{projects.length === 1 ? "" : "s"}
+          {threads.length} {t("header.threadLabel")} · {projects.length}{" "}
+          {t("header.projectLabel")}
         </span>
       </div>
     </header>
@@ -1830,12 +1835,13 @@ function PaneTabsRow({
   onTabDragStart: () => void;
   onTabDragEnd: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <nav className="tabs-row">
       {tabs.map((r) => {
         const k = routeKey(r);
         const active = k === activeKey;
-        const label = tabLabel(r, projects, threads);
+        const label = tabLabel(r, projects, threads, t);
         return (
           <div
             key={k}
@@ -1867,8 +1873,8 @@ function PaneTabsRow({
                 e.stopPropagation();
                 onClose(k);
               }}
-              title="Закрыть"
-              aria-label="Закрыть таб"
+              title={t("nav.closeTab")}
+              aria-label={t("nav.closeTab")}
             >
               ×
             </button>
@@ -1879,8 +1885,8 @@ function PaneTabsRow({
         <button
           className="pane-close-btn"
           onClick={onClosePane}
-          title="Закрыть панель"
-          aria-label="Закрыть панель"
+          title={t("nav.closePane")}
+          aria-label={t("nav.closePane")}
         >
           ⨯
         </button>

@@ -20,6 +20,35 @@
   font-size: 20px;
 }
 
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-language-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(180, 185, 195, 0.72);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.settings-language-control select {
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(245, 245, 247, 0.95);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
 .settings-tabs {
   display: flex;
   gap: 4px;
@@ -337,6 +366,12 @@
 
 @media (max-width: 760px) {
   .settings-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .settings-header-actions {
+    width: 100%;
     align-items: flex-start;
     flex-direction: column;
   }
