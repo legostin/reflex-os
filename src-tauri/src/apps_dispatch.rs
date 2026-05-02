@@ -1195,6 +1195,10 @@ async fn invoke_app_action(
             "permission denied: {target_id}::{action_id} is not public and caller '{caller_id}' lacks 'apps.invoke:{target_id}' permission"
         ));
     }
+    if let Some(schema) = &action.params_schema {
+        validate_action_params(schema, &action_params)
+            .map_err(|e| format!("invalid action params for {target_id}::{action_id}: {e}"))?;
+    }
 
     let handle: scheduler::SchedulerHandle = app
         .state::<scheduler::SchedulerHandle>()
@@ -1277,6 +1281,95 @@ fn list_actions(
         }));
     }
     Ok(serde_json::Value::Array(out))
+}
+
+fn validate_action_params(
+    schema: &serde_json::Value,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    validate_schema_value(schema, value, "params")
+}
+
+fn validate_schema_value(
+    schema: &serde_json::Value,
+    value: &serde_json::Value,
+    path: &str,
+) -> Result<(), String> {
+    if let Some(expected) = schema.get("const") {
+        if value != expected {
+            return Err(format!("{path} must equal {expected}"));
+        }
+    }
+    if let Some(options) = schema.get("enum").and_then(|v| v.as_array()) {
+        if !options.iter().any(|option| option == value) {
+            return Err(format!("{path} must be one of {:?}", options));
+        }
+    }
+
+    let inferred_object = schema.get("properties").is_some() || schema.get("required").is_some();
+    if let Some(type_value) = schema.get("type") {
+        if !schema_type_matches(type_value, value) {
+            return Err(format!("{path} must be {}", schema_type_label(type_value)));
+        }
+    } else if inferred_object && !value.is_object() {
+        return Err(format!("{path} must be object"));
+    }
+
+    if let Some(properties) = schema.get("properties").and_then(|v| v.as_object()) {
+        let object = value
+            .as_object()
+            .ok_or_else(|| format!("{path} must be object"))?;
+        for (key, child_schema) in properties {
+            if let Some(child_value) = object.get(key) {
+                validate_schema_value(child_schema, child_value, &format!("{path}.{key}"))?;
+            }
+        }
+    }
+
+    if let Some(required) = schema.get("required").and_then(|v| v.as_array()) {
+        let object = value
+            .as_object()
+            .ok_or_else(|| format!("{path} must be object"))?;
+        for key in required.iter().filter_map(|v| v.as_str()) {
+            if !object.contains_key(key) {
+                return Err(format!("{path}.{key} is required"));
+            }
+        }
+    }
+
+    if let (Some(items_schema), Some(items)) =
+        (schema.get("items"), value.as_array())
+    {
+        for (idx, item) in items.iter().enumerate() {
+            validate_schema_value(items_schema, item, &format!("{path}[{idx}]"))?;
+        }
+    }
+
+    Ok(())
+}
+
+fn schema_type_matches(type_value: &serde_json::Value, value: &serde_json::Value) -> bool {
+    if let Some(types) = type_value.as_array() {
+        return types.iter().any(|t| schema_type_matches(t, value));
+    }
+    match type_value.as_str().unwrap_or("") {
+        "object" => value.is_object(),
+        "array" => value.is_array(),
+        "string" => value.is_string(),
+        "boolean" => value.is_boolean(),
+        "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
+        "number" => value.is_number(),
+        "null" => value.is_null(),
+        _ => true,
+    }
+}
+
+fn schema_type_label(type_value: &serde_json::Value) -> String {
+    if let Some(types) = type_value.as_array() {
+        let labels: Vec<&str> = types.iter().filter_map(|v| v.as_str()).collect();
+        return labels.join(" | ");
+    }
+    type_value.as_str().unwrap_or("valid JSON").to_string()
 }
 
 fn projects_list_for_app(
@@ -2034,5 +2127,46 @@ mod tests {
             summary["skills"],
             serde_json::json!(["build-web-apps:react-best-practices"])
         );
+    }
+
+    #[test]
+    fn validates_action_params_against_schema() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "required": ["query", "limit"],
+            "properties": {
+                "query": { "type": "string" },
+                "limit": { "type": "integer" },
+                "mode": { "enum": ["fast", "deep"] },
+                "tags": { "type": "array", "items": { "type": "string" } }
+            }
+        });
+
+        let valid = serde_json::json!({
+            "query": "status",
+            "limit": 3,
+            "mode": "fast",
+            "tags": ["project"]
+        });
+        assert!(validate_action_params(&schema, &valid).is_ok());
+
+        let missing = serde_json::json!({ "query": "status" });
+        assert!(validate_action_params(&schema, &missing)
+            .unwrap_err()
+            .contains("params.limit is required"));
+
+        let wrong_type = serde_json::json!({ "query": "status", "limit": "3" });
+        assert!(validate_action_params(&schema, &wrong_type)
+            .unwrap_err()
+            .contains("params.limit must be integer"));
+
+        let wrong_enum = serde_json::json!({
+            "query": "status",
+            "limit": 3,
+            "mode": "slow"
+        });
+        assert!(validate_action_params(&schema, &wrong_enum)
+            .unwrap_err()
+            .contains("params.mode must be one of"));
     }
 }
