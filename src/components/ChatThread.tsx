@@ -3284,7 +3284,7 @@ function AppViewer({
               )}
               {visibleBridgeHelperGroups.length > 0 && (
                 <div className="appviewer-bridge-section">
-                  <div className="appviewer-bridge-section-label">Helpers</div>
+                  <div className="appviewer-bridge-section-label">Хелперы</div>
                   <div className="appviewer-bridge-grid">
                     {visibleBridgeHelperGroups.map((group) => (
                       <div className="appviewer-bridge-group" key={group.title}>
@@ -3325,10 +3325,10 @@ function AppViewer({
               >
                 {actionBusy === action.id ? "…" : action.name || action.id}
                 {action.public && (
-                  <span className="appviewer-action-public">public</span>
+                  <span className="appviewer-action-public">публичное</span>
                 )}
                 {!!actionParamsSchema(action) && (
-                  <span className="appviewer-action-public">params</span>
+                  <span className="appviewer-action-public">параметры</span>
                 )}
               </button>
             ))}
@@ -3405,7 +3405,7 @@ function AppViewer({
               }}
               disabled={busy !== null}
             >
-              {busy === "save" ? "…" : commitOpen ? "Commit" : "Сохранить"}
+              {busy === "save" ? "…" : commitOpen ? "Зафиксировать" : "Сохранить"}
             </button>
             <button
               className="appviewer-btn appviewer-btn-danger"
@@ -3456,7 +3456,7 @@ function AppViewer({
               onClick={() => void save()}
               disabled={busy !== null}
             >
-              {busy === "save" ? "…" : "Commit"}
+              {busy === "save" ? "…" : "Зафиксировать"}
             </button>
           </div>
         </div>
