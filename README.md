@@ -194,9 +194,10 @@ Apps can expose:
 - `widgets`: compact pages shown on a linked project's dashboard.
 
 Workflow steps call normal bridge methods and can pass previous results through
-`{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*` are not
-valid inside schedules. `scheduler.runNow` and `scheduler.setPaused` are also
-blocked inside schedule steps to prevent unattended recursive runs.
+`{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*` and
+`apps.open` are not valid inside schedules. `scheduler.runNow` and
+`scheduler.setPaused` are also blocked inside schedule steps to prevent
+unattended recursive runs.
 
 ## Development
 

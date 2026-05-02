@@ -9,6 +9,7 @@ use tauri::{AppHandle, Emitter};
 
 const MAX_RECURSION_DEPTH: usize = 8;
 const SCHEDULE_STEP_METHOD_BLACKLIST: &[&str] = &[
+    "apps.open",
     "dialog.openDirectory",
     "dialog.openFile",
     "dialog.saveFile",

@@ -905,7 +905,7 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
             "Шаблон AUTOMATION:\n\
 - Обязательно добавь в manifest.schedules хотя бы одно расписание с 6-польным cron (sec min hour dom month dow, UTC).\n\
 - В schedule.steps используй bridge methods без UI: agent.task, storage.*, fs.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/runDetail.\n\
-- Не используй dialog.* и scheduler.runNow/setPaused внутри schedule.steps.\n\
+- Не используй dialog.*, apps.open и scheduler.runNow/setPaused внутри schedule.steps.\n\
 - Добавь обычный UI, где видно состояние: `window.reflexSchedulerList()`, `window.reflexSchedulerRuns({limit: 20})`, детали запуска через `window.reflexSchedulerRunDetail(runId)`, кнопка ручного запуска через `window.reflexSchedulerRunNow(scheduleId)`.\n\
 - Если автоматизация производит полезные данные, сохраняй их через `window.reflexStorageSet` или `window.reflexMemorySave` и добавь manifest.actions для других apps.\n\
 - Если результат нужен на проектном дашборде, добавь manifest.widgets с компактной страницей widgets/<id>.html.\n",
@@ -1017,7 +1017,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("    }]\n");
     p.push_str("  }\n");
     p.push_str("- Шаги исполняются по очереди. Шаблоны {{steps.X.field}} подставляют результаты предыдущих шагов. Если плейсхолдер занимает всю строку — тип значения сохраняется (объект остаётся объектом).\n");
-    p.push_str("- В steps НЕЛЬЗЯ использовать dialog.openDirectory/openFile/saveFile — у автоматизаций нет UI.\n");
+    p.push_str("- В steps НЕЛЬЗЯ использовать dialog.openDirectory/openFile/saveFile и apps.open — у автоматизаций нет UI.\n");
     p.push_str("- Все остальные методы (agent.*, storage.*, fs.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/runDetail) работают как обычно. scheduler.runNow/setPaused в schedule.steps заблокированы, чтобы не запускать рекурсивные unattended-циклы.\n");
     p.push_str("- Если задача звучит как «раз в N минут/часов делать X» — это schedule, не кнопка в UI.\n\n");
 
@@ -1089,7 +1089,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
 
     p.push_str("ОГРАНИЧЕНИЯ:\n");
     p.push_str("- iframe sandbox=\"allow-scripts allow-forms\" (для server-runtime добавляется allow-same-origin). Сетевые fetch к произвольным внешним URL могут не работать — для динамических данных используй agent.ask или свой server-runtime.\n");
-    p.push_str("- В schedule.steps нельзя использовать dialog.*: эти шаги бегут без UI.\n\n");
+    p.push_str("- В schedule.steps нельзя использовать dialog.* и apps.open: эти шаги бегут без UI.\n\n");
     if let Some(skeleton) = template_skeleton(template) {
         p.push_str("ШАБЛОН:\n");
         p.push_str(skeleton);
