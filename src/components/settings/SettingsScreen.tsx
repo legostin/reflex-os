@@ -156,6 +156,7 @@ const HELPER_GROUPS = [
       "reflexSystemContext",
       "reflexManifestGet",
       "reflexManifestUpdate",
+      "reflexCapabilities",
     ],
   },
   {

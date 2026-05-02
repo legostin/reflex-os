@@ -801,6 +801,73 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexManifestUpdate = function(patch) {
     return reflexInvokeRaw('manifest.update', {patch: patch || {}});
   };
+  function reflexArray(value) {
+    return Array.isArray(value) ? value : [];
+  }
+  function reflexPermissionAllows(grant, needed) {
+    if (!grant || !needed) return false;
+    if (grant === '*' || grant === needed) return true;
+    if (grant.slice(-2) === ':*') {
+      var base = grant.slice(0, -2);
+      return needed === base || needed.indexOf(base + ':') === 0 || needed.indexOf(base + '.') === 0;
+    }
+    return false;
+  }
+  function reflexHostFromValue(hostOrUrl) {
+    if (!hostOrUrl) return '';
+    try {
+      return new URL(String(hostOrUrl)).hostname.toLowerCase();
+    } catch (_) {
+      return String(hostOrUrl).toLowerCase();
+    }
+  }
+  function reflexHostMatches(pattern, host) {
+    if (!pattern || !host) return false;
+    var pat = String(pattern).toLowerCase();
+    var h = String(host).toLowerCase();
+    if (pat.slice(0, 2) === '*.') {
+      var suffix = pat.slice(2);
+      return h === suffix || h.slice(-(suffix.length + 1)) === '.' + suffix;
+    }
+    return h === pat;
+  }
+  function reflexBuildCapabilities(manifest) {
+    var m = manifest || {};
+    var permissions = reflexArray(m.permissions);
+    var hosts = reflexArray(m.network && m.network.allowed_hosts);
+    var schedules = reflexArray(m.schedules);
+    var actions = reflexArray(m.actions);
+    var widgets = reflexArray(m.widgets);
+    return {
+      manifest: m,
+      runtime: m.runtime === 'server' ? 'server' : 'static',
+      entry: m.entry || 'index.html',
+      permissions: permissions,
+      allowedHosts: hosts,
+      schedules: schedules,
+      actions: actions,
+      widgets: widgets,
+      counts: {
+        permissions: permissions.length,
+        networkHosts: hosts.length,
+        schedules: schedules.length,
+        activeSchedules: schedules.filter(function(s){ return s && s.enabled !== false; }).length,
+        actions: actions.length,
+        publicActions: actions.filter(function(a){ return a && a.public === true; }).length,
+        widgets: widgets.length
+      },
+      hasPermission: function(needed) {
+        return permissions.some(function(grant){ return reflexPermissionAllows(grant, needed); });
+      },
+      hasNetworkHost: function(hostOrUrl) {
+        var host = reflexHostFromValue(hostOrUrl);
+        return hosts.some(function(pattern){ return reflexHostMatches(pattern, host); });
+      }
+    };
+  }
+  window.reflexCapabilities = function() {
+    return reflexInvokeRaw('manifest.get', {}).then(reflexBuildCapabilities);
+  };
   window.reflexAgentAsk = function(promptOrParams) {
     var params = (typeof promptOrParams === 'string') ? {prompt: promptOrParams} : (promptOrParams || {});
     return reflexInvokeRaw('agent.ask', params);
