@@ -134,6 +134,7 @@ export const BRIDGE_API_GROUPS = [
       "events.emit",
       "events.subscribe",
       "events.unsubscribe",
+      "events.clearSubscriptions",
       "apps.list",
       "apps.open",
       "apps.invoke",
@@ -261,6 +262,7 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexEventOn",
       "reflexEventOff",
       "reflexEventEmit",
+      "reflexEventClearSubscriptions",
     ],
   },
 ] as const;

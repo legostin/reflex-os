@@ -141,6 +141,7 @@ The injected runtime overlay provides:
 - `window.reflexEventOn(topic, handler)`
 - `window.reflexEventOff(topic)`
 - `window.reflexEventEmit(topic, payload)`
+- `window.reflexEventClearSubscriptions()`
 
 ## App Bridge API
 
@@ -255,7 +256,8 @@ Core methods:
 - `browser.init`, `browser.tabs.list`, `browser.open`, `browser.navigate`.
 - `browser.readText`, `browser.readOutline`, `browser.screenshot`.
 - `browser.clickText`, `browser.clickSelector`, `browser.fill`.
-- `events.emit`, `events.subscribe`, `events.unsubscribe`.
+- `events.emit`, `events.subscribe`, `events.unsubscribe`,
+  `events.clearSubscriptions`.
 - `apps.list()`.
 - `apps.open({ app_id })` -> asks Reflex to open that app in the main UI.
 - `apps.invoke({ app_id, action_id, params })`.

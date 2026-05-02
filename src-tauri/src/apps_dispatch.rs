@@ -1311,6 +1311,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "events.emit",
                 "events.subscribe",
                 "events.unsubscribe",
+                "events.clearSubscriptions",
                 "apps.list",
                 "apps.open",
                 "apps.invoke",
@@ -1437,6 +1438,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexEventOn",
                 "reflexEventOff",
                 "reflexEventEmit",
+                "reflexEventClearSubscriptions",
             ],
         ),
     ];
