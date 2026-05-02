@@ -694,6 +694,9 @@ pub async fn dispatch_app_method(
         "memory.pathStatus" | "memory.path_status" => {
             memory_path_status_for_app(app, app_id, params)
         }
+        "memory.pathStatusBatch" | "memory.path_status_batch" => {
+            memory_path_status_batch_for_app(app, app_id, params)
+        }
         "memory.forgetPath" | "memory.forget_path" => {
             memory_forget_path_for_app(app, app_id, params).await
         }
@@ -1300,6 +1303,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "memory.recall",
                 "memory.indexPath",
                 "memory.pathStatus",
+                "memory.pathStatusBatch",
                 "memory.forgetPath",
             ],
         ),
@@ -1438,6 +1442,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexMemoryRecall",
                 "reflexMemoryIndexPath",
                 "reflexMemoryPathStatus",
+                "reflexMemoryPathStatusBatch",
                 "reflexMemoryForgetPath",
                 "reflexSchedulerList",
                 "reflexSchedulerUpsert",
@@ -2528,6 +2533,42 @@ fn memory_path_status_for_app(
     let path = resolve_project_path(&target, raw_path)?;
     let status = files::status(&target.root, &path).map_err(|e| e.to_string())?;
     Ok(serde_json::to_value(status).unwrap_or(serde_json::Value::Null))
+}
+
+fn parse_memory_paths(params: &serde_json::Value) -> Result<Vec<String>, String> {
+    let paths = params
+        .get("paths")
+        .and_then(|v| v.as_array())
+        .ok_or("missing paths array")?;
+    if paths.is_empty() {
+        return Err("paths must be non-empty array of strings".into());
+    }
+    paths
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| "paths must be non-empty array of strings".to_string())
+        })
+        .collect()
+}
+
+fn memory_path_status_batch_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let raw_paths = parse_memory_paths(&params)?;
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let paths = raw_paths
+        .iter()
+        .map(|path| resolve_project_path(&target, path))
+        .collect::<Result<Vec<_>, _>>()?;
+    let statuses = files::status_batch(&target.root, &paths).map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(statuses).unwrap_or(serde_json::Value::Array(vec![])))
 }
 
 async fn memory_forget_path_for_app(
@@ -5229,6 +5270,24 @@ mod tests {
             parse_memory_rel_path(&params).unwrap(),
             PathBuf::from("facts/project.md")
         );
+    }
+
+    #[test]
+    fn memory_paths_require_non_empty_string_array() {
+        let params = serde_json::json!({ "paths": [" README.md ", "src/main.tsx"] });
+        assert_eq!(
+            parse_memory_paths(&params).unwrap(),
+            vec!["README.md".to_string(), "src/main.tsx".to_string()]
+        );
+
+        for params in [
+            serde_json::json!({}),
+            serde_json::json!({ "paths": [] }),
+            serde_json::json!({ "paths": [""] }),
+            serde_json::json!({ "paths": ["ok.md", 42] }),
+        ] {
+            assert!(parse_memory_paths(&params).is_err());
+        }
     }
 
     #[test]

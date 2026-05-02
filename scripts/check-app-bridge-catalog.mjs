@@ -130,6 +130,7 @@ const dispatchAliasesOrInternal = new Set([
   "memory.forget_path",
   "memory.index_path",
   "memory.path_status",
+  "memory.path_status_batch",
   "system.open_path",
   "system.open_url",
   "system.reveal_path",

@@ -1335,6 +1335,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
     return reflexInvokeRaw('memory.pathStatus', params);
   };
+  window.reflexMemoryPathStatusBatch = function(pathsOrParams) {
+    var params = Array.isArray(pathsOrParams) ? {paths: pathsOrParams} : (pathsOrParams || {});
+    return reflexInvokeRaw('memory.pathStatusBatch', params);
+  };
   window.reflexMemoryForgetPath = function(pathOrParams) {
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
     return reflexInvokeRaw('memory.forgetPath', params);

@@ -138,6 +138,7 @@ The injected runtime overlay provides:
 - `window.reflexMemoryRecall(queryOrParams)`
 - `window.reflexMemoryIndexPath(pathOrParams)`
 - `window.reflexMemoryPathStatus(pathOrParams)`
+- `window.reflexMemoryPathStatusBatch(pathsOrParams)`
 - `window.reflexMemoryForgetPath(pathOrParams)`
 - `window.reflexAppsList(params)`
 - `window.reflexAppsOpen(appIdOrParams)`
@@ -324,6 +325,7 @@ Memory methods:
 - `memory.recall({ query, projectId?, threadId?, maxNotes?, maxRag? })`.
 - `memory.indexPath({ path, projectId? })`.
 - `memory.pathStatus({ path, projectId? })`.
+- `memory.pathStatusBatch({ paths, projectId? })`.
 - `memory.forgetPath({ path, projectId? })`.
 
 `scope` defaults to `project`. If an app is linked to exactly one project,
