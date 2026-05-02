@@ -149,7 +149,7 @@ export default function QuickPanel() {
             disabled={busy}
           />
           <span className="quick-hint">
-            <kbd>↵</kbd> submit · <kbd>esc</kbd> cancel
+            <kbd>↵</kbd> отправить · <kbd>esc</kbd> закрыть
           </span>
         </div>
 

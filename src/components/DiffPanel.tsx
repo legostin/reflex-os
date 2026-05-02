@@ -149,7 +149,7 @@ export function DiffPanel({
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [commitMsg, setCommitMsg] = useState("partial revision");
+  const [commitMsg, setCommitMsg] = useState("частичная ревизия");
 
   useEffect(() => {
     let alive = true;
@@ -199,7 +199,7 @@ export function DiffPanel({
     if (busy) return;
     const patch = buildPatch(files, selected);
     if (!patch) {
-      setError("Не выбрано ни одного hunk");
+      setError("Не выбрано ни одного фрагмента");
       return;
     }
     setBusy(true);
@@ -208,7 +208,7 @@ export function DiffPanel({
       await invoke("app_save_partial", {
         appId,
         patch,
-        message: commitMsg.trim() || "partial revision",
+        message: commitMsg.trim() || "частичная ревизия",
       });
       onApplied();
     } catch (e) {
@@ -229,7 +229,7 @@ export function DiffPanel({
           <input
             className="diff-commit-msg"
             type="text"
-            placeholder="commit message"
+            placeholder="сообщение ревизии"
             value={commitMsg}
             onChange={(e) => setCommitMsg(e.currentTarget.value)}
             onKeyDown={(e) => {
@@ -280,13 +280,13 @@ export function DiffPanel({
                   </label>
                   <span className="diff-file-path">
                     {file.isNew && (
-                      <span className="diff-tag diff-tag-new">new</span>
+                      <span className="diff-tag diff-tag-new">новый</span>
                     )}
                     {file.isDeleted && (
-                      <span className="diff-tag diff-tag-del">deleted</span>
+                      <span className="diff-tag diff-tag-del">удалён</span>
                     )}
                     {file.isBinary && (
-                      <span className="diff-tag diff-tag-bin">binary</span>
+                      <span className="diff-tag diff-tag-bin">бинарный</span>
                     )}
                     {file.path}
                   </span>
