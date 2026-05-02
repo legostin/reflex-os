@@ -3333,7 +3333,9 @@ function ProjectScreen({
   }
 
   const sandbox = project?.sandbox ?? "workspace-write";
-  const browserOn = !!project?.mcp_servers?.playwright;
+  const browserOn = !!(
+    project?.mcp_servers?.reflex_browser || project?.mcp_servers?.playwright
+  );
 
   async function setSandbox(value: string) {
     if (!project) return;
@@ -3528,7 +3530,7 @@ function ProjectScreen({
             )}
           </div>
           <div className="setting-row">
-            <label className="setting-label">Browser (Playwright MCP)</label>
+            <label className="setting-label">Browser MCP</label>
             <label className="setting-toggle">
               <input
                 type="checkbox"
@@ -3539,8 +3541,8 @@ function ProjectScreen({
             </label>
             {browserOn && (
               <span className="setting-hint">
-                npx -y @playwright/mcp@latest подключится при следующем
-                старте/resume треда.
+                Встроенный Reflex browser bridge подключится при следующем
+                старте или resume треда.
               </span>
             )}
           </div>
