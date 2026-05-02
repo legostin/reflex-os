@@ -544,6 +544,37 @@ function buildAppCatalogCapabilityFacts(
   );
 }
 
+function AppCapabilityDetails({ manifest }: { manifest: AppManifest | null }) {
+  const permissions = manifest?.permissions ?? [];
+  const allowedHosts = manifest?.network?.allowed_hosts ?? [];
+  if (permissions.length === 0 && allowedHosts.length === 0) return null;
+
+  return (
+    <div className="appviewer-capability-details" aria-label="Manifest grants">
+      {permissions.length > 0 && (
+        <section className="appviewer-capability-detail-group">
+          <div className="appviewer-capability-detail-title">Permissions</div>
+          <div className="appviewer-capability-chip-list">
+            {permissions.map((permission) => (
+              <code key={permission}>{permission}</code>
+            ))}
+          </div>
+        </section>
+      )}
+      {allowedHosts.length > 0 && (
+        <section className="appviewer-capability-detail-group">
+          <div className="appviewer-capability-detail-title">Network hosts</div>
+          <div className="appviewer-capability-chip-list">
+            {allowedHosts.map((host) => (
+              <code key={host}>{host}</code>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 type AppServerStatus = {
   running: boolean;
   port: number | null;
@@ -3127,18 +3158,21 @@ function AppViewer({
       </header>
 
       {manifestFacts.length > 0 && (
-        <div className="appviewer-capabilities" aria-label="Manifest capabilities">
-          {manifestFacts.map((fact) => (
-            <div
-              key={fact.key}
-              className="appviewer-capability"
-              title={fact.title}
-            >
-              <span className="appviewer-capability-label">{fact.label}</span>
-              <span className="appviewer-capability-value">{fact.value}</span>
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="appviewer-capabilities" aria-label="Manifest capabilities">
+            {manifestFacts.map((fact) => (
+              <div
+                key={fact.key}
+                className="appviewer-capability"
+                title={fact.title}
+              >
+                <span className="appviewer-capability-label">{fact.label}</span>
+                <span className="appviewer-capability-value">{fact.value}</span>
+              </div>
+            ))}
+          </div>
+          <AppCapabilityDetails manifest={manifest} />
+        </>
       )}
 
       {bridgeOpen && (
