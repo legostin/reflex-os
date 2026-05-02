@@ -647,6 +647,7 @@ pub async fn dispatch_app_method(
         }
         "memory.save" => memory_save_for_app(app, app_id, params).await,
         "memory.read" => memory_read_for_app(app, app_id, params),
+        "memory.update" => memory_update_for_app(app, app_id, params).await,
         "memory.list" => memory_list_for_app(app, app_id, params),
         "memory.delete" => memory_delete_for_app(app, app_id, params),
         "memory.search" => memory_search_for_app(app, app_id, params).await,
@@ -1283,6 +1284,69 @@ fn memory_read_for_app(
     let target = resolve_memory_target(app, app_id, &params)?;
     let roots = scope_roots(&target)?;
     let note = store::read(&roots, scope, &rel_path).map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(note).unwrap_or(serde_json::Value::Null))
+}
+
+async fn memory_update_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let scope = parse_scope(&params, MemoryScope::Project)?;
+    if scope == MemoryScope::Global {
+        ensure_global_memory_permission(app, app_id, true)?;
+    }
+    let rel_path = parse_memory_rel_path(&params)?;
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let roots = scope_roots(&target)?;
+    let existing = store::read(&roots, scope, &rel_path).map_err(|e| e.to_string())?;
+    let body = params
+        .get("body")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| existing.body.clone());
+    let tags = params
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| existing.front.tags.clone());
+    let source = params
+        .get("source")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| existing.front.source.clone());
+    let req = SaveRequest {
+        scope,
+        kind: parse_kind(&params, existing.front.kind)?,
+        name: params
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| existing.front.name.clone()),
+        description: params
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| existing.front.description.clone()),
+        body: body.clone(),
+        rel_path: Some(rel_path.clone()),
+        tags,
+        source,
+    };
+    let note = store::save(&roots, req).map_err(|e| e.to_string())?;
+    if scope != MemoryScope::Global {
+        let doc_id = format!("memory:{}", rel_path.display());
+        let root = target.root.clone();
+        tokio::spawn(async move {
+            let _ = rag::index_text(&root, &doc_id, "memory", &body).await;
+        });
+    }
     Ok(serde_json::to_value(note).unwrap_or(serde_json::Value::Null))
 }
 

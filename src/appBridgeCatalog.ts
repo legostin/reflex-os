@@ -80,6 +80,7 @@ export const BRIDGE_API_GROUPS = [
     methods: [
       "memory.save",
       "memory.read",
+      "memory.update",
       "memory.list",
       "memory.delete",
       "memory.search",
@@ -184,6 +185,7 @@ export const BRIDGE_HELPER_GROUPS = [
     helpers: [
       "reflexMemorySave",
       "reflexMemoryRead",
+      "reflexMemoryUpdate",
       "reflexMemoryList",
       "reflexMemoryDelete",
       "reflexMemorySearch",

@@ -97,6 +97,7 @@ The injected runtime overlay provides:
 - `window.reflexSchedulerRunDetail(runIdOrParams)`
 - `window.reflexMemorySave(params)`
 - `window.reflexMemoryRead(relPathOrParams)`
+- `window.reflexMemoryUpdate(relPathOrParams, patch?)`
 - `window.reflexMemoryList(params)`
 - `window.reflexMemoryDelete(relPathOrParams)`
 - `window.reflexMemorySearch(queryOrParams)`
@@ -196,6 +197,7 @@ Memory methods:
 
 - `memory.save({ scope?, kind?, name, description?, body, tags?, projectId?, threadId? })`.
 - `memory.read({ scope?, relPath, projectId?, threadId? })`.
+- `memory.update({ scope?, relPath, name?, description?, body?, tags?, kind?, projectId?, threadId? })`.
 - `memory.list({ scope?, filter?, projectId?, threadId? })`.
 - `memory.delete({ scope?, relPath, projectId?, threadId? })`.
 - `memory.search({ query, projectId?, limit? })`.

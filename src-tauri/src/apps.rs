@@ -1181,6 +1181,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof relPathOrParams === 'string') ? {relPath: relPathOrParams} : (relPathOrParams || {});
     return reflexInvokeRaw('memory.read', params);
   };
+  window.reflexMemoryUpdate = function(relPathOrParams, patch) {
+    var params = (typeof relPathOrParams === 'string') ? Object.assign({relPath: relPathOrParams}, patch || {}) : (relPathOrParams || {});
+    return reflexInvokeRaw('memory.update', params);
+  };
   window.reflexMemoryList = function(params) {
     return reflexInvokeRaw('memory.list', params || {});
   };
