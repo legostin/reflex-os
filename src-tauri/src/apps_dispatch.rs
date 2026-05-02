@@ -632,6 +632,7 @@ pub async fn dispatch_app_method(
         "mcp.servers" | "mcp.list" => mcp_servers_for_app(app, app_id, params),
         "project.files.list" => project_files_list_for_app(app, app_id, params),
         "project.files.read" => project_files_read_for_app(app, app_id, params),
+        "project.files.search" => project_files_search_for_app(app, app_id, params),
         "project.files.write" => project_files_write_for_app(app, app_id, params),
         "project.files.mkdir" => project_files_mkdir_for_app(app, app_id, params),
         "project.files.delete" => project_files_delete_for_app(app, app_id, params),
@@ -1232,6 +1233,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "mcp.servers",
                 "project.files.list",
                 "project.files.read",
+                "project.files.search",
                 "project.files.write",
                 "project.files.mkdir",
                 "project.files.delete",
@@ -1374,6 +1376,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexMcpServers",
                 "reflexProjectFilesList",
                 "reflexProjectFilesRead",
+                "reflexProjectFilesSearch",
                 "reflexProjectFilesWrite",
                 "reflexProjectFilesMkdir",
                 "reflexProjectFilesDelete",
@@ -3050,12 +3053,17 @@ fn project_files_list_for_app(
     }))
 }
 
+const MAX_PROJECT_FILE_READ_BYTES: u64 = 1_048_576;
+const PROJECT_FILE_SEARCH_DEFAULT_LIMIT: usize = 50;
+const PROJECT_FILE_SEARCH_MAX_LIMIT: usize = 200;
+const PROJECT_FILE_SEARCH_MAX_SCANNED: usize = 5_000;
+const PROJECT_FILE_SEARCH_MAX_CONTENT_BYTES: u64 = 262_144;
+
 fn project_files_read_for_app(
     app: &AppHandle,
     app_id: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    const MAX_PROJECT_FILE_READ_BYTES: u64 = 1_048_576;
     let project = resolve_project_file_target(app, app_id, &params, "project.files.read", true)?;
     let rel_path = required_string_param(&params, "path", "path")?;
     let root = canonical_project_root(&project.root)?;
@@ -3076,6 +3084,53 @@ fn project_files_read_for_app(
         "path": rel,
         "size": meta.len(),
         "content": content,
+    }))
+}
+
+fn project_files_search_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let project = resolve_project_file_target(app, app_id, &params, "project.files.read", true)?;
+    let query = required_string_param(&params, "query", "query")?;
+    let needle = query.to_lowercase();
+    let rel_path = string_param(&params, "path", "path").unwrap_or_else(|| ".".into());
+    let recursive = bool_param(&params, "recursive", "recursive").unwrap_or(true);
+    let include_hidden = bool_param(&params, "include_hidden", "includeHidden").unwrap_or(false);
+    let include_content = bool_param(&params, "include_content", "includeContent")
+        .or_else(|| bool_param(&params, "content", "content"))
+        .unwrap_or(false);
+    let limit = bounded_usize_param(
+        &params,
+        "limit",
+        "limit",
+        PROJECT_FILE_SEARCH_DEFAULT_LIMIT,
+        PROJECT_FILE_SEARCH_MAX_LIMIT,
+    );
+    let root = canonical_project_root(&project.root)?;
+    let target = resolve_project_file_path(&root, &rel_path)?;
+    let mut matches = Vec::new();
+    let mut scanned = 0usize;
+    let truncated = search_project_file_entries(
+        &root,
+        &target,
+        &needle,
+        recursive,
+        include_hidden,
+        include_content,
+        limit,
+        &mut scanned,
+        &mut matches,
+    )?;
+
+    Ok(serde_json::json!({
+        "project_id": project.id,
+        "project_name": project.name,
+        "query": query,
+        "matches": matches,
+        "scanned": scanned,
+        "truncated": truncated,
     }))
 }
 
@@ -3328,6 +3383,179 @@ fn nearest_existing_ancestor(path: &Path) -> Result<PathBuf, String> {
             return Err("no existing parent directory".into());
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_project_file_entries(
+    root: &Path,
+    target: &Path,
+    needle: &str,
+    recursive: bool,
+    include_hidden: bool,
+    include_content: bool,
+    limit: usize,
+    scanned: &mut usize,
+    out: &mut Vec<serde_json::Value>,
+) -> Result<bool, String> {
+    let meta = std::fs::symlink_metadata(target).map_err(|e| e.to_string())?;
+    if meta.is_dir() && !meta.file_type().is_symlink() {
+        let mut entries = std::fs::read_dir(target)
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            if search_project_file_entry(
+                root,
+                &entry.path(),
+                needle,
+                recursive,
+                include_hidden,
+                include_content,
+                limit,
+                scanned,
+                out,
+            )? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    } else {
+        search_project_file_entry(
+            root,
+            target,
+            needle,
+            recursive,
+            include_hidden,
+            include_content,
+            limit,
+            scanned,
+            out,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_project_file_entry(
+    root: &Path,
+    path: &Path,
+    needle: &str,
+    recursive: bool,
+    include_hidden: bool,
+    include_content: bool,
+    limit: usize,
+    scanned: &mut usize,
+    out: &mut Vec<serde_json::Value>,
+) -> Result<bool, String> {
+    if out.len() >= limit || *scanned >= PROJECT_FILE_SEARCH_MAX_SCANNED {
+        return Ok(true);
+    }
+    if project_path_is_blocked(root, path) {
+        return Ok(false);
+    }
+    if !include_hidden && project_path_is_hidden(root, path) {
+        return Ok(false);
+    }
+
+    let meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    *scanned += 1;
+    let rel = project_rel_path(root, path)?;
+    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+    let haystack = format!("{}\n{}", rel.to_lowercase(), name.to_lowercase());
+    if haystack.contains(needle) {
+        out.push(project_file_match(root, path, &meta, "path", None, None)?);
+        if out.len() >= limit {
+            return Ok(true);
+        }
+    }
+
+    if include_content
+        && meta.is_file()
+        && meta.len() <= PROJECT_FILE_SEARCH_MAX_CONTENT_BYTES
+        && search_project_file_content(root, path, &meta, needle, limit, out)?
+    {
+        return Ok(true);
+    }
+
+    if recursive && meta.is_dir() && !meta.file_type().is_symlink() {
+        let mut entries = std::fs::read_dir(path)
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            if search_project_file_entry(
+                root,
+                &entry.path(),
+                needle,
+                recursive,
+                include_hidden,
+                include_content,
+                limit,
+                scanned,
+                out,
+            )? {
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(out.len() >= limit || *scanned >= PROJECT_FILE_SEARCH_MAX_SCANNED)
+}
+
+fn search_project_file_content(
+    root: &Path,
+    path: &Path,
+    meta: &std::fs::Metadata,
+    needle: &str,
+    limit: usize,
+    out: &mut Vec<serde_json::Value>,
+) -> Result<bool, String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let Ok(content) = String::from_utf8(bytes) else {
+        return Ok(false);
+    };
+    for (idx, line) in content.lines().enumerate() {
+        if line.to_lowercase().contains(needle) {
+            let preview: String = line.trim().chars().take(300).collect();
+            out.push(project_file_match(
+                root,
+                path,
+                meta,
+                "content",
+                Some(idx + 1),
+                Some(preview),
+            )?);
+            if out.len() >= limit {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn project_file_match(
+    root: &Path,
+    path: &Path,
+    meta: &std::fs::Metadata,
+    match_type: &str,
+    line_number: Option<usize>,
+    preview: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut value = project_file_entry(root, path, meta)?;
+    if let Some(object) = value.as_object_mut() {
+        object.insert("match".into(), serde_json::Value::String(match_type.into()));
+        if let Some(line_number) = line_number {
+            object.insert(
+                "line_number".into(),
+                serde_json::Value::Number(serde_json::Number::from(line_number)),
+            );
+        }
+        if let Some(preview) = preview {
+            object.insert("preview".into(), serde_json::Value::String(preview));
+        }
+    }
+    Ok(value)
 }
 
 fn collect_project_file_entries(
@@ -4052,6 +4280,21 @@ fn bool_param(params: &serde_json::Value, snake: &str, camel: &str) -> Option<bo
         .and_then(|v| v.as_bool())
 }
 
+fn bounded_usize_param(
+    params: &serde_json::Value,
+    snake: &str,
+    camel: &str,
+    default: usize,
+    max: usize,
+) -> usize {
+    params
+        .get(snake)
+        .or_else(|| params.get(camel))
+        .and_then(|v| v.as_u64())
+        .map(|value| value.clamp(1, max as u64) as usize)
+        .unwrap_or(default.min(max).max(1))
+}
+
 fn string_param(params: &serde_json::Value, snake: &str, camel: &str) -> Option<String> {
     params
         .get(snake)
@@ -4261,6 +4504,7 @@ mod tests {
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::create_dir_all(root.join(".reflex")).unwrap();
         std::fs::write(root.join("src/readme.md"), "ok").unwrap();
+        std::fs::write(root.join("src/notes.md"), "Alpha target line\nsecond").unwrap();
         std::fs::write(root.join(".reflex/project.json"), "{}").unwrap();
         std::fs::write(&outside, "secret").unwrap();
 
@@ -4275,6 +4519,29 @@ mod tests {
         assert!(target.ends_with("generated/report.md"));
         assert_eq!(rel, "generated/report.md");
         assert!(target.parent().unwrap().exists());
+
+        let mut matches = Vec::new();
+        let mut scanned = 0;
+        let truncated = search_project_file_entries(
+            &canonical_root,
+            &canonical_root,
+            "target",
+            true,
+            false,
+            true,
+            10,
+            &mut scanned,
+            &mut matches,
+        )
+        .unwrap();
+        assert!(!truncated);
+        assert!(scanned > 0);
+        assert!(matches.iter().any(|entry| {
+            entry.get("match").and_then(|v| v.as_str()) == Some("content")
+                && entry.get("path").and_then(|v| v.as_str()) == Some("src/notes.md")
+                && entry.get("line_number").and_then(|v| v.as_u64()) == Some(1)
+        }));
+
         assert!(resolve_project_file_path(&canonical_root, ".reflex/project.json")
             .unwrap_err()
             .contains(".reflex"));

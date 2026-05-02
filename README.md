@@ -97,6 +97,7 @@ The injected runtime overlay provides:
 - `window.reflexMcpServers(params)`
 - `window.reflexProjectFilesList(pathOrParams, recursive?)`
 - `window.reflexProjectFilesRead(pathOrParams)`
+- `window.reflexProjectFilesSearch(queryOrParams, includeContent?)`
 - `window.reflexProjectFilesWrite(pathOrParams, content?)`
 - `window.reflexProjectFilesMkdir(pathOrParams)`
 - `window.reflexProjectFilesDelete(pathOrParams, recursive?)`
@@ -212,6 +213,11 @@ Core methods:
 - `project.files.read({ projectId?, path })` ->
   `{ project_id, project_name, path, size, content }`; reads UTF-8 text up to
   1 MiB. `.reflex` internals are always blocked.
+- `project.files.search({ projectId?, query, path?, recursive?, includeHidden?,
+  includeContent?, limit? })` -> `{ project_id, project_name, query, matches,
+  scanned, truncated }`; searches paths by default and scans UTF-8 file content
+  up to 256 KiB per file when `includeContent` is true. Requires the same read
+  access as `project.files.read`.
 - `project.files.write({ projectId?, path, content, createDirs?, overwrite? })`
   -> `{ ok, project_id, project_name, path, created, size }`; requires
   `project.files.write:<project>` or `project.files.write:*`.

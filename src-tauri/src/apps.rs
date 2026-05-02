@@ -1181,6 +1181,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
     return reflexInvokeRaw('project.files.read', params);
   };
+  window.reflexProjectFilesSearch = function(queryOrParams, includeContent) {
+    var params = (typeof queryOrParams === 'string') ? {query: queryOrParams, includeContent: !!includeContent} : (queryOrParams || {});
+    return reflexInvokeRaw('project.files.search', params);
+  };
   window.reflexProjectFilesWrite = function(pathOrParams, content) {
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams, content: content} : (pathOrParams || {});
     return reflexInvokeRaw('project.files.write', params);
