@@ -1464,6 +1464,16 @@ struct DirEntry {
     is_hidden: bool,
 }
 
+#[derive(Serialize)]
+struct ProjectFileEntry {
+    name: String,
+    path: String,
+    relative_path: String,
+    kind: &'static str,
+    size: Option<u64>,
+    modified_ms: Option<u128>,
+}
+
 #[tauri::command]
 fn reveal_in_finder(path: String) -> Result<(), String> {
     std::process::Command::new("open")
@@ -1526,6 +1536,126 @@ fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
             };
         }
         a.name.to_lowercase().cmp(&b.name.to_lowercase())
+    });
+    Ok(out)
+}
+
+#[tauri::command]
+fn list_project_files(
+    project_root: String,
+    query: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<ProjectFileEntry>, String> {
+    const SKIP_DIRS: &[&str] = &[
+        ".git",
+        ".reflex",
+        "node_modules",
+        "target",
+        "dist",
+        "build",
+        ".next",
+        ".turbo",
+        ".venv",
+        "venv",
+        "__pycache__",
+    ];
+
+    fn visit(
+        root: &Path,
+        dir: &Path,
+        query: &str,
+        out: &mut Vec<ProjectFileEntry>,
+        limit: usize,
+        depth: usize,
+    ) -> Result<(), String> {
+        if out.len() >= limit || depth > 8 {
+            return Ok(());
+        }
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => return Ok(()),
+        };
+        for entry in entries {
+            if out.len() >= limit {
+                break;
+            }
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') && name != ".env" {
+                continue;
+            }
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+            let file_type = metadata.file_type();
+            let kind: &'static str = if file_type.is_symlink() {
+                "symlink"
+            } else if file_type.is_dir() {
+                "directory"
+            } else {
+                "file"
+            };
+            if kind == "directory" && SKIP_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            let path = entry.path();
+            let relative_path = match path.strip_prefix(root) {
+                Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            let haystack = format!("{name} {relative_path}").to_lowercase();
+            if query.is_empty() || haystack.contains(query) {
+                let modified_ms = metadata.modified().ok().and_then(|m| {
+                    m.duration_since(std::time::UNIX_EPOCH)
+                        .ok()
+                        .map(|d| d.as_millis())
+                });
+                let size = if file_type.is_file() {
+                    Some(metadata.len())
+                } else {
+                    None
+                };
+                out.push(ProjectFileEntry {
+                    name,
+                    path: path.to_string_lossy().into_owned(),
+                    relative_path,
+                    kind,
+                    size,
+                    modified_ms,
+                });
+            }
+            if kind == "directory" {
+                visit(root, &path, query, out, limit, depth + 1)?;
+            }
+        }
+        Ok(())
+    }
+
+    let root = PathBuf::from(&project_root);
+    if !root.is_dir() {
+        return Err(format!("not a directory: {project_root}"));
+    }
+    let normalized_query = query.unwrap_or_default().trim().to_lowercase();
+    let limit = limit.unwrap_or(120).clamp(1, 300);
+    let mut out = Vec::new();
+    visit(&root, &root, &normalized_query, &mut out, limit, 0)?;
+    out.sort_by(|a, b| {
+        let dir_a = a.kind == "directory";
+        let dir_b = b.kind == "directory";
+        if dir_a != dir_b {
+            return if dir_a {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            };
+        }
+        a.relative_path
+            .to_lowercase()
+            .cmp(&b.relative_path.to_lowercase())
     });
     Ok(out)
 }
@@ -2683,6 +2813,7 @@ pub fn run() {
             project_watch_start,
             project_watch_stop,
             list_directory,
+            list_project_files,
             reveal_in_finder,
             continue_thread,
             stop_thread,

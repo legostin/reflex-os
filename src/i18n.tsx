@@ -307,6 +307,35 @@ const dictionaries: Record<Locale, Dictionary> = {
     "thread.interruptSendTitle": "Interrupt the agent and send message",
     "thread.sendTitle": "Send",
     "thread.answerPlaceholder": "Answer the agent...",
+    "topicComposer.placeholder":
+      "Message, /command, @file, or attach an image... Cmd+Enter sends.",
+    "topicComposer.toolbar": "Topic composer tools",
+    "topicComposer.commandsTitle": "Show command autocomplete",
+    "topicComposer.filesTitle": "Mention a project file",
+    "topicComposer.imageTitle": "Attach an image",
+    "topicComposer.saveMemoryTitle": "Save the draft to topic memory",
+    "topicComposer.widgetsTitle": "Show or hide embedded widgets",
+    "topicComposer.pickImageTitle": "Attach image",
+    "topicComposer.removeAttachment": "Remove attachment",
+    "topicComposer.memorySaved": "Saved to topic memory.",
+    "topicComposer.commandRemember": "Save memory",
+    "topicComposer.commandRememberHint":
+      "Use /remember text to save directly into topic memory.",
+    "topicComposer.commandRun": "Run command",
+    "topicComposer.commandRunHint":
+      "Ask Codex to execute a shell command in this project.",
+    "topicComposer.commandPlan": "Plan first",
+    "topicComposer.commandPlanHint":
+      "Ask Codex to inspect and produce a plan before edits.",
+    "topicComposer.commandFile": "Mention file",
+    "topicComposer.commandFileHint": "Insert a project file reference with @file.",
+    "topicComposer.commandImage": "Attach image",
+    "topicComposer.commandImageHint": "Send an image path with the next prompt.",
+    "topicComposer.commandApp": "Open utility",
+    "topicComposer.commandAppHint": "Use /app name to launch a Reflex utility.",
+    "topicComposer.commandWidgets": "Toggle widgets",
+    "topicComposer.commandWidgetsHint":
+      "Show or hide widgets from utilities linked to this project.",
     "file.class.text": "Document",
     "file.class.code": "Source code",
     "file.class.image": "Image",
@@ -947,6 +976,37 @@ const dictionaries: Record<Locale, Dictionary> = {
     "thread.interruptSendTitle": "Прервать агента и отправить сообщение",
     "thread.sendTitle": "Отправить",
     "thread.answerPlaceholder": "Ответ агенту...",
+    "topicComposer.placeholder":
+      "Сообщение, /команда, @файл или фото... Cmd+Enter отправляет.",
+    "topicComposer.toolbar": "Инструменты composer топика",
+    "topicComposer.commandsTitle": "Показать автокомплит команд",
+    "topicComposer.filesTitle": "Упомянуть файл проекта",
+    "topicComposer.imageTitle": "Прикрепить изображение",
+    "topicComposer.saveMemoryTitle": "Сохранить черновик в память топика",
+    "topicComposer.widgetsTitle": "Показать или скрыть встроенные виджеты",
+    "topicComposer.pickImageTitle": "Прикрепить изображение",
+    "topicComposer.removeAttachment": "Убрать вложение",
+    "topicComposer.memorySaved": "Сохранено в память топика.",
+    "topicComposer.commandRemember": "Сохранить память",
+    "topicComposer.commandRememberHint":
+      "Используй /remember текст, чтобы сохранить заметку в память топика.",
+    "topicComposer.commandRun": "Запустить команду",
+    "topicComposer.commandRunHint":
+      "Попросить Codex выполнить shell-команду в этом проекте.",
+    "topicComposer.commandPlan": "Сначала план",
+    "topicComposer.commandPlanHint":
+      "Попросить Codex изучить контекст и составить план перед правками.",
+    "topicComposer.commandFile": "Упомянуть файл",
+    "topicComposer.commandFileHint": "Вставить ссылку на файл проекта через @file.",
+    "topicComposer.commandImage": "Прикрепить фото",
+    "topicComposer.commandImageHint":
+      "Передать путь к изображению в следующем сообщении.",
+    "topicComposer.commandApp": "Открыть утилиту",
+    "topicComposer.commandAppHint":
+      "Используй /app название, чтобы запустить утилиту Reflex.",
+    "topicComposer.commandWidgets": "Переключить виджеты",
+    "topicComposer.commandWidgetsHint":
+      "Показать или скрыть виджеты привязанных к проекту утилит.",
     "file.class.text": "Документ",
     "file.class.code": "Исходный код",
     "file.class.image": "Изображение",

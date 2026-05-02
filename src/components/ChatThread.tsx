@@ -16,6 +16,7 @@ import { WidgetGrid, type WidgetSource } from "./widgets/WidgetGrid";
 import { SuggesterModal } from "./projects/SuggesterModal";
 import { BrowserScreen } from "./browser/BrowserScreen";
 import { SettingsScreen } from "./settings/SettingsScreen";
+import { TopicComposer } from "./TopicComposer";
 import {
   BRIDGE_API_GROUPS,
   BRIDGE_HELPER_GROUPS,
@@ -1363,6 +1364,7 @@ export default function ChatThread() {
             threads={threads}
             projects={projects}
             onOpenLink={openLinkFromThread}
+            onOpenApp={(id) => navigate({ kind: "app", app_id: id })}
           />
         );
       case "apps":
@@ -5220,6 +5222,7 @@ function TopicScreen({
   threads,
   projects,
   onOpenLink,
+  onOpenApp,
 }: {
   thread_id: string;
   threads: Thread[];
@@ -5229,11 +5232,60 @@ function TopicScreen({
     url: string,
     ev: React.MouseEvent<HTMLAnchorElement>,
   ) => void;
+  onOpenApp?: (appId: string) => void;
 }) {
   const { t } = useI18n();
   const thread = threads.find((t) => t.id === thread_id);
+  const project = thread
+    ? projects.find((p) => p.id === thread.project_id) ?? null
+    : null;
+  const projectRoot = project?.root ?? thread?.cwd ?? "";
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showRecall, setShowRecall] = useState(false);
+  const [showWidgets, setShowWidgets] = useState(true);
+  const [apps, setApps] = useState<AppManifest[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const refreshApps = () => {
+      invoke<AppManifest[]>("list_apps")
+        .then((list) => {
+          if (alive) setApps(list);
+        })
+        .catch((e) => console.warn("[reflex] list_apps for topic failed", e));
+    };
+
+    refreshApps();
+    let unlisten: (() => void) | null = null;
+    listen("reflex://apps-changed", refreshApps)
+      .then((u) => {
+        unlisten = u;
+      })
+      .catch((e) => console.warn("[reflex] listen apps-changed topic", e));
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, []);
+
+  const widgetSources = useMemo<WidgetSource[]>(() => {
+    if (!project) return [];
+    const linkedIds = new Set(project.apps ?? []);
+    const out: WidgetSource[] = [];
+    for (const app of apps) {
+      if (!linkedIds.has(app.id) || app.ready === false) continue;
+      for (const widget of app.widgets ?? []) {
+        out.push({
+          appId: app.id,
+          appName: app.name,
+          appIcon: app.icon ?? null,
+          widget,
+        });
+      }
+    }
+    return out;
+  }, [apps, project]);
 
   // Scroll to bottom on initial mount / when switching to this thread.
   useEffect(() => {
@@ -5251,8 +5303,6 @@ function TopicScreen({
     );
   }
 
-  const project = projects.find((p) => p.id === thread.project_id);
-  const projectRoot = project?.root ?? thread.cwd ?? "";
   const recallQuery = mostRecentTopicPrompt(thread);
 
   return (
@@ -5276,7 +5326,20 @@ function TopicScreen({
           />
         </li>
       )}
-      <ThreadCard thread={thread} onOpenLink={onOpenLink} />
+      {showWidgets && project && widgetSources.length > 0 && (
+        <li className="chat-widgets-wrap">
+          <WidgetGrid sources={widgetSources} onOpenApp={onOpenApp} />
+        </li>
+      )}
+      <ThreadCard
+        thread={thread}
+        projectRoot={projectRoot || null}
+        apps={apps}
+        widgetsVisible={showWidgets}
+        onToggleWidgets={() => setShowWidgets((v) => !v)}
+        onOpenLink={onOpenLink}
+        onOpenApp={onOpenApp}
+      />
       <div ref={bottomRef} />
     </ol>
   );
@@ -5303,17 +5366,26 @@ function isPlanApprovalText(text: string): boolean {
 
 function ThreadCard({
   thread,
+  projectRoot,
+  apps,
+  widgetsVisible,
+  onToggleWidgets,
   onOpenLink,
+  onOpenApp,
 }: {
   thread: Thread;
+  projectRoot: string | null;
+  apps: AppManifest[];
+  widgetsVisible: boolean;
+  onToggleWidgets: () => void;
   onOpenLink?: (
     threadId: string,
     url: string,
     ev: React.MouseEvent<HTMLAnchorElement>,
   ) => void;
+  onOpenApp?: (appId: string) => void;
 }) {
   const { t } = useI18n();
-  const [followup, setFollowup] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -5352,11 +5424,10 @@ function ThreadCard({
     : t("project.running");
 
   const running = !thread.done;
-  const followupDisabled = submitting;
 
-  async function sendFollowup() {
-    const text = followup.trim();
-    if (!text || followupDisabled) return;
+  async function sendFollowupText(prompt: string) {
+    const text = prompt.trim();
+    if (!text || submitting) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -5375,10 +5446,10 @@ function ThreadCard({
       };
       if (confirmsPlan) args.planConfirmed = true;
       await invoke("continue_thread", args);
-      setFollowup("");
     } catch (e) {
       console.error("[reflex] continue_thread failed", e);
       setError(String(e));
+      throw e;
     } finally {
       setSubmitting(false);
     }
@@ -5505,55 +5576,20 @@ function ThreadCard({
           </button>
         </div>
       )}
-      <div className="chat-followup">
-        {running && (
-          <span className="chat-followup-running">
-            {t("thread.codexWorking")}
-          </span>
-        )}
-        <input
-          className="chat-followup-input"
-          type="text"
-          placeholder={
-            running
-              ? t("thread.placeholderInterrupt")
-              : showPlanBanner
-                ? t("thread.placeholderPlan")
-                : t("thread.placeholderContinue")
-          }
-          value={followup}
-          onChange={(e) => setFollowup(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void sendFollowup();
-            }
-          }}
-          disabled={followupDisabled}
-        />
-        {running && (
-          <button
-            className="chat-followup-button chat-followup-stop"
-            onClick={() => void stopThread()}
-            disabled={stopping || submitting}
-            title={t("thread.stopTitle")}
-          >
-            {stopping ? "..." : t("thread.stop")}
-          </button>
-        )}
-        <button
-          className="chat-followup-button"
-          onClick={() => void sendFollowup()}
-          disabled={followupDisabled || !followup.trim()}
-          title={
-            running
-              ? t("thread.interruptSendTitle")
-              : t("thread.sendTitle")
-          }
-        >
-          {running ? "⤳" : "↵"}
-        </button>
-      </div>
+      <TopicComposer
+        threadId={thread.id}
+        projectRoot={projectRoot}
+        running={running}
+        showPlanBanner={showPlanBanner}
+        submitting={submitting}
+        stopping={stopping}
+        apps={apps}
+        widgetsVisible={widgetsVisible}
+        onSend={sendFollowupText}
+        onStop={stopThread}
+        onOpenApp={onOpenApp}
+        onToggleWidgets={onToggleWidgets}
+      />
       {error && <div className="chat-followup-error">{error}</div>}
     </li>
   );
