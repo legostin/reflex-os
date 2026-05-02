@@ -3108,7 +3108,7 @@ function AppViewer({
     setError(null);
     try {
       const target = await invoke<string | null>("pick_save_file", {
-        title: "Сохранить .reflexapp",
+        title: t("appViewer.exportDialogTitle"),
         defaultName: `${appId}.reflexapp`,
         filterName: "Reflex App",
         filterExtensions: ["reflexapp", "zip"],
@@ -3141,7 +3141,7 @@ function AppViewer({
 
   async function revert() {
     if (busy) return;
-    if (!window.confirm("Откатиться к предыдущей версии? Несохранённые изменения будут потеряны.")) return;
+    if (!window.confirm(t("appViewer.revertConfirm"))) return;
     setBusy("revert");
     setError(null);
     try {
@@ -3195,24 +3195,26 @@ function AppViewer({
               className="appviewer-btn"
               onClick={() => void restartServer()}
               disabled={busy !== null}
-              title="Перезапустить сервер"
+              title={t("appViewer.restartServerTitle")}
             >
-              {busy === "restart" ? "…" : "↻ Перезапуск"}
+              {busy === "restart" ? "..." : `↻ ${t("appViewer.restartServer")}`}
             </button>
           )}
           {isServerRuntime && (
             <button
               className="appviewer-btn"
               onClick={() => setLogsOpen((v) => !v)}
-              title="Показать логи сервера"
+              title={t("appViewer.serverLogsTitle")}
             >
-              {logsOpen ? "▾ Логи" : "▸ Логи"}
+              {logsOpen
+                ? `▾ ${t("appViewer.logs")}`
+                : `▸ ${t("appViewer.logs")}`}
             </button>
           )}
           <button
             className={`appviewer-btn ${bridgeOpen ? "appviewer-btn-primary" : ""}`}
             onClick={() => setBridgeOpen((v) => !v)}
-            title="Показать runtime overlay helpers"
+            title={t("appViewer.runtimeHelpersTitle")}
           >
             {bridgeOpen ? "▾ Bridge" : "▸ Bridge"}
           </button>
@@ -3221,34 +3223,38 @@ function AppViewer({
               className={`appviewer-btn ${inspecting ? "appviewer-btn-primary" : ""}`}
               onClick={toggleInspecting}
               disabled={busy !== null || reviseBusy}
-              title="Кликни по элементу в утилите и опиши, что изменить"
+              title={t("appViewer.inspectorTitle")}
             >
-              {inspecting ? "✕ Инспектор" : "🎯 Инспектор"}
+              {inspecting
+                ? `✕ ${t("appViewer.inspector")}`
+                : `🎯 ${t("appViewer.inspector")}`}
             </button>
           )}
           <button
             className="appviewer-btn"
             onClick={() => void handleEditClick()}
             disabled={busy !== null || openingNested !== null}
-            title="Открыть существующий тред для доработки (привяжется к этой утилите)"
+            title={t("appViewer.editExistingThreadTitle")}
           >
-            {openingNested === "edit" ? "…" : "✏️ Править"}
+            {openingNested === "edit" ? "..." : `✏️ ${t("appViewer.edit")}`}
           </button>
           <button
             className="appviewer-btn"
             onClick={() => void handleNewThreadClick()}
             disabled={busy !== null || openingNested !== null}
-            title="Создать новый тред для изолированных изменений"
+            title={t("appViewer.newThreadTitle")}
           >
-            {openingNested === "new" ? "…" : "🆕 Новый тред"}
+            {openingNested === "new"
+              ? "..."
+              : `🆕 ${t("appViewer.newThread")}`}
           </button>
           <button
             className="appviewer-btn"
             onClick={() => void exportApp()}
             disabled={busy !== null || exporting}
-            title="Экспортировать утилиту в .reflexapp файл"
+            title={t("appViewer.exportTitle")}
           >
-            {exporting ? "…" : "📤 Экспорт"}
+            {exporting ? "..." : `📤 ${t("appViewer.export")}`}
           </button>
         </div>
       </header>
@@ -3388,8 +3394,13 @@ function AppViewer({
       )}
 
       {(manifest?.actions?.length ?? 0) > 0 && (
-        <div className="appviewer-action-strip" aria-label="Actions из manifest">
-          <div className="appviewer-action-strip-title">Действия</div>
+        <div
+          className="appviewer-action-strip"
+          aria-label={t("appViewer.actions")}
+        >
+          <div className="appviewer-action-strip-title">
+            {t("appViewer.actions")}
+          </div>
           <div className="appviewer-action-buttons">
             {(manifest?.actions ?? []).map((action) => (
               <button
@@ -3401,10 +3412,14 @@ function AppViewer({
               >
                 {actionBusy === action.id ? "…" : action.name || action.id}
                 {action.public && (
-                  <span className="appviewer-action-public">публичное</span>
+                  <span className="appviewer-action-public">
+                    {t("appViewer.public")}
+                  </span>
                 )}
                 {!!actionParamsSchema(action) && (
-                  <span className="appviewer-action-public">параметры</span>
+                  <span className="appviewer-action-public">
+                    {t("appViewer.params")}
+                  </span>
                 )}
               </button>
             ))}
@@ -3419,7 +3434,10 @@ function AppViewer({
       )}
 
       {actionDraft && (
-        <div className="appviewer-action-editor" aria-label="Редактор параметров action">
+        <div
+          className="appviewer-action-editor"
+          aria-label={t("appViewer.actionParamsEditor")}
+        >
           <div className="appviewer-action-editor-head">
             <span>{actionDraft.action.name || actionDraft.action.id}</span>
             <code>{actionDraft.action.id}</code>
@@ -3448,14 +3466,14 @@ function AppViewer({
               onClick={() => setActionDraft(null)}
               disabled={actionBusy !== null}
             >
-              Отмена
+              {t("apps.cancel")}
             </button>
             <button
               className="appviewer-btn appviewer-btn-primary"
               onClick={submitActionDraft}
               disabled={actionBusy !== null}
             >
-              Запустить
+              {t("appViewer.run")}
             </button>
           </div>
         </div>
@@ -3463,13 +3481,13 @@ function AppViewer({
 
       {status?.has_changes && (
         <div className="appviewer-banner appviewer-banner-warn">
-          <span>Есть несохранённые изменения.</span>
+          <span>{t("appViewer.unsavedChanges")}</span>
           <div className="appviewer-banner-actions">
             <button
               className="appviewer-btn"
               onClick={() => setShowDiff(true)}
               disabled={busy !== null}
-              title="Посмотреть diff и применить выборочно"
+              title={t("appViewer.diffTitle")}
             >
               🔍 Diff
             </button>
@@ -3481,28 +3499,35 @@ function AppViewer({
               }}
               disabled={busy !== null}
             >
-              {busy === "save" ? "…" : commitOpen ? "Зафиксировать" : "Сохранить"}
+              {busy === "save"
+                ? "..."
+                : commitOpen
+                  ? t("appViewer.commit")
+                  : t("appViewer.save")}
             </button>
             <button
               className="appviewer-btn appviewer-btn-danger"
               onClick={() => void revert()}
               disabled={busy !== null}
             >
-              Откатить
+              {t("appViewer.revert")}
             </button>
             <button
               className="appviewer-btn"
               onClick={() => setReloadKey((k) => k + 1)}
               disabled={busy !== null}
             >
-              Перезагрузить
+              {t("appViewer.reload")}
             </button>
           </div>
         </div>
       )}
 
       {status?.has_changes && commitOpen && (
-        <div className="appviewer-commit-editor" aria-label="Сохранение ревизии">
+        <div
+          className="appviewer-commit-editor"
+          aria-label={t("appViewer.saveRevision")}
+        >
           <input
             className="appviewer-commit-input"
             value={commitDraft}
@@ -3525,14 +3550,14 @@ function AppViewer({
               onClick={() => setCommitOpen(false)}
               disabled={busy !== null}
             >
-              Отмена
+              {t("apps.cancel")}
             </button>
             <button
               className="appviewer-btn appviewer-btn-primary"
               onClick={() => void save()}
               disabled={busy !== null}
             >
-              {busy === "save" ? "…" : "Зафиксировать"}
+              {busy === "save" ? "..." : t("appViewer.commit")}
             </button>
           </div>
         </div>
@@ -3552,7 +3577,7 @@ function AppViewer({
       {lastError && (
         <div className="appviewer-banner appviewer-banner-warn">
           <div className="appviewer-error-summary">
-            <strong>App упал:</strong> {lastError.message}
+            <strong>{t("appViewer.appCrashed")}</strong> {lastError.message}
             {lastError.filename && (
               <span className="appviewer-error-loc">
                 {" · "}
@@ -3565,16 +3590,16 @@ function AppViewer({
               className="appviewer-btn appviewer-btn-primary"
               onClick={() => void submitErrorFix()}
               disabled={reviseBusy}
-              title="Отправить ошибку codex'у с просьбой починить"
+              title={t("appViewer.errorFixTitle")}
             >
-              {reviseBusy ? "…" : "✨ Fix"}
+              {reviseBusy ? "..." : "✨ Fix"}
             </button>
             <button
               className="appviewer-btn"
               onClick={() => setLastError(null)}
               disabled={reviseBusy}
             >
-              Dismiss
+              {t("appViewer.dismiss")}
             </button>
           </div>
         </div>
@@ -3583,14 +3608,16 @@ function AppViewer({
       {pick && (
         <div className="inspector-card">
           <header className="inspector-card-header">
-            <span className="inspector-card-tag">🎯 selected</span>
+            <span className="inspector-card-tag">
+              🎯 {t("appViewer.selected")}
+            </span>
             <code className="inspector-card-selector">
               {pick.selector || pick.tagName}
             </code>
             <button
               className="inspector-card-close"
               onClick={() => setPick(null)}
-              aria-label="Закрыть"
+              aria-label={t("appViewer.close")}
             >
               ×
             </button>
@@ -3603,7 +3630,7 @@ function AppViewer({
           )}
           <textarea
             className="inspector-card-input"
-            placeholder="Что изменить в этом элементе? (Cmd+Enter)"
+            placeholder={t("appViewer.inspectorPlaceholder")}
             autoFocus
             rows={3}
             value={pickInstruction}
@@ -3621,7 +3648,7 @@ function AppViewer({
               onClick={() => void submitInspectorPick()}
               disabled={reviseBusy || !pickInstruction.trim()}
             >
-              {reviseBusy ? "Применяю…" : "Apply (⌘↵)"}
+              {reviseBusy ? t("appViewer.applying") : "Apply (⌘↵)"}
             </button>
           </div>
         </div>
@@ -3634,13 +3661,21 @@ function AppViewer({
           className={`appviewer-banner ${serverState === "failed" || serverState === "crashed" ? "appviewer-banner-warn" : "appviewer-banner-info"}`}
         >
           {serverState === "starting" && (
-            <span>Запускаю локальный сервер утилиты…</span>
+            <span>{t("appViewer.startingServer")}</span>
           )}
           {serverState === "failed" && (
-            <span>Сервер не стартовал: {serverError}</span>
+            <span>
+              {t("appViewer.serverStartFailed", {
+                error: serverError ?? "",
+              })}
+            </span>
           )}
           {serverState === "crashed" && (
-            <span>Сервер упал: {serverError ?? "process exited"}</span>
+            <span>
+              {t("appViewer.serverCrashed", {
+                error: serverError ?? "process exited",
+              })}
+            </span>
           )}
           {(serverState === "failed" || serverState === "crashed") && (
             <div className="appviewer-banner-actions">
@@ -3649,7 +3684,7 @@ function AppViewer({
                 onClick={() => void restartServer()}
                 disabled={busy !== null}
               >
-                Перезапустить
+                {t("appViewer.restartServer")}
               </button>
             </div>
           )}
@@ -3658,17 +3693,17 @@ function AppViewer({
 
       {!isServerRuntime && status && !status.entry_exists ? (
         <div className="appviewer-stuck">
-          <h3>Генерация не завершена</h3>
+          <h3>{t("appViewer.generationIncomplete")}</h3>
           <p>
-            Codex ещё не записал <code>{entry}</code>. Возможно процесс прерван
-            или сейчас в плане ждёт подтверждения.
+            {t("appViewer.generationIncompleteBefore")} <code>{entry}</code>{" "}
+            {t("appViewer.generationIncompleteAfter")}
           </p>
           <div className="appviewer-stuck-actions">
             <button
               className="appviewer-btn"
               onClick={() => setReloadKey((n) => n + 1)}
             >
-              Проверить ещё раз
+              {t("appViewer.checkAgain")}
             </button>
             <button
               className="appviewer-btn appviewer-btn-danger"
@@ -3676,7 +3711,9 @@ function AppViewer({
               onClick={async () => {
                 if (
                   !window.confirm(
-                    `Переместить "${manifest?.name ?? appId}" в корзину?`,
+                    t("apps.deleteConfirm", {
+                      name: manifest?.name ?? appId,
+                    }),
                   )
                 )
                   return;
@@ -3688,7 +3725,7 @@ function AppViewer({
                 }
               }}
             >
-              В корзину
+              {t("apps.moveToTrash")}
             </button>
           </div>
         </div>
@@ -3709,7 +3746,7 @@ function AppViewer({
         <div className="server-logs">
           <div className="server-logs-header">
             <span>
-              логи сервера
+              {t("appViewer.serverLogs")}
               {serverPort != null && (
                 <span className="server-logs-port"> · :{serverPort}</span>
               )}
@@ -3717,14 +3754,14 @@ function AppViewer({
             <button
               className="server-logs-clear"
               onClick={() => setLogs([])}
-              title="Очистить локальный буфер логов"
+              title={t("appViewer.clearLogsTitle")}
             >
-              очистить
+              {t("appViewer.clear")}
             </button>
           </div>
           <div className="server-logs-body">
             {logs.length === 0 ? (
-              <div className="server-logs-empty">пусто</div>
+              <div className="server-logs-empty">{t("appViewer.empty")}</div>
             ) : (
               logs.map((l) => (
                 <div
@@ -3752,9 +3789,9 @@ function AppViewer({
           >
             <nav className="nested-tabs">
               {nestedTabs.map((tid) => {
-                const t = threads.find((x) => x.id === tid);
+                const thread = threads.find((x) => x.id === tid);
                 const label =
-                  t?.title ?? t?.prompt?.slice(0, 32) ?? tid;
+                  thread?.title ?? thread?.prompt?.slice(0, 32) ?? tid;
                 const active = activeNested === tid;
                 return (
                   <div
@@ -3770,7 +3807,7 @@ function AppViewer({
                         e.stopPropagation();
                         closeNested(tid);
                       }}
-                      aria-label="Закрыть"
+                      aria-label={t("appViewer.close")}
                     >
                       ×
                     </button>
@@ -3787,7 +3824,7 @@ function AppViewer({
                 />
               ) : (
                 <div className="chat-empty">
-                  <p>Выбери тред слева.</p>
+                  <p>{t("appViewer.selectThread")}</p>
                 </div>
               )}
             </div>
