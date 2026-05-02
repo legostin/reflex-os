@@ -20,6 +20,7 @@ pub async fn dispatch_app_method(
 ) -> Result<serde_json::Value, String> {
     eprintln!("[reflex] dispatch app={app_id} method={method}");
     match method {
+        "bridge.catalog" => bridge_catalog_for_app(app, app_id),
         "system.context" => system_context(app, app_id),
         "system.openUrl" | "system.open_url" => system_open_url(app, &params),
         "system.openPath" | "system.open_path" => system_open_path(app, app_id, &params),
@@ -922,6 +923,288 @@ fn normalize_widget_size(raw: &str) -> Result<String, String> {
 
 fn emit_apps_changed(app: &AppHandle) {
     let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+}
+
+fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let methods = vec![
+        bridge_group(
+            "Система и manifest",
+            &[
+                "bridge.catalog",
+                "system.context",
+                "system.openUrl",
+                "system.openPath",
+                "system.revealPath",
+                "logs.write",
+                "logs.list",
+                "manifest.get",
+                "manifest.update",
+                "widgets.list",
+                "widgets.upsert",
+                "widgets.delete",
+                "actions.list",
+                "actions.upsert",
+                "actions.delete",
+            ],
+        ),
+        bridge_group(
+            "Агентный runtime",
+            &[
+                "agent.ask",
+                "agent.startTopic",
+                "agent.task",
+                "agent.stream",
+                "agent.streamAbort",
+            ],
+        ),
+        bridge_group(
+            "Данные app и файлы",
+            &[
+                "storage.get",
+                "storage.set",
+                "storage.list",
+                "storage.delete",
+                "fs.read",
+                "fs.list",
+                "fs.write",
+                "fs.delete",
+            ],
+        ),
+        bridge_group(
+            "Проекты и топики",
+            &[
+                "projects.list",
+                "projects.open",
+                "topics.list",
+                "topics.open",
+                "skills.list",
+                "mcp.servers",
+            ],
+        ),
+        bridge_group(
+            "Browser sidecar",
+            &[
+                "browser.init",
+                "browser.tabs.list",
+                "browser.open",
+                "browser.navigate",
+                "browser.readText",
+                "browser.readOutline",
+                "browser.screenshot",
+                "browser.clickText",
+                "browser.clickSelector",
+                "browser.fill",
+            ],
+        ),
+        bridge_group(
+            "Нативный macOS",
+            &[
+                "clipboard.readText",
+                "clipboard.writeText",
+                "dialog.openDirectory",
+                "dialog.openFile",
+                "dialog.saveFile",
+                "notify.show",
+            ],
+        ),
+        bridge_group("Сеть", &["net.fetch"]),
+        bridge_group(
+            "Память",
+            &[
+                "memory.save",
+                "memory.read",
+                "memory.update",
+                "memory.list",
+                "memory.delete",
+                "memory.search",
+                "memory.recall",
+                "memory.indexPath",
+                "memory.pathStatus",
+                "memory.forgetPath",
+            ],
+        ),
+        bridge_group(
+            "Автоматизации",
+            &[
+                "scheduler.list",
+                "scheduler.upsert",
+                "scheduler.delete",
+                "scheduler.runNow",
+                "scheduler.setPaused",
+                "scheduler.runs",
+                "scheduler.runDetail",
+            ],
+        ),
+        bridge_group(
+            "Сетка apps",
+            &[
+                "events.emit",
+                "events.subscribe",
+                "events.unsubscribe",
+                "apps.list",
+                "apps.open",
+                "apps.invoke",
+                "apps.list_actions",
+            ],
+        ),
+    ];
+    let helpers = vec![
+        bridge_group(
+            "Core",
+            &[
+                "reflexInvoke",
+                "reflexBridgeCatalog",
+                "reflexSystemContext",
+                "reflexSystemOpenUrl",
+                "reflexSystemOpenPath",
+                "reflexSystemRevealPath",
+                "reflexLog",
+                "reflexLogList",
+                "reflexManifestGet",
+                "reflexManifestUpdate",
+                "reflexWidgetsList",
+                "reflexWidgetsUpsert",
+                "reflexWidgetsDelete",
+                "reflexActionsList",
+                "reflexActionsUpsert",
+                "reflexActionsDelete",
+                "reflexCapabilities",
+            ],
+        ),
+        bridge_group(
+            "Agent",
+            &[
+                "reflexAgentAsk",
+                "reflexAgentStartTopic",
+                "reflexAgentTask",
+                "reflexAgentStream",
+                "reflexAgentStreamAbort",
+            ],
+        ),
+        bridge_group(
+            "Storage / IO",
+            &[
+                "reflexStorageGet",
+                "reflexStorageSet",
+                "reflexStorageList",
+                "reflexStorageDelete",
+                "reflexFsRead",
+                "reflexFsList",
+                "reflexFsWrite",
+                "reflexFsDelete",
+                "reflexClipboardReadText",
+                "reflexClipboardWriteText",
+                "reflexNetFetch",
+                "reflexNotifyShow",
+                "reflexDialogOpenDirectory",
+                "reflexDialogOpenFile",
+                "reflexDialogSaveFile",
+            ],
+        ),
+        bridge_group(
+            "Projects / Browser",
+            &[
+                "reflexProjectsList",
+                "reflexProjectsOpen",
+                "reflexTopicsList",
+                "reflexTopicsOpen",
+                "reflexSkillsList",
+                "reflexMcpServers",
+                "reflexBrowserInit",
+                "reflexBrowserTabs",
+                "reflexBrowserOpen",
+                "reflexBrowserNavigate",
+                "reflexBrowserReadText",
+                "reflexBrowserReadOutline",
+                "reflexBrowserScreenshot",
+                "reflexBrowserClickText",
+                "reflexBrowserClickSelector",
+                "reflexBrowserFill",
+            ],
+        ),
+        bridge_group(
+            "Memory / Automation / Apps",
+            &[
+                "reflexMemorySave",
+                "reflexMemoryRead",
+                "reflexMemoryUpdate",
+                "reflexMemoryList",
+                "reflexMemoryDelete",
+                "reflexMemorySearch",
+                "reflexMemoryRecall",
+                "reflexMemoryIndexPath",
+                "reflexMemoryPathStatus",
+                "reflexMemoryForgetPath",
+                "reflexSchedulerList",
+                "reflexSchedulerUpsert",
+                "reflexSchedulerDelete",
+                "reflexSchedulerRunNow",
+                "reflexSchedulerSetPaused",
+                "reflexSchedulerRuns",
+                "reflexSchedulerRunDetail",
+                "reflexAppsList",
+                "reflexAppsOpen",
+                "reflexAppsInvoke",
+                "reflexAppsListActions",
+                "reflexEventOn",
+                "reflexEventOff",
+                "reflexEventEmit",
+            ],
+        ),
+    ];
+
+    Ok(serde_json::json!({
+        "version": 1,
+        "methods": methods,
+        "helpers": helpers,
+        "permissions": bridge_permission_hints(),
+        "app": {
+            "id": manifest.id,
+            "runtime": manifest.runtime.unwrap_or_else(|| "static".into()),
+            "permissions": manifest.permissions,
+            "network_hosts": manifest
+                .network
+                .map(|n| n.allowed_hosts)
+                .unwrap_or_default(),
+        },
+        "notes": {
+            "scheduler_ui_blocklist": [
+                "dialog.*",
+                "clipboard.*",
+                "system.openUrl",
+                "system.openPath",
+                "system.revealPath",
+                "apps.open",
+                "projects.open",
+                "topics.open"
+            ],
+            "network": "net.fetch requires manifest.network.allowed_hosts",
+            "cross_project": "linked projects are available by default; other projects require scoped permissions"
+        }
+    }))
+}
+
+fn bridge_group(title: &str, items: &[&str]) -> serde_json::Value {
+    serde_json::json!({
+        "title": title,
+        "items": items,
+    })
+}
+
+fn bridge_permission_hints() -> serde_json::Value {
+    serde_json::json!([
+        { "scope": "clipboard", "grants": ["clipboard.read", "clipboard.write", "clipboard:*"] },
+        { "scope": "browser", "grants": ["browser.read", "browser.control", "browser:*", "browser.project:<project>"] },
+        { "scope": "projects", "grants": ["projects.read:*"] },
+        { "scope": "topics", "grants": ["topics.read:<project>", "topics.read:*"] },
+        { "scope": "skills", "grants": ["skills.read:<project>", "skills.read:*"] },
+        { "scope": "mcp", "grants": ["mcp.read:<project>", "mcp.read:*"] },
+        { "scope": "memory", "grants": ["memory.global.read", "memory.global.write"] },
+        { "scope": "agent", "grants": ["agent.project:<project>", "agent.project:*", "agent.cwd:*"] },
+        { "scope": "scheduler", "grants": ["scheduler.read:*", "scheduler.run:<app>", "scheduler.write:<app>::<schedule>", "scheduler.write:*", "scheduler:*"] },
+        { "scope": "apps", "grants": ["apps.invoke:*", "apps.invoke:<app>", "apps.invoke:<app>::<action>"] }
+    ])
 }
 
 fn actions_list_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {

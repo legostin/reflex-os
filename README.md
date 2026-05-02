@@ -46,6 +46,7 @@ Every generated app has a `manifest.json` and one of two runtimes:
 The injected runtime overlay provides:
 
 - `window.reflexInvoke(method, params)`
+- `window.reflexBridgeCatalog()`
 - `window.reflexSystemContext()`
 - `window.reflexSystemOpenUrl(urlOrParams)`
 - `window.reflexSystemOpenPath(pathOrParams)`
@@ -126,6 +127,8 @@ The injected runtime overlay provides:
 
 Core methods:
 
+- `bridge.catalog()` -> runtime catalog of bridge methods, overlay helpers,
+  permission hints, and this app's current bridge grants.
 - `system.context()` -> app id/root, manifest, app project summary, linked
   project summaries, and memory defaults.
 - `system.openUrl({ url })` -> open an `http`, `https`, `mailto`, or `tel`

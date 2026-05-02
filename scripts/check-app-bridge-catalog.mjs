@@ -65,6 +65,16 @@ const promptHelperBlock = sliceBetween(
   "В iframe runtime overlay уже есть helpers",
   "Permissions для apps.invoke",
 );
+const runtimeCatalogMethodBlock = sliceBetween(
+  dispatch,
+  "let methods = vec![",
+  "let helpers = vec![",
+);
+const runtimeCatalogHelperBlock = sliceBetween(
+  dispatch,
+  "let helpers = vec![",
+  "Ok(serde_json::json!",
+);
 
 const catalogMethods = setFromMatches(
   apiBlock,
@@ -88,6 +98,14 @@ const readmeHelpers = setFromMatches(
   /window\.(reflex[A-Za-z0-9_]+)/g,
 );
 const promptHelpers = setFromMatches(promptHelperBlock, /\b(reflex[A-Za-z0-9_]+)\b/g);
+const runtimeCatalogMethods = setFromMatches(
+  runtimeCatalogMethodBlock,
+  /"([a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)"/g,
+);
+const runtimeCatalogHelpers = setFromMatches(
+  runtimeCatalogHelperBlock,
+  /"(reflex[A-Za-z0-9_]+)"/g,
+);
 
 const dispatchMethods = new Set();
 for (const arm of dispatchBlock.matchAll(
@@ -150,6 +168,16 @@ recordDiff(
 );
 recordDiff(
   failures,
+  "Catalog API methods missing from bridge.catalog runtime payload",
+  difference(catalogMethods, runtimeCatalogMethods),
+);
+recordDiff(
+  failures,
+  "bridge.catalog runtime methods missing from src/appBridgeCatalog.ts",
+  difference(runtimeCatalogMethods, catalogMethods),
+);
+recordDiff(
+  failures,
   "Catalog helpers missing from runtime overlay",
   difference(catalogHelpers, overlayHelpers),
 );
@@ -177,6 +205,16 @@ recordDiff(
   failures,
   "App creation prompt helpers missing from src/appBridgeCatalog.ts",
   difference(promptHelpers, catalogHelpers),
+);
+recordDiff(
+  failures,
+  "Catalog helpers missing from bridge.catalog runtime payload",
+  difference(catalogHelpers, runtimeCatalogHelpers),
+);
+recordDiff(
+  failures,
+  "bridge.catalog runtime helpers missing from src/appBridgeCatalog.ts",
+  difference(runtimeCatalogHelpers, catalogHelpers),
 );
 
 if (failures.length > 0) {

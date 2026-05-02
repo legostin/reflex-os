@@ -938,6 +938,9 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     return reflexInvokeRaw('apps.open', params);
   };
   window.reflexInvoke = reflexInvokeRaw;
+  window.reflexBridgeCatalog = function() {
+    return reflexInvokeRaw('bridge.catalog', {});
+  };
   window.reflexSystemContext = function() {
     return reflexInvokeRaw('system.context', {});
   };

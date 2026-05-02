@@ -2,6 +2,7 @@ export const BRIDGE_API_GROUPS = [
   {
     title: "Система и manifest",
     methods: [
+      "bridge.catalog",
       "system.context",
       "system.openUrl",
       "system.openPath",
@@ -128,6 +129,7 @@ export const BRIDGE_HELPER_GROUPS = [
     title: "Core",
     helpers: [
       "reflexInvoke",
+      "reflexBridgeCatalog",
       "reflexSystemContext",
       "reflexSystemOpenUrl",
       "reflexSystemOpenPath",
