@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useI18n } from "../i18n";
 import "./QuickPanel.css";
 
 type QuickContext = {
@@ -38,6 +39,7 @@ function basename(p: string): string {
 }
 
 export default function QuickPanel() {
+  const { t } = useI18n();
   const [payload, setPayload] = useState<QuickOpenPayload>(EMPTY_PAYLOAD);
   const [project, setProject] = useState<Project | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -92,7 +94,7 @@ export default function QuickPanel() {
     const text = inputRef.current?.value.trim() ?? "";
     if (!text || busy) return;
     if (!projectRef.current) {
-      setError("Выбери или создай проект");
+      setError(t("quick.selectOrCreateProject"));
       return;
     }
     setBusy(true);
@@ -139,8 +141,8 @@ export default function QuickPanel() {
             type="text"
             placeholder={
               project
-                ? `Спросить ${project.name}…`
-                : "Сначала выбери или создай проект"
+                ? t("quick.askProject", { name: project.name })
+                : t("quick.chooseProjectFirst")
             }
             value={prompt}
             onChange={(e) => setPrompt(e.currentTarget.value)}
@@ -149,7 +151,8 @@ export default function QuickPanel() {
             disabled={busy}
           />
           <span className="quick-hint">
-            <kbd>↵</kbd> отправить · <kbd>esc</kbd> закрыть
+            <kbd>↵</kbd> {t("quick.submitHint")} · <kbd>esc</kbd>{" "}
+            {t("quick.closeHint")}
           </span>
         </div>
 
@@ -168,10 +171,12 @@ export default function QuickPanel() {
               disabled={busy}
               title={payload.candidate_root}
             >
-              + Создать проект «{basename(payload.candidate_root)}»
+              {t("quick.createProject", {
+                name: basename(payload.candidate_root),
+              })}
             </button>
           ) : (
-            <span className="quick-muted">Нет открытой папки в Finder</span>
+            <span className="quick-muted">{t("quick.noFinderFolder")}</span>
           )}
 
           {payload.nearest.length > 0 && (
@@ -185,7 +190,7 @@ export default function QuickPanel() {
               }}
             >
               <option value="" disabled>
-                выбрать существующий…
+                {t("quick.chooseExisting")}
               </option>
               {payload.nearest.map((p) => (
                 <option key={p.id} value={p.id}>
