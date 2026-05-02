@@ -80,13 +80,13 @@ export default function RecallView({
   return (
     <div className="recall-root">
       <div className="recall-header">
-        <h3 className="recall-title">Recall</h3>
+        <h3 className="recall-title">Контекст памяти</h3>
         <span className="recall-query" title={query}>
-          {query || "(no query)"}
+          {query || "(нет запроса)"}
         </span>
       </div>
 
-      {loading && <div className="recall-loading">Recalling...</div>}
+      {loading && <div className="recall-loading">Собираю контекст...</div>}
       {error && <div className="memory-error">{error}</div>}
 
       {result && (
@@ -106,7 +106,7 @@ export default function RecallView({
               onClick={() => toggle("project")}
             >
               <span>{collapsed.project ? ">" : "v"}</span>
-              <span>Project memory</span>
+              <span>Память проекта</span>
               <span className="recall-section-count">
                 {projectNotes.length}
               </span>
@@ -114,7 +114,7 @@ export default function RecallView({
             {!collapsed.project && (
               <ul className="recall-list">
                 {projectNotes.length === 0 ? (
-                  <li className="memory-empty">No matching project notes.</li>
+                  <li className="memory-empty">Нет подходящих проектных заметок.</li>
                 ) : (
                   projectNotes.map((n) => (
                     <li key={n.rel_path} className="recall-list-item">
@@ -133,13 +133,13 @@ export default function RecallView({
               onClick={() => toggle("topic")}
             >
               <span>{collapsed.topic ? ">" : "v"}</span>
-              <span>Topic memory</span>
+              <span>Память топика</span>
               <span className="recall-section-count">{topicNotes.length}</span>
             </button>
             {!collapsed.topic && (
               <ul className="recall-list">
                 {topicNotes.length === 0 ? (
-                  <li className="memory-empty">No matching topic notes.</li>
+                  <li className="memory-empty">Нет подходящих заметок топика.</li>
                 ) : (
                   topicNotes.map((n) => (
                     <li key={n.rel_path} className="recall-list-item">
@@ -158,13 +158,13 @@ export default function RecallView({
               onClick={() => toggle("rag")}
             >
               <span>{collapsed.rag ? ">" : "v"}</span>
-              <span>RAG hits</span>
+              <span>RAG совпадения</span>
               <span className="recall-section-count">{ragHits.length}</span>
             </button>
             {!collapsed.rag && (
               <ul className="recall-list">
                 {ragHits.length === 0 ? (
-                  <li className="memory-empty">No RAG hits.</li>
+                  <li className="memory-empty">Нет RAG совпадений.</li>
                 ) : (
                   ragHits.map((hit, i) => (
                     <li
@@ -173,7 +173,7 @@ export default function RecallView({
                     >
                       <div className="recall-rag-meta">
                         <span>{hit.kind}</span>
-                        <span>score {hit.score.toFixed(3)}</span>
+                        <span>оценка {hit.score.toFixed(3)}</span>
                         {hit.source && <span>{hit.source}</span>}
                       </div>
                       <pre className="recall-rag-chunk">{hit.chunk}</pre>

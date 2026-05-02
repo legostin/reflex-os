@@ -37,6 +37,22 @@ function parseTags(input: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+function scopeLabel(scope: MemoryScope): string {
+  if (scope === "global") return "Глобальная";
+  if (scope === "project") return "Проект";
+  return "Топик";
+}
+
+function kindLabel(kind: MemoryKind): string {
+  if (kind === "user") return "Пользователь";
+  if (kind === "project") return "Проект";
+  if (kind === "feedback") return "Обратная связь";
+  if (kind === "reference") return "Справка";
+  if (kind === "tool") return "Инструмент";
+  if (kind === "system") return "Система";
+  return "Факт";
+}
+
 export default function MemoryEditor(props: MemoryEditorProps) {
   const { initialScope, projectRoot, threadId, existing, onSaved, onCancel } =
     props;
@@ -72,7 +88,7 @@ export default function MemoryEditor(props: MemoryEditorProps) {
   async function handleSave() {
     if (saving) return;
     if (!name.trim()) {
-      setError("Name is required");
+      setError("Укажи название");
       return;
     }
     setSaving(true);
@@ -108,7 +124,7 @@ export default function MemoryEditor(props: MemoryEditorProps) {
       <div className="memory-editor-row-inline">
         <div className="memory-editor-row">
           <label className="memory-label" htmlFor="memory-scope">
-            Scope
+            Область
           </label>
           <select
             id="memory-scope"
@@ -119,14 +135,14 @@ export default function MemoryEditor(props: MemoryEditorProps) {
           >
             {MEMORY_SCOPES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {scopeLabel(s)}
               </option>
             ))}
           </select>
         </div>
         <div className="memory-editor-row">
           <label className="memory-label" htmlFor="memory-kind">
-            Kind
+            Тип
           </label>
           <select
             id="memory-kind"
@@ -136,7 +152,7 @@ export default function MemoryEditor(props: MemoryEditorProps) {
           >
             {MEMORY_KINDS.map((k) => (
               <option key={k} value={k}>
-                {k}
+                {kindLabel(k)}
               </option>
             ))}
           </select>
@@ -145,35 +161,35 @@ export default function MemoryEditor(props: MemoryEditorProps) {
 
       <div className="memory-editor-row">
         <label className="memory-label" htmlFor="memory-name">
-          Name
+          Название
         </label>
         <input
           id="memory-name"
           className="memory-input"
           type="text"
           value={name}
-          placeholder="Short descriptive name"
+          placeholder="Короткое понятное название"
           onChange={(e) => setName(e.currentTarget.value)}
         />
       </div>
 
       <div className="memory-editor-row">
         <label className="memory-label" htmlFor="memory-description">
-          Description
+          Описание
         </label>
         <input
           id="memory-description"
           className="memory-input"
           type="text"
           value={description}
-          placeholder="One-line summary"
+          placeholder="Краткое описание в одну строку"
           onChange={(e) => setDescription(e.currentTarget.value)}
         />
       </div>
 
       <div className="memory-editor-row">
         <label className="memory-label" htmlFor="memory-tags">
-          Tags (comma-separated)
+          Теги через запятую
         </label>
         <input
           id="memory-tags"
@@ -187,13 +203,13 @@ export default function MemoryEditor(props: MemoryEditorProps) {
 
       <div className="memory-editor-row">
         <label className="memory-label" htmlFor="memory-body">
-          Body (markdown)
+          Текст заметки
         </label>
         <textarea
           id="memory-body"
           className="memory-textarea"
           value={body}
-          placeholder="Write the note body in markdown..."
+          placeholder="Напиши заметку в Markdown..."
           onChange={(e) => setBody(e.currentTarget.value)}
         />
       </div>
@@ -207,7 +223,7 @@ export default function MemoryEditor(props: MemoryEditorProps) {
           onClick={onCancel}
           disabled={saving}
         >
-          Cancel
+          Отмена
         </button>
         <button
           type="button"
@@ -215,7 +231,7 @@ export default function MemoryEditor(props: MemoryEditorProps) {
           onClick={() => void handleSave()}
           disabled={saving}
         >
-          {saving ? "Saving..." : isEdit ? "Save changes" : "Create note"}
+          {saving ? "Сохранение..." : isEdit ? "Сохранить" : "Создать заметку"}
         </button>
       </div>
     </div>

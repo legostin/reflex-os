@@ -43,7 +43,7 @@ export default function SearchBox({
         <input
           type="text"
           className="memory-input"
-          placeholder="Search memory and indexed docs..."
+          placeholder="Поиск по памяти и индексированным документам..."
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
           onKeyDown={(e) => {
@@ -59,7 +59,7 @@ export default function SearchBox({
           onClick={() => void runSearch()}
           disabled={loading || !query.trim() || !projectRoot}
         >
-          {loading ? "Searching..." : "Search"}
+          {loading ? "Поиск..." : "Искать"}
         </button>
       </div>
 
@@ -67,13 +67,13 @@ export default function SearchBox({
 
       <ul className="memory-search-results">
         {hits.length === 0 && !loading && query && !error && (
-          <li className="memory-empty">No results.</li>
+          <li className="memory-empty">Ничего не найдено.</li>
         )}
         {hits.map((hit, i) => (
           <li key={`${hit.doc_id}:${i}`} className="recall-list-item">
             <div className="recall-rag-meta">
               <span>{hit.kind}</span>
-              <span>score {hit.score.toFixed(3)}</span>
+              <span>оценка {hit.score.toFixed(3)}</span>
               {hit.source && <span>{hit.source}</span>}
             </div>
             <pre className="recall-rag-chunk">{hit.chunk}</pre>

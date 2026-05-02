@@ -59,32 +59,54 @@ interface MemoryStats {
 
 function relativeTime(ms: number): string {
   const diff = Date.now() - ms;
-  if (diff < 0) return "just now";
+  if (diff < 0) return "только что";
   const sec = Math.floor(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
+  if (sec < 60) return `${sec}с назад`;
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return `${min}м назад`;
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return `${hr}ч назад`;
   const day = Math.floor(hr / 24);
-  if (day < 30) return `${day}d ago`;
+  if (day < 30) return `${day}д назад`;
   const mon = Math.floor(day / 30);
-  if (mon < 12) return `${mon}mo ago`;
+  if (mon < 12) return `${mon}мес назад`;
   const yr = Math.floor(day / 365);
-  return `${yr}y ago`;
+  return `${yr}г назад`;
 }
 
 function indexedLabel(stats: MemoryStats | null, loading: boolean): string {
-  if (loading) return "loading";
-  if (!stats?.last_indexed_at_ms) return "not indexed";
+  if (loading) return "загрузка";
+  if (!stats?.last_indexed_at_ms) return "нет индекса";
   return relativeTime(stats.last_indexed_at_ms);
 }
 
 function memoryHealthLabel(stats: MemoryStats | null): string {
-  if (!stats) return "RAG index";
-  if (stats.missing > 0) return `${stats.missing} missing`;
-  if (stats.stale > 0) return `${stats.stale} stale`;
-  return "healthy";
+  if (!stats) return "RAG индекс";
+  if (stats.missing > 0) return `${stats.missing} отсутствует`;
+  if (stats.stale > 0) return `${stats.stale} устарело`;
+  return "в норме";
+}
+
+function scopeLabel(scope: MemoryScope): string {
+  if (scope === "global") return "Глобальная";
+  if (scope === "project") return "Проект";
+  return "Топик";
+}
+
+function viewLabel(view: MemoryView): string {
+  if (view === "notes") return "Заметки";
+  if (view === "recall") return "Вспомнить";
+  return "Поиск";
+}
+
+function kindLabel(kind: MemoryKind): string {
+  if (kind === "user") return "Пользователь";
+  if (kind === "project") return "Проект";
+  if (kind === "feedback") return "Обратная связь";
+  if (kind === "reference") return "Справка";
+  if (kind === "tool") return "Инструмент";
+  if (kind === "system") return "Система";
+  return "Факт";
 }
 
 type EditorState =
@@ -166,7 +188,7 @@ export default function MemoryPanel({
     setReindexMessage(null);
     try {
       const indexed = await invoke<number>("memory_reindex", { projectRoot });
-      setReindexMessage(`reindexed ${indexed} docs`);
+      setReindexMessage(`переиндексировано ${indexed} док.`);
       await refreshStats();
     } catch (e) {
       setStatsError(String(e));
@@ -223,7 +245,7 @@ export default function MemoryPanel({
 
   async function handleDelete(note: MemoryNote) {
     const ok = window.confirm(
-      `Delete memory "${note.front.name}"? This cannot be undone.`,
+      `Удалить память "${note.front.name}"? Это действие нельзя отменить.`,
     );
     if (!ok) return;
     try {
@@ -268,10 +290,10 @@ export default function MemoryPanel({
 
   const filterActive = !!activeFilter;
   const contextLabel = threadId
-    ? `Topic ${threadId}`
+    ? `Топик ${threadId}`
     : projectRoot
-      ? "Project memory"
-      : "Global memory";
+      ? "Память проекта"
+      : "Глобальная память";
 
   function runRecall() {
     const q = recallInput.trim();
@@ -289,9 +311,9 @@ export default function MemoryPanel({
     <div className="memory-root">
       <header className="memory-header">
         <div>
-          <h1 className="memory-title">Reflex Memory</h1>
+          <h1 className="memory-title">Память Reflex</h1>
           <p className="memory-subtitle">
-            Durable notes, recall context, and indexed project knowledge.
+            Долгая память, контекст вспоминания и индексированные знания проекта.
           </p>
         </div>
         <div className="memory-actions">
@@ -303,9 +325,9 @@ export default function MemoryPanel({
               void refreshStats();
             }}
             disabled={loading}
-            title="Refresh"
+            title="Обновить"
           >
-            {loading ? "Loading..." : "Refresh"}
+            {loading ? "Загрузка..." : "Обновить"}
           </button>
           <button
             type="button"
@@ -314,11 +336,11 @@ export default function MemoryPanel({
             disabled={newDisabled}
             title={
               newDisabled
-                ? "Open a project (and topic) to add a scoped memory"
-                : "Create a new note"
+                ? "Открой проект или топик, чтобы добавить память в нужной области"
+                : "Создать заметку"
             }
           >
-            + New
+            + Новая
           </button>
         </div>
       </header>
@@ -342,23 +364,23 @@ export default function MemoryPanel({
         >
           <span className="memory-stat">
             <strong>{stats?.docs ?? 0}</strong>
-            <span>docs</span>
+            <span>док.</span>
           </span>
           <span className="memory-stat">
             <strong>{stats?.chunks ?? 0}</strong>
-            <span>chunks</span>
+            <span>чанки</span>
           </span>
           <span className="memory-stat">
             <strong>{stats?.sources ?? 0}</strong>
-            <span>sources</span>
+            <span>источники</span>
           </span>
           <span className="memory-stat">
             <strong>{stats?.stale ?? 0}</strong>
-            <span>stale</span>
+            <span>устар.</span>
           </span>
           <span className="memory-stat">
             <strong>{stats?.missing ?? 0}</strong>
-            <span>missing</span>
+            <span>нет</span>
           </span>
           <span className="memory-stat memory-stat-wide">
             <strong>{indexedLabel(stats, statsLoading)}</strong>
@@ -369,22 +391,22 @@ export default function MemoryPanel({
             className="memory-reindex-btn"
             onClick={() => void reindexProject()}
             disabled={reindexing || statsLoading}
-            title="Rebuild supported project-file RAG entries"
+            title="Переиндексировать поддерживаемые файлы проекта"
           >
-            {reindexing ? "Reindexing..." : "Reindex"}
+            {reindexing ? "Индексация..." : "Переиндекс."}
           </button>
           {reindexMessage && (
             <span className="memory-stat-note">{reindexMessage}</span>
           )}
           {statsError && (
             <span className="memory-stat-error" title={statsError}>
-              stats unavailable
+              статистика недоступна
             </span>
           )}
         </div>
       )}
 
-      <div className="memory-view-tabs" role="tablist" aria-label="Memory view">
+      <div className="memory-view-tabs" role="tablist" aria-label="Раздел памяти">
         {(["notes", "recall", "search"] as MemoryView[]).map((v) => (
           <button
             key={v}
@@ -394,13 +416,13 @@ export default function MemoryPanel({
             disabled={(v === "recall" && !canRecall) || (v === "search" && !canSearch)}
             title={
               v === "recall" && !canRecall
-                ? "Open Memory from a topic to run recall"
+                ? "Открой память из топика, чтобы вспомнить контекст"
                 : v === "search" && !canSearch
-                  ? "Open a project to search indexed memory"
+                  ? "Открой проект, чтобы искать в индексе памяти"
                   : undefined
             }
           >
-            {v === "notes" ? "Notes" : v === "recall" ? "Recall" : "Search"}
+            {viewLabel(v)}
           </button>
         ))}
       </div>
@@ -414,7 +436,7 @@ export default function MemoryPanel({
               className={`memory-tab ${scope === s ? "active" : ""}`}
               onClick={() => setScope(s)}
             >
-              {s.charAt(0).toUpperCase() + s.slice(1)}
+              {scopeLabel(s)}
             </button>
           ))}
         </div>
@@ -439,7 +461,7 @@ export default function MemoryPanel({
             type="text"
             className="memory-input"
             value={queryFilter}
-            placeholder="Filter notes by text..."
+            placeholder="Фильтр заметок по тексту..."
             onChange={(e) => setQueryFilter(e.currentTarget.value)}
           />
           <select
@@ -448,12 +470,12 @@ export default function MemoryPanel({
             onChange={(e) =>
               setKindFilter(e.currentTarget.value as MemoryKind | "all")
             }
-            aria-label="Filter memory kind"
+            aria-label="Фильтр типа памяти"
           >
-            <option value="all">All kinds</option>
+            <option value="all">Все типы</option>
             {MEMORY_KINDS.map((k) => (
               <option key={k} value={k}>
-                {k}
+                {kindLabel(k)}
               </option>
             ))}
           </select>
@@ -461,7 +483,7 @@ export default function MemoryPanel({
             type="text"
             className="memory-input memory-tag-filter"
             value={tagFilter}
-            placeholder="tag"
+            placeholder="тег"
             onChange={(e) => setTagFilter(e.currentTarget.value)}
           />
           <button
@@ -470,7 +492,7 @@ export default function MemoryPanel({
             onClick={resetFilters}
             disabled={!filterActive}
           >
-            Reset
+            Сброс
           </button>
         </div>
       )}
@@ -482,7 +504,7 @@ export default function MemoryPanel({
               type="text"
               className="memory-input"
               value={recallInput}
-              placeholder="Ask what Reflex should recall for this topic..."
+              placeholder="Что Reflex должен вспомнить для этого топика?"
               onChange={(e) => setRecallInput(e.currentTarget.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -498,13 +520,13 @@ export default function MemoryPanel({
               onClick={runRecall}
               disabled={!canRecall || !recallInput.trim()}
             >
-              Recall
+              Вспомнить
             </button>
           </div>
           {!canRecall && (
             <div className="memory-empty">
-              Open Memory from a topic to recall topic notes and project RAG
-              together.
+              Открой память из топика, чтобы собрать заметки топика и RAG
+              проекта вместе.
             </div>
           )}
           {canRecall && recallQuery && projectRoot && threadId && (
@@ -516,8 +538,8 @@ export default function MemoryPanel({
           )}
           {canRecall && !recallQuery && (
             <div className="memory-empty">
-              Enter a query to compose project notes, topic notes, and indexed
-              context.
+              Введи запрос, чтобы собрать проектные заметки, заметки топика и
+              индексированный контекст.
             </div>
           )}
         </div>
@@ -529,7 +551,7 @@ export default function MemoryPanel({
             <SearchBox projectRoot={projectRoot} />
           ) : (
             <div className="memory-empty">
-              Open a project to search indexed memory and documents.
+              Открой проект, чтобы искать по индексированной памяти и документам.
             </div>
           )}
         </>
@@ -537,12 +559,12 @@ export default function MemoryPanel({
 
       {view === "notes" && missingProject && (
         <div className="memory-empty">
-          Open a project to view {scope} memory.
+          Открой проект, чтобы смотреть память: {scopeLabel(scope)}.
         </div>
       )}
       {view === "notes" && !missingProject && missingThread && (
         <div className="memory-empty">
-          Open a topic to view topic memory.
+          Открой топик, чтобы смотреть память топика.
         </div>
       )}
 
@@ -551,8 +573,8 @@ export default function MemoryPanel({
           {notes.length === 0 && !loading && (
             <li className="memory-empty">
               {filterActive
-                ? "No notes match the current filters."
-                : `No notes in ${scope} scope yet.`}
+                ? "Нет заметок под текущие фильтры."
+                : `В области ${scopeLabel(scope)} пока нет заметок.`}
             </li>
           )}
           {notes.map((note) => {
@@ -567,7 +589,7 @@ export default function MemoryPanel({
                     <div className="memory-item-title">
                       <span>{note.front.name || note.rel_path}</span>
                       <span className="memory-kind-badge">
-                        {note.front.type}
+                        {kindLabel(note.front.type)}
                       </span>
                       {note.front.tags.length > 0 && (
                         <span className="memory-tags">
@@ -598,24 +620,24 @@ export default function MemoryPanel({
                       type="button"
                       className="memory-btn"
                       onClick={() => setEditor({ mode: "edit", note })}
-                      title="Edit"
+                      title="Редактировать"
                     >
-                      Edit
+                      Править
                     </button>
                     <button
                       type="button"
                       className="memory-btn memory-btn-danger"
                       onClick={() => void handleDelete(note)}
-                      title="Delete"
+                      title="Удалить"
                     >
-                      Delete
+                      Удалить
                     </button>
                   </div>
                 </div>
                 {isOpen && (
                   <div className="memory-item-body">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {note.body || "_(empty body)_"}
+                      {note.body || "_(пусто)_"}
                     </ReactMarkdown>
                   </div>
                 )}
