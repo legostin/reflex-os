@@ -51,6 +51,15 @@ type Project = {
   apps?: string[];
 };
 
+type ProjectMemoryStats = {
+  docs: number;
+  chunks: number;
+  sources: number;
+  stale: number;
+  missing: number;
+  last_indexed_at_ms?: number | null;
+};
+
 export type BrowserTabSnapshot = { url: string; title: string };
 
 type ThreadCreated = {
@@ -4026,6 +4035,8 @@ function ProjectScreen({
   const [mcpDraft, setMcpDraft] = useState("{}");
   const [mcpSaving, setMcpSaving] = useState(false);
   const [mcpError, setMcpError] = useState<string | null>(null);
+  const [projectMemoryStats, setProjectMemoryStats] =
+    useState<ProjectMemoryStats | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -4180,6 +4191,27 @@ function ProjectScreen({
     };
   }, [project?.root, visibleEntryPaths, statusTick]);
 
+  useEffect(() => {
+    if (!project) {
+      setProjectMemoryStats(null);
+      return;
+    }
+    let alive = true;
+    invoke<ProjectMemoryStats>("memory_stats", { projectRoot: project.root })
+      .then((nextStats) => {
+        if (alive) setProjectMemoryStats(nextStats);
+      })
+      .catch((e) => {
+        if (alive) {
+          setProjectMemoryStats(null);
+          console.error("[reflex] memory_stats", e);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [project?.root, statusTick]);
+
   function openExternal(path: string) {
     invoke("reveal_in_finder", { path }).catch((e) =>
       console.error("[reflex] reveal_in_finder", e),
@@ -4295,7 +4327,7 @@ function ProjectScreen({
   const mcpServerNames = Object.keys(project?.mcp_servers ?? {});
   const projectSkills = project?.skills ?? [];
   const linkedAppIds = project?.apps ?? [];
-  const fileIndexStats = useMemo(() => {
+  const fallbackFileIndexStats = useMemo(() => {
     let indexed = 0;
     let stale = 0;
     let ignored = 0;
@@ -4323,6 +4355,12 @@ function ProjectScreen({
       missing: Math.max(indexable - indexed, 0),
     };
   }, [statuses, visibleEntries]);
+  const ragDocs = projectMemoryStats?.docs ?? fallbackFileIndexStats.indexed;
+  const ragChunks = projectMemoryStats?.chunks ?? null;
+  const ragSources = projectMemoryStats?.sources ?? null;
+  const ragStale = projectMemoryStats?.stale ?? fallbackFileIndexStats.stale;
+  const ragMissing =
+    projectMemoryStats?.missing ?? fallbackFileIndexStats.missing;
   const hasAgentProfile = !!(
     project?.agent_instructions?.trim() || projectSkills.length > 0
   );
@@ -4451,20 +4489,19 @@ function ProjectScreen({
           </button>
           <article className="project-context-item">
             <span className="project-context-label">Memory / RAG</span>
-            <strong>{fileIndexStats.indexed} indexed</strong>
+            <strong>{ragDocs} docs</strong>
             <div className="project-context-chips">
-              {fileIndexStats.stale > 0 && (
-                <span>{fileIndexStats.stale} stale</span>
+              {ragChunks != null && <span>{ragChunks} chunks</span>}
+              {ragSources != null && <span>{ragSources} sources</span>}
+              {ragStale > 0 && <span>{ragStale} stale</span>}
+              {ragMissing > 0 && <span>{ragMissing} missing</span>}
+              {!projectMemoryStats && fallbackFileIndexStats.ignored > 0 && (
+                <span>{fallbackFileIndexStats.ignored} ignored</span>
               )}
-              {fileIndexStats.missing > 0 && (
-                <span>{fileIndexStats.missing} ready</span>
-              )}
-              {fileIndexStats.ignored > 0 && (
-                <span>{fileIndexStats.ignored} ignored</span>
-              )}
-              {fileIndexStats.indexed === 0 &&
-                fileIndexStats.missing === 0 &&
-                fileIndexStats.ignored === 0 && <span>no file scan</span>}
+              {ragDocs === 0 &&
+                ragStale === 0 &&
+                ragMissing === 0 &&
+                !fallbackFileIndexStats.ignored && <span>not indexed</span>}
             </div>
           </article>
           <article className="project-context-item">
