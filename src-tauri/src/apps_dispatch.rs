@@ -5550,51 +5550,8 @@ fn scheduler_stats_for_app(
     }
     runs.truncate(recent_limit);
 
-    let total = schedules.len();
-    let enabled = schedules.iter().filter(|item| item.enabled).count();
-    let paused = schedules.iter().filter(|item| item.paused).count();
-    let invalid = schedules.iter().filter(|item| !item.valid).count();
-    let active = schedules
-        .iter()
-        .filter(|item| item.enabled && item.valid && !item.paused)
-        .count();
-    let next_fire_ms = schedules
-        .iter()
-        .filter(|item| item.enabled && item.valid && !item.paused)
-        .filter_map(|item| item.next_fire_ms)
-        .min();
-    let ok_runs = runs.iter().filter(|run| run.status == "ok").count();
-    let error_runs = runs.iter().filter(|run| run.status == "error").count();
-    let last_error = runs
-        .iter()
-        .find(|run| run.status == "error")
-        .map(|run| {
-            serde_json::json!({
-                "run_id": run.run_id,
-                "app_id": run.app_id,
-                "schedule_id": run.schedule_id,
-                "action_id": run.action_id,
-                "started_ms": run.started_ms,
-                "error_preview": run.error_preview,
-            })
-        });
-
-    Ok(serde_json::json!({
-        "schedules": {
-            "total": total,
-            "enabled": enabled,
-            "active": active,
-            "paused": paused,
-            "invalid": invalid,
-            "next_fire_ms": next_fire_ms,
-        },
-        "recent_runs": {
-            "sample": runs.len(),
-            "ok": ok_runs,
-            "error": error_runs,
-            "last_error": last_error,
-        },
-    }))
+    let stats = scheduler::commands::summarize_scheduler_stats(&schedules, &runs);
+    serde_json::to_value(stats).map_err(|e| e.to_string())
 }
 
 fn scheduler_run_detail_for_app(

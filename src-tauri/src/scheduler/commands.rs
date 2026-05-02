@@ -37,6 +37,40 @@ pub struct RunSummary {
     pub error_preview: Option<String>,
 }
 
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct ScheduleStats {
+    pub total: usize,
+    pub enabled: usize,
+    pub active: usize,
+    pub paused: usize,
+    pub invalid: usize,
+    pub next_fire_ms: Option<i64>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct LastRunErrorSummary {
+    pub run_id: String,
+    pub app_id: String,
+    pub schedule_id: Option<String>,
+    pub action_id: Option<String>,
+    pub started_ms: u64,
+    pub error_preview: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct RecentRunStats {
+    pub sample: usize,
+    pub ok: usize,
+    pub error: usize,
+    pub last_error: Option<LastRunErrorSummary>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct SchedulerStats {
+    pub schedules: ScheduleStats,
+    pub recent_runs: RecentRunStats,
+}
+
 #[tauri::command]
 pub fn scheduler_list(app: AppHandle) -> Result<Vec<ScheduleListItem>, String> {
     let schedules = collect_app_schedules(&app);
@@ -77,6 +111,55 @@ pub fn scheduler_list(app: AppHandle) -> Result<Vec<ScheduleListItem>, String> {
         });
     }
     Ok(out)
+}
+
+pub fn summarize_scheduler_stats(
+    schedules: &[ScheduleListItem],
+    runs: &[RunSummary],
+) -> SchedulerStats {
+    let total = schedules.len();
+    let enabled = schedules.iter().filter(|item| item.enabled).count();
+    let paused = schedules.iter().filter(|item| item.paused).count();
+    let invalid = schedules.iter().filter(|item| !item.valid).count();
+    let active = schedules
+        .iter()
+        .filter(|item| item.enabled && item.valid && !item.paused)
+        .count();
+    let next_fire_ms = schedules
+        .iter()
+        .filter(|item| item.enabled && item.valid && !item.paused)
+        .filter_map(|item| item.next_fire_ms)
+        .min();
+    let ok_runs = runs.iter().filter(|run| run.status == "ok").count();
+    let error_runs = runs.iter().filter(|run| run.status == "error").count();
+    let last_error = runs
+        .iter()
+        .find(|run| run.status == "error")
+        .map(|run| LastRunErrorSummary {
+            run_id: run.run_id.clone(),
+            app_id: run.app_id.clone(),
+            schedule_id: run.schedule_id.clone(),
+            action_id: run.action_id.clone(),
+            started_ms: run.started_ms,
+            error_preview: run.error_preview.clone(),
+        });
+
+    SchedulerStats {
+        schedules: ScheduleStats {
+            total,
+            enabled,
+            active,
+            paused,
+            invalid,
+            next_fire_ms,
+        },
+        recent_runs: RecentRunStats {
+            sample: runs.len(),
+            ok: ok_runs,
+            error: error_runs,
+            last_error,
+        },
+    }
 }
 
 #[tauri::command]
@@ -140,6 +223,94 @@ pub fn scheduler_runs(
 }
 
 #[tauri::command]
+pub fn scheduler_stats(
+    app: AppHandle,
+    recent_limit: Option<usize>,
+) -> Result<SchedulerStats, String> {
+    let schedules = scheduler_list(app.clone())?;
+    let runs = scheduler_runs(app, recent_limit, None)?;
+    Ok(summarize_scheduler_stats(&schedules, &runs))
+}
+
+#[tauri::command]
 pub fn scheduler_run_detail(app: AppHandle, run_id: String) -> Result<Option<RunRecord>, String> {
     state::read_run_by_id(&app, &run_id).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn schedule(
+        schedule_id: &str,
+        enabled: bool,
+        paused: bool,
+        valid: bool,
+        next_fire_ms: Option<i64>,
+    ) -> ScheduleListItem {
+        ScheduleListItem {
+            schedule_id: schedule_id.to_string(),
+            app_id: "app".to_string(),
+            app_name: "App".to_string(),
+            name: schedule_id.to_string(),
+            cron: "* * * * * *".to_string(),
+            enabled,
+            paused,
+            valid,
+            next_fire_ms,
+            last_fire_at_ms: 0,
+            last_run_id: None,
+            steps_count: 1,
+        }
+    }
+
+    fn run(run_id: &str, status: &str, started_ms: u64) -> RunSummary {
+        RunSummary {
+            run_id: run_id.to_string(),
+            app_id: "app".to_string(),
+            schedule_id: Some("app::daily".to_string()),
+            action_id: None,
+            caller: "scheduler".to_string(),
+            status: status.to_string(),
+            started_ms,
+            ended_ms: Some(started_ms + 10),
+            error_preview: (status == "error").then(|| "failed".to_string()),
+        }
+    }
+
+    #[test]
+    fn summarize_scheduler_stats_counts_health_and_last_error() {
+        let schedules = vec![
+            schedule("active-later", true, false, true, Some(2_000)),
+            schedule("active-sooner", true, false, true, Some(1_000)),
+            schedule("paused", true, true, true, Some(500)),
+            schedule("disabled", false, false, true, Some(250)),
+            schedule("invalid", true, false, false, None),
+        ];
+        let runs = vec![
+            run("err-new", "error", 40),
+            run("ok", "ok", 30),
+            run("err-old", "error", 20),
+        ];
+
+        let stats = summarize_scheduler_stats(&schedules, &runs);
+
+        assert_eq!(stats.schedules.total, 5);
+        assert_eq!(stats.schedules.enabled, 4);
+        assert_eq!(stats.schedules.active, 2);
+        assert_eq!(stats.schedules.paused, 1);
+        assert_eq!(stats.schedules.invalid, 1);
+        assert_eq!(stats.schedules.next_fire_ms, Some(1_000));
+        assert_eq!(stats.recent_runs.sample, 3);
+        assert_eq!(stats.recent_runs.ok, 1);
+        assert_eq!(stats.recent_runs.error, 2);
+        assert_eq!(
+            stats
+                .recent_runs
+                .last_error
+                .as_ref()
+                .map(|run| run.run_id.as_str()),
+            Some("err-new"),
+        );
+    }
 }

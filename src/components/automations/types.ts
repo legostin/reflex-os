@@ -25,6 +25,32 @@ export interface RunSummary {
   error_preview: string | null;
 }
 
+export interface SchedulerLastError {
+  run_id: string;
+  app_id: string;
+  schedule_id: string | null;
+  action_id: string | null;
+  started_ms: number;
+  error_preview: string | null;
+}
+
+export interface SchedulerStats {
+  schedules: {
+    total: number;
+    enabled: number;
+    active: number;
+    paused: number;
+    invalid: number;
+    next_fire_ms: number | null;
+  };
+  recent_runs: {
+    sample: number;
+    ok: number;
+    error: number;
+    last_error: SchedulerLastError | null;
+  };
+}
+
 export interface StepTrace {
   name: string;
   method: string;

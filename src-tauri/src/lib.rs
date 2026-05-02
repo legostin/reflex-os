@@ -2700,6 +2700,7 @@ pub fn run() {
             scheduler::commands::scheduler_set_paused,
             scheduler::commands::scheduler_run_now,
             scheduler::commands::scheduler_runs,
+            scheduler::commands::scheduler_stats,
             scheduler::commands::scheduler_run_detail,
             browser::browser_init,
             browser::browser_switch_project,

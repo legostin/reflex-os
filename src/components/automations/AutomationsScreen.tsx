@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { ScheduleListItem } from "./types";
+import type { ScheduleListItem, SchedulerStats } from "./types";
 import { RunHistoryView } from "./RunHistoryView";
 import { RunDetailPanel } from "./RunDetailPanel";
 import "./automations.css";
@@ -15,6 +15,9 @@ export function AutomationsScreen({
 }) {
   const [tab, setTab] = useState<Tab>("schedules");
   const [items, setItems] = useState<ScheduleListItem[]>([]);
+  const [schedulerStats, setSchedulerStats] = useState<SchedulerStats | null>(
+    null,
+  );
   const [running, setRunning] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -22,9 +25,15 @@ export function AutomationsScreen({
 
   useEffect(() => {
     let alive = true;
-    invoke<ScheduleListItem[]>("scheduler_list")
-      .then((arr) => {
-        if (alive) setItems(arr);
+    Promise.all([
+      invoke<ScheduleListItem[]>("scheduler_list"),
+      invoke<SchedulerStats>("scheduler_stats", { recentLimit: 200 }),
+    ])
+      .then(([arr, nextStats]) => {
+        if (!alive) return;
+        setItems(arr);
+        setSchedulerStats(nextStats);
+        setError(null);
       })
       .catch((e) => alive && setError(String(e)));
     return () => {
@@ -95,26 +104,48 @@ export function AutomationsScreen({
     [items],
   );
   const stats = useMemo(() => {
+    let enabled = 0;
     let active = 0;
     let paused = 0;
     let invalid = 0;
+    let nextFireMs: number | null = null;
     for (const item of items) {
+      if (item.enabled) enabled += 1;
       if (!item.valid) {
         invalid += 1;
       } else if (item.paused) {
         paused += 1;
-      } else {
+      } else if (item.enabled) {
         active += 1;
+        if (
+          item.next_fire_ms != null &&
+          (nextFireMs == null || item.next_fire_ms < nextFireMs)
+        ) {
+          nextFireMs = item.next_fire_ms;
+        }
       }
     }
+    const scheduleStats = schedulerStats?.schedules;
+    const runStats = schedulerStats?.recent_runs;
     return {
-      total: items.length,
-      active,
-      paused,
-      invalid,
+      total: scheduleStats?.total ?? items.length,
+      enabled: scheduleStats?.enabled ?? enabled,
+      active: scheduleStats?.active ?? active,
+      paused: scheduleStats?.paused ?? paused,
+      invalid: scheduleStats?.invalid ?? invalid,
+      nextFireMs: scheduleStats?.next_fire_ms ?? nextFireMs,
       running: running.size,
+      recentSample: runStats?.sample ?? 0,
+      recentOk: runStats?.ok ?? 0,
+      recentErrors: runStats?.error ?? 0,
+      lastError: runStats?.last_error ?? null,
     };
-  }, [items, running]);
+  }, [items, running, schedulerStats]);
+
+  const lastError = stats.lastError;
+  const lastErrorTarget = lastError
+    ? lastError.schedule_id ?? lastError.action_id ?? lastError.app_id
+    : null;
 
   return (
     <div className="automations-root">
@@ -149,11 +180,34 @@ export function AutomationsScreen({
       {error && <div className="automations-error">{error}</div>}
 
       <section className="automations-summary" aria-label="Automation summary">
-        <SummaryCard label="Всего" value={stats.total} />
+        <SummaryCard
+          label="Всего"
+          value={stats.total}
+          detail={`${stats.enabled} включено`}
+        />
         <SummaryCard label="Активные" value={stats.active} tone="ok" />
         <SummaryCard label="Запущены" value={stats.running} tone="run" />
         <SummaryCard label="На паузе" value={stats.paused} />
         <SummaryCard label="Ошибки cron" value={stats.invalid} tone="bad" />
+        <SummaryCard
+          label="Следующий запуск"
+          value={formatCompactDateTime(stats.nextFireMs)}
+          detail={formatFullDateTime(stats.nextFireMs)}
+        />
+        <SummaryCard
+          label="Ошибки запусков"
+          value={stats.recentErrors}
+          detail={
+            lastError
+              ? `Последняя: ${lastErrorTarget}`
+              : `${stats.recentOk}/${stats.recentSample} ok`
+          }
+          tone={stats.recentErrors > 0 ? "bad" : "ok"}
+          onClick={
+            lastError ? () => setSelectedRunId(lastError.run_id) : undefined
+          }
+          title={lastError?.error_preview ?? undefined}
+        />
       </section>
 
       {tab === "schedules" && (
@@ -221,18 +275,62 @@ export function AutomationsScreen({
 function SummaryCard({
   label,
   value,
+  detail,
   tone,
+  onClick,
+  title,
 }: {
   label: string;
-  value: number;
+  value: number | string;
+  detail?: string;
   tone?: "ok" | "run" | "bad";
+  onClick?: () => void;
+  title?: string;
 }) {
-  return (
-    <div className={`automations-summary-card ${tone ? `tone-${tone}` : ""}`}>
+  const className = `automations-summary-card ${tone ? `tone-${tone}` : ""} ${
+    onClick ? "is-action" : ""
+  }`;
+  const content = (
+    <>
       <span>{label}</span>
       <strong>{value}</strong>
+      {detail && <small>{detail}</small>}
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        className={className}
+        onClick={onClick}
+        title={title}
+        type="button"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={className} title={title}>
+      {content}
     </div>
   );
+}
+
+function formatCompactDateTime(ms: number | null | undefined) {
+  if (!ms) return "—";
+  return new Date(ms).toLocaleString(undefined, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatFullDateTime(ms: number | null | undefined) {
+  if (!ms) return "нет активных расписаний";
+  return new Date(ms).toLocaleString();
 }
 
 function ScheduleRow({
