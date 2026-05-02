@@ -378,6 +378,25 @@ export const BRIDGE_RECIPE_CARDS = [
       "const [jobs, memory] = await Promise.all([reflexSchedulerStats(), reflexMemoryStats({ projectId })]);",
   },
   {
+    title: "Project file maintenance",
+    body: "Ищи, правь и переиндексируй файлы linked project через bridge, не выходя из app sandbox.",
+    calls: ["project.files.search", "project.files.write", "memory.indexPath"],
+    example:
+      "const hits = await reflexProjectFilesSearch({ projectId, query, includeContent: true });",
+  },
+  {
+    title: "Revision workflow",
+    body: "Показывай diff generated app, сохраняй осмысленные ревизии и откатывай неудачные правки.",
+    calls: ["apps.diff", "apps.commitPartial", "apps.revert"],
+    example: "const { diff } = await reflexAppsDiff(appId);",
+  },
+  {
+    title: "Event mesh",
+    body: "Связывай apps через topics, recent history и подписки без прямых зависимостей между утилитами.",
+    calls: ["events.emit", "events.subscribe", "events.recent"],
+    example: 'reflexEventOn("ops.health", (event) => render(event.payload));',
+  },
+  {
     title: "Browser sidecar",
     body: "Включай project Browser MCP, открывай страницы, читай outline и заполняй формы.",
     calls: ["project.browser.setEnabled", "browser.open", "browser.fill"],
