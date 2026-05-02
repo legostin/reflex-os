@@ -5,17 +5,58 @@
 import net from "node:net";
 import readline from "node:readline";
 import { homedir } from "node:os";
+import { mkdirSync, appendFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 const SOCK_PATH =
   process.env.REFLEX_BROWSER_SOCK ||
   `${homedir()}/Library/Application Support/reflex-os/browser/sock`;
+const LOG_PATH =
+  process.env.REFLEX_BROWSER_MCP_LOG ||
+  `${homedir()}/Library/Application Support/reflex-os/browser/mcp-bridge.log`;
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "reflex-browser";
 const SERVER_VERSION = "0.1.0";
 
+try {
+  mkdirSync(dirname(LOG_PATH), { recursive: true });
+} catch {}
+
 function logErr(...args) {
-  console.error("[reflex-browser-mcp]", ...args);
+  const line =
+    `[${new Date().toISOString()}] [reflex-browser-mcp] ` +
+    args
+      .map((a) =>
+        typeof a === "string" ? a : (() => {
+          try {
+            return JSON.stringify(a);
+          } catch {
+            return String(a);
+          }
+        })(),
+      )
+      .join(" ");
+  console.error(line);
+  try {
+    appendFileSync(LOG_PATH, line + "\n");
+  } catch {}
+  forwardLog(line);
+}
+
+function forwardLog(message) {
+  if (!socket || socket.destroyed) return;
+  try {
+    nextSidecarId += 1;
+    const id = nextSidecarId;
+    socket.write(
+      JSON.stringify({
+        id,
+        method: "log.push",
+        params: { source: "browser-mcp-bridge", level: "info", message },
+      }) + "\n",
+    );
+  } catch {}
 }
 
 function writeMcp(obj) {
@@ -248,8 +289,10 @@ let sockBuf = "";
 async function ensureSocket() {
   if (socket && !socket.destroyed) return socket;
   return new Promise((resolve, reject) => {
+    logErr("connecting to sidecar socket", SOCK_PATH);
     const s = net.createConnection({ path: SOCK_PATH }, () => {
       socket = s;
+      logErr("sidecar socket connected");
       resolve(s);
     });
     s.setEncoding("utf-8");
@@ -318,6 +361,7 @@ function err(id, code, message) {
 
 async function handleMcp(msg) {
   const { id, method, params } = msg;
+  logErr("mcp <-", method, id !== undefined ? `id=${id}` : "(notif)");
   switch (method) {
     case "initialize": {
       ok(id, {
@@ -325,6 +369,7 @@ async function handleMcp(msg) {
         capabilities: { tools: {} },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
       });
+      ensureSocket().catch((e) => logErr("preconnect failed", e?.message || e));
       return;
     }
     case "notifications/initialized":
@@ -342,14 +387,17 @@ async function handleMcp(msg) {
       const name = params?.name;
       const tool = TOOLS_BY_NAME.get(name);
       if (!tool) {
+        logErr("tool not found", name);
         err(id, -32601, `tool not found: ${name}`);
         return;
       }
+      logErr("calling sidecar", tool.sidecar.method, params?.arguments ?? {});
       try {
         const result = await sidecarRequest(
           tool.sidecar.method,
           params?.arguments ?? {},
         );
+        logErr("sidecar ok", tool.sidecar.method);
         const content = tool.formatResult
           ? tool.formatResult(result)
           : [
@@ -369,6 +417,7 @@ async function handleMcp(msg) {
           ],
         });
       } catch (e) {
+        logErr("sidecar err", tool.sidecar.method, e?.message || e);
         ok(id, {
           isError: true,
           content: [
@@ -407,3 +456,5 @@ rl.on("line", (line) => {
 
 process.on("SIGTERM", () => process.exit(0));
 process.on("SIGINT", () => process.exit(0));
+
+logErr("bridge started", { sock: SOCK_PATH, pid: process.pid });

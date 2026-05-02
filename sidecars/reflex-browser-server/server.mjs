@@ -377,6 +377,13 @@ async function handle(msg, sendFn) {
         result = { ok: true };
         break;
       }
+      case "log.push": {
+        const tag = params.source || "browser-sidecar";
+        const lvl = params.level ? `[${params.level}]` : "";
+        logErr(`[${tag}]${lvl} ${params.message}`);
+        result = { ok: true };
+        break;
+      }
       case "screencast.start": {
         result = await startScreencast(params.tab_id, params);
         break;
