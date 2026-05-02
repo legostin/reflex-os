@@ -1939,6 +1939,42 @@ fn quick_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    std::panic::set_hook(Box::new(|info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "<unknown>".into());
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| format!("{info}"));
+        let line = format!("REFLEX PANIC at {location}: {payload}");
+        eprintln!("{line}");
+        if let Ok(home) = std::env::var("HOME") {
+            let path = std::path::PathBuf::from(home)
+                .join("Library")
+                .join("Logs")
+                .join("reflex-panic.log");
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            use std::io::Write as _;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0);
+                let _ = writeln!(f, "[{ts}] {line}");
+            }
+        }
+    }));
+
     let builder = tauri::Builder::default()
         .register_uri_scheme_protocol("reflexapp", |ctx, request| -> tauri::http::Response<std::borrow::Cow<'static, [u8]>> {
             let app = ctx.app_handle();
