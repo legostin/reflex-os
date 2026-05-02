@@ -734,6 +734,7 @@ pub async fn dispatch_app_method(
         "memory.delete" => memory_delete_for_app(app, app_id, params),
         "memory.search" => memory_search_for_app(app, app_id, params).await,
         "memory.recall" => memory_recall_for_app(app, app_id, params).await,
+        "memory.stats" => memory_stats_for_app(app, app_id, params),
         "memory.reindex" => memory_reindex_for_app(app, app_id, params).await,
         "memory.indexPath" | "memory.index_path" => {
             memory_index_path_for_app(app, app_id, params).await
@@ -1356,6 +1357,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "memory.delete",
                 "memory.search",
                 "memory.recall",
+                "memory.stats",
                 "memory.reindex",
                 "memory.indexPath",
                 "memory.pathStatus",
@@ -1523,6 +1525,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexMemoryDelete",
                 "reflexMemorySearch",
                 "reflexMemoryRecall",
+                "reflexMemoryStats",
                 "reflexMemoryReindex",
                 "reflexMemoryIndexPath",
                 "reflexMemoryPathStatus",
@@ -2592,6 +2595,16 @@ async fn memory_reindex_for_app(
         .await
         .map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "indexed": indexed }))
+}
+
+fn memory_stats_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let stats = files::stats(&target.root).map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(stats).unwrap_or(serde_json::Value::Null))
 }
 
 fn resolve_project_path(target: &MemoryTarget, raw: &str) -> Result<PathBuf, String> {

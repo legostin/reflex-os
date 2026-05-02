@@ -1,12 +1,31 @@
 use crate::memory::rag::RagHit;
 use crate::memory::schema::{MemoryError, RAG_DIR, Result};
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct VecStore {
     conn: Connection,
     dim: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RagKindStats {
+    pub kind: String,
+    pub docs: usize,
+    pub chunks: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RagStats {
+    pub docs: usize,
+    pub chunks: usize,
+    pub sources: usize,
+    pub stale: usize,
+    pub missing: usize,
+    pub last_indexed_at_ms: Option<u64>,
+    pub kinds: Vec<RagKindStats>,
 }
 
 impl VecStore {
@@ -225,6 +244,104 @@ impl VecStore {
         Ok(n as usize)
     }
 
+    pub fn stats(&self, project_root: &Path) -> Result<RagStats> {
+        let docs: i64 = self
+            .conn
+            .query_row("SELECT COUNT(DISTINCT doc_id) FROM docs", [], |r| r.get(0))
+            .optional()
+            .map_err(|e| MemoryError::Other(format!("sqlite stats docs: {e}")))?
+            .unwrap_or(0);
+        let chunks: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM docs", [], |r| r.get(0))
+            .optional()
+            .map_err(|e| MemoryError::Other(format!("sqlite stats chunks: {e}")))?
+            .unwrap_or(0);
+        let last_indexed_at_ms: Option<i64> = self
+            .conn
+            .query_row("SELECT MAX(created_at_ms) FROM docs", [], |r| {
+                r.get::<_, Option<i64>>(0)
+            })
+            .optional()
+            .map_err(|e| MemoryError::Other(format!("sqlite stats last_indexed: {e}")))?
+            .flatten();
+
+        let mut kind_stmt = self
+            .conn
+            .prepare(
+                "SELECT kind, COUNT(DISTINCT doc_id), COUNT(*)
+                 FROM docs
+                 GROUP BY kind
+                 ORDER BY kind",
+            )
+            .map_err(|e| MemoryError::Other(format!("sqlite stats kind prepare: {e}")))?;
+        let kind_rows = kind_stmt
+            .query_map([], |row| {
+                Ok(RagKindStats {
+                    kind: row.get(0)?,
+                    docs: row.get::<_, i64>(1)? as usize,
+                    chunks: row.get::<_, i64>(2)? as usize,
+                })
+            })
+            .map_err(|e| MemoryError::Other(format!("sqlite stats kind query: {e}")))?;
+        let mut kinds = Vec::new();
+        for row in kind_rows {
+            kinds.push(row.map_err(|e| MemoryError::Other(format!("sqlite stats kind row: {e}")))?);
+        }
+
+        let mut source_stmt = self
+            .conn
+            .prepare(
+                "SELECT source, MAX(created_at_ms)
+                 FROM docs
+                 WHERE source IS NOT NULL
+                 GROUP BY doc_id, source",
+            )
+            .map_err(|e| MemoryError::Other(format!("sqlite stats source prepare: {e}")))?;
+        let source_rows = source_stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u64))
+            })
+            .map_err(|e| MemoryError::Other(format!("sqlite stats source query: {e}")))?;
+        let mut sources = 0usize;
+        let mut stale = 0usize;
+        let mut missing = 0usize;
+        for row in source_rows {
+            let (source, indexed_at_ms) =
+                row.map_err(|e| MemoryError::Other(format!("sqlite stats source row: {e}")))?;
+            sources += 1;
+            let source_path = PathBuf::from(&source);
+            let path = if source_path.is_absolute() {
+                source_path
+            } else {
+                project_root.join(source_path)
+            };
+            match std::fs::metadata(&path) {
+                Ok(meta) => {
+                    let modified_ms = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as u64);
+                    if modified_ms.is_some_and(|modified| modified > indexed_at_ms + 1_000) {
+                        stale += 1;
+                    }
+                }
+                Err(_) => missing += 1,
+            }
+        }
+
+        Ok(RagStats {
+            docs: docs as usize,
+            chunks: chunks as usize,
+            sources,
+            stale,
+            missing,
+            last_indexed_at_ms: last_indexed_at_ms.map(|value| value as u64),
+            kinds,
+        })
+    }
+
     #[cfg(test)]
     pub fn count(&self) -> Result<i64> {
         let n: i64 = self
@@ -343,6 +460,51 @@ mod tests {
         assert_eq!(store.count().unwrap(), 1);
         store.forget("doc-1").unwrap();
         assert_eq!(store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn stats_counts_docs_chunks_kinds_and_missing_sources() {
+        let root = std::env::temp_dir().join(format!(
+            "reflex-rag-stats-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let existing = root.join("note.md");
+        let missing = root.join("missing.md");
+        std::fs::write(&existing, "hello").unwrap();
+
+        let store = VecStore::open_in_memory(2).unwrap();
+        store
+            .upsert(
+                "doc-1",
+                "reference",
+                Some(&existing),
+                &[
+                    ("a".to_string(), vec![1.0, 0.0]),
+                    ("b".to_string(), vec![0.0, 1.0]),
+                ],
+            )
+            .unwrap();
+        store
+            .upsert(
+                "doc-2",
+                "project",
+                Some(&missing),
+                &[("c".to_string(), vec![1.0, 1.0])],
+            )
+            .unwrap();
+
+        let stats = store.stats(&root).unwrap();
+        assert_eq!(stats.docs, 2);
+        assert_eq!(stats.chunks, 3);
+        assert_eq!(stats.sources, 2);
+        assert_eq!(stats.missing, 1);
+        assert_eq!(stats.kinds.len(), 2);
+        assert_eq!(stats.kinds[0].kind, "project");
+        assert_eq!(stats.kinds[1].kind, "reference");
+        assert!(stats.last_indexed_at_ms.is_some());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

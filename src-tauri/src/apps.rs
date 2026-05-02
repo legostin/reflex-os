@@ -1433,6 +1433,9 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof queryOrParams === 'string') ? {query: queryOrParams} : (queryOrParams || {});
     return reflexInvokeRaw('memory.recall', params);
   };
+  window.reflexMemoryStats = function(params) {
+    return reflexInvokeRaw('memory.stats', params || {});
+  };
   window.reflexMemoryReindex = function(params) {
     return reflexInvokeRaw('memory.reindex', params || {});
   };

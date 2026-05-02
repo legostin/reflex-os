@@ -307,6 +307,12 @@ pub fn status(project_root: &Path, path: &Path) -> Result<PathStatus> {
     status_with_store(&store, path)
 }
 
+pub fn stats(project_root: &Path) -> Result<crate::memory::rag::store::RagStats> {
+    let cfg = RagConfig::default();
+    let store = VecStore::open(project_root, cfg.embed_dim)?;
+    store.stats(project_root)
+}
+
 pub fn status_batch(project_root: &Path, paths: &[PathBuf]) -> Result<Vec<PathStatus>> {
     let cfg = RagConfig::default();
     let store = VecStore::open(project_root, cfg.embed_dim)?;
