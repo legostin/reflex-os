@@ -966,6 +966,16 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexManifestUpdate = function(patch) {
     return reflexInvokeRaw('manifest.update', {patch: patch || {}});
   };
+  window.reflexWidgetsList = function() {
+    return reflexInvokeRaw('widgets.list', {});
+  };
+  window.reflexWidgetsUpsert = function(widgetOrParams) {
+    return reflexInvokeRaw('widgets.upsert', widgetOrParams || {});
+  };
+  window.reflexWidgetsDelete = function(widgetIdOrParams, deleteEntry) {
+    var params = (typeof widgetIdOrParams === 'string') ? {widgetId: widgetIdOrParams, deleteEntry: !!deleteEntry} : (widgetIdOrParams || {});
+    return reflexInvokeRaw('widgets.delete', params);
+  };
   function reflexArray(value) {
     return Array.isArray(value) ? value : [];
   }

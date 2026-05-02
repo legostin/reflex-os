@@ -32,6 +32,9 @@ pub async fn dispatch_app_method(
         }
         "manifest.get" => manifest_get(app, app_id),
         "manifest.update" => manifest_update(app, app_id, params),
+        "widgets.list" => widgets_list_for_app(app, app_id),
+        "widgets.upsert" => widgets_upsert_for_app(app, app_id, params),
+        "widgets.delete" => widgets_delete_for_app(app, app_id, params),
         "agent.ask" => {
             let prompt = params
                 .get("prompt")
@@ -725,6 +728,197 @@ fn merge_json(base: &mut serde_json::Value, patch: serde_json::Value) {
             *base_slot = value;
         }
     }
+}
+
+fn widgets_list_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "widgets": manifest.widgets }))
+}
+
+fn widgets_upsert_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let (widget, html) = parse_widget_upsert(params)?;
+    if let Some(html) = html {
+        apps::write_app_file(app, app_id, &widget.entry, html.as_bytes())
+            .map_err(|e| e.to_string())?;
+    }
+    let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let created = match manifest
+        .widgets
+        .iter()
+        .position(|existing| existing.id == widget.id)
+    {
+        Some(idx) => {
+            manifest.widgets[idx] = widget.clone();
+            false
+        }
+        None => {
+            manifest.widgets.push(widget.clone());
+            true
+        }
+    };
+    apps::write_manifest(app, app_id, &manifest).map_err(|e| e.to_string())?;
+    emit_apps_changed(app);
+    Ok(serde_json::json!({
+        "ok": true,
+        "created": created,
+        "widget": widget,
+    }))
+}
+
+fn widgets_delete_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let id = string_param(&params, "widget_id", "widgetId")
+        .or_else(|| string_param(&params, "id", "id"))
+        .ok_or_else(|| "missing widget_id".to_string())?;
+    validate_widget_id(&id)?;
+    let delete_entry = bool_param(&params, "delete_entry", "deleteEntry")
+        .or_else(|| bool_param(&params, "delete_file", "deleteFile"))
+        .unwrap_or(false);
+    let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let removed = manifest.widgets.iter().find(|widget| widget.id == id).cloned();
+    let Some(removed) = removed else {
+        return Ok(serde_json::json!({
+            "ok": true,
+            "deleted": false,
+            "widget_id": id,
+        }));
+    };
+    manifest.widgets.retain(|widget| widget.id != id);
+    apps::write_manifest(app, app_id, &manifest).map_err(|e| e.to_string())?;
+    let mut deleted_entry = false;
+    if delete_entry {
+        let entry = normalize_widget_entry(&removed.entry)?;
+        match apps::delete_app_path(app, app_id, &entry, false) {
+            Ok(_) => deleted_entry = true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    emit_apps_changed(app);
+    Ok(serde_json::json!({
+        "ok": true,
+        "deleted": true,
+        "deleted_entry": deleted_entry,
+        "widget_id": id,
+        "widget": removed,
+    }))
+}
+
+fn parse_widget_upsert(
+    params: serde_json::Value,
+) -> Result<(apps::WidgetDef, Option<String>), String> {
+    let mut value = params
+        .get("widget")
+        .cloned()
+        .unwrap_or_else(|| params.clone());
+    let html = params
+        .get("html")
+        .or_else(|| params.get("content"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let obj = value
+        .as_object_mut()
+        .ok_or_else(|| "widget must be a JSON object".to_string())?;
+    let id = obj
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .ok_or_else(|| "widget.id is required".to_string())?;
+    validate_widget_id(&id)?;
+    obj.insert("id".into(), serde_json::Value::String(id.clone()));
+    if !obj.contains_key("name") {
+        obj.insert("name".into(), serde_json::Value::String(id.clone()));
+    }
+    if !obj.contains_key("entry") {
+        obj.insert(
+            "entry".into(),
+            serde_json::Value::String(format!("widgets/{id}.html")),
+        );
+    }
+    let mut widget: apps::WidgetDef =
+        serde_json::from_value(value).map_err(|e| format!("invalid widget: {e}"))?;
+    widget.id = widget.id.trim().to_string();
+    widget.name = widget.name.trim().to_string();
+    widget.entry = normalize_widget_entry(&widget.entry)?;
+    widget.size = normalize_widget_size(&widget.size)?;
+    if let Some(desc) = widget.description.as_mut() {
+        *desc = desc.trim().to_string();
+    }
+    if widget.name.is_empty() {
+        return Err("widget.name is required".into());
+    }
+    Ok((widget, html))
+}
+
+fn validate_widget_id(id: &str) -> Result<(), String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("widget.id is required".into());
+    }
+    if id.len() > 80 {
+        return Err("widget.id must be 80 characters or fewer".into());
+    }
+    if !id
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    {
+        return Err("widget.id may contain only ASCII letters, numbers, '-', '_' or '.'".into());
+    }
+    Ok(())
+}
+
+fn normalize_widget_entry(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim().trim_start_matches('/');
+    if trimmed.is_empty() {
+        return Err("widget.entry is required".into());
+    }
+    let path = Path::new(trimmed);
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => {
+                let part = part.to_string_lossy();
+                if part.starts_with('.') {
+                    return Err("widget.entry may not contain hidden path components".into());
+                }
+                parts.push(part.to_string());
+            }
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err("widget.entry must be a relative app path".into());
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Err("widget.entry is required".into());
+    }
+    if matches!(parts.first().map(String::as_str), Some(".reflex" | ".git")) {
+        return Err("widget.entry may not target internal app metadata".into());
+    }
+    if matches!(parts.as_slice(), [only] if only == "manifest.json" || only == "storage.json") {
+        return Err("widget.entry may not target app metadata files".into());
+    }
+    Ok(parts.join("/"))
+}
+
+fn normalize_widget_size(raw: &str) -> Result<String, String> {
+    let size = raw.trim();
+    let size = if size.is_empty() { "small" } else { size };
+    match size {
+        "small" | "medium" | "wide" | "large" => Ok(size.to_string()),
+        _ => Err("widget.size must be one of small, medium, wide, large".into()),
+    }
+}
+
+fn emit_apps_changed(app: &AppHandle) {
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
 }
 
 fn system_context(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
@@ -3073,5 +3267,37 @@ mod tests {
             own_local_schedule_id("app", "app::daily").unwrap(),
             "daily".to_string()
         );
+    }
+
+    #[test]
+    fn widget_entry_rejects_internal_or_escape_paths() {
+        for entry in [
+            "../widget.html",
+            ".reflex/widget.html",
+            ".hidden/widget.html",
+            "manifest.json",
+            "storage.json",
+        ] {
+            assert!(normalize_widget_entry(entry).is_err(), "{entry} should fail");
+        }
+        assert_eq!(
+            normalize_widget_entry("/widgets/today.html").unwrap(),
+            "widgets/today.html"
+        );
+    }
+
+    #[test]
+    fn widget_upsert_defaults_entry_and_name() {
+        let (widget, html) = parse_widget_upsert(serde_json::json!({
+            "id": "today",
+            "html": "<html></html>"
+        }))
+        .unwrap();
+
+        assert_eq!(widget.id, "today");
+        assert_eq!(widget.name, "today");
+        assert_eq!(widget.entry, "widgets/today.html");
+        assert_eq!(widget.size, "small");
+        assert_eq!(html.as_deref(), Some("<html></html>"));
     }
 }

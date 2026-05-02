@@ -54,6 +54,9 @@ The injected runtime overlay provides:
 - `window.reflexLogList(params)`
 - `window.reflexManifestGet()`
 - `window.reflexManifestUpdate(patch)`
+- `window.reflexWidgetsList()`
+- `window.reflexWidgetsUpsert(widgetOrParams)`
+- `window.reflexWidgetsDelete(widgetIdOrParams, deleteEntry?)`
 - `window.reflexCapabilities()`
 - `window.reflexAgentAsk(promptOrParams)`
 - `window.reflexAgentStartTopic(promptOrParams, projectId?)`
@@ -135,6 +138,12 @@ Core methods:
 - `manifest.get()` -> current `manifest.json`.
 - `manifest.update({ patch })` -> merge-update this app's manifest; useful for
   adding `actions`, `widgets`, `schedules`, permissions, or network hosts.
+- `widgets.list()` -> this app's dashboard widgets.
+- `widgets.upsert({ id, name?, entry?, size?, description?, html? })` or
+  `widgets.upsert({ widget, html? })` -> create/update a dashboard widget and
+  optionally write its HTML entry file.
+- `widgets.delete({ widgetId, deleteEntry? })` -> remove a dashboard widget and
+  optionally delete its entry file.
 - `agent.ask({ prompt })` -> one-shot agent answer.
 - `agent.startTopic({ prompt, projectId? })` -> full Reflex topic.
 - `agent.task({ prompt, sandbox?, cwd?, memoryThreadId?, includeContext? })` -> isolated sub-agent result.
@@ -231,6 +240,8 @@ Apps can expose:
   Actions may include optional `params_schema` JSON Schema metadata; caller
   input is available to workflow steps as `{{input.<field>}}`.
 - `widgets`: compact pages shown on a linked project's dashboard.
+  Apps can manage their own dashboard widgets at runtime with `widgets.upsert`
+  and `widgets.delete`.
 
 Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,
