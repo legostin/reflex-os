@@ -632,6 +632,9 @@ pub async fn dispatch_app_method(
         "mcp.servers" | "mcp.list" => mcp_servers_for_app(app, app_id, params),
         "project.files.list" => project_files_list_for_app(app, app_id, params),
         "project.files.read" => project_files_read_for_app(app, app_id, params),
+        "project.files.write" => project_files_write_for_app(app, app_id, params),
+        "project.files.mkdir" => project_files_mkdir_for_app(app, app_id, params),
+        "project.files.delete" => project_files_delete_for_app(app, app_id, params),
         "browser.init" => browser_init_for_app(app, app_id, params).await,
         "browser.tabs.list" | "browser.tabsList" => {
             ensure_browser_permission(app, app_id, "read")?;
@@ -1229,6 +1232,9 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "mcp.servers",
                 "project.files.list",
                 "project.files.read",
+                "project.files.write",
+                "project.files.mkdir",
+                "project.files.delete",
             ],
         ),
         bridge_group(
@@ -1368,6 +1374,9 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexMcpServers",
                 "reflexProjectFilesList",
                 "reflexProjectFilesRead",
+                "reflexProjectFilesWrite",
+                "reflexProjectFilesMkdir",
+                "reflexProjectFilesDelete",
                 "reflexBrowserInit",
                 "reflexBrowserTabs",
                 "reflexBrowserOpen",
@@ -1457,6 +1466,7 @@ fn bridge_permission_hints() -> serde_json::Value {
         { "scope": "topics", "grants": ["topics.read:<project>", "topics.read:*"] },
         { "scope": "skills", "grants": ["skills.read:<project>", "skills.read:*"] },
         { "scope": "mcp", "grants": ["mcp.read:<project>", "mcp.read:*"] },
+        { "scope": "project.files", "grants": ["project.files.read:<project>", "project.files.read:*", "project.files.write:<project>", "project.files.write:*"] },
         { "scope": "memory", "grants": ["memory.global.read", "memory.global.write"] },
         { "scope": "agent", "grants": ["agent.project:<project>", "agent.project:*", "agent.cwd:*"] },
         { "scope": "scheduler", "grants": ["scheduler.read:*", "scheduler.run:<app>", "scheduler.write:<app>::<schedule>", "scheduler.write:*", "scheduler:*"] },
@@ -3018,7 +3028,7 @@ fn project_files_list_for_app(
     app_id: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let project = resolve_project_file_target(app, app_id, &params)?;
+    let project = resolve_project_file_target(app, app_id, &params, "project.files.read", true)?;
     let rel_path = string_param(&params, "path", "path").unwrap_or_else(|| ".".into());
     let recursive = bool_param(&params, "recursive", "recursive").unwrap_or(false);
     let include_hidden = bool_param(&params, "include_hidden", "includeHidden").unwrap_or(false);
@@ -3046,7 +3056,7 @@ fn project_files_read_for_app(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     const MAX_PROJECT_FILE_READ_BYTES: u64 = 1_048_576;
-    let project = resolve_project_file_target(app, app_id, &params)?;
+    let project = resolve_project_file_target(app, app_id, &params, "project.files.read", true)?;
     let rel_path = required_string_param(&params, "path", "path")?;
     let root = canonical_project_root(&project.root)?;
     let target = resolve_project_file_path(&root, &rel_path)?;
@@ -3069,24 +3079,142 @@ fn project_files_read_for_app(
     }))
 }
 
+fn project_files_write_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let project =
+        resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
+    let rel_path = required_string_param(&params, "path", "path")?;
+    let content = params
+        .get("content")
+        .and_then(|v| v.as_str())
+        .ok_or("missing content")?;
+    let overwrite = bool_param(&params, "overwrite", "overwrite").unwrap_or(true);
+    let create_dirs = bool_param(&params, "create_dirs", "createDirs").unwrap_or(true);
+    let root = canonical_project_root(&project.root)?;
+    let (target, rel) = resolve_project_mutation_path(&root, &rel_path, create_dirs)?;
+    let existed = std::fs::symlink_metadata(&target).is_ok();
+    if existed && !overwrite {
+        return Err("file already exists".into());
+    }
+    if let Ok(meta) = std::fs::symlink_metadata(&target) {
+        if meta.is_dir() && !meta.file_type().is_symlink() {
+            return Err("path is a directory".into());
+        }
+    }
+    std::fs::write(&target, content.as_bytes()).map_err(|e| e.to_string())?;
+    let meta = std::fs::metadata(&target).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project.id,
+        "project_name": project.name,
+        "path": rel,
+        "created": !existed,
+        "size": meta.len(),
+    }))
+}
+
+fn project_files_mkdir_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let project =
+        resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
+    let rel_path = required_string_param(&params, "path", "path")?;
+    let recursive = bool_param(&params, "recursive", "recursive").unwrap_or(true);
+    let root = canonical_project_root(&project.root)?;
+    let (target, rel) = resolve_project_mutation_path(&root, &rel_path, recursive)?;
+    let existed = std::fs::symlink_metadata(&target).is_ok();
+    if recursive {
+        std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+    } else {
+        std::fs::create_dir(&target).map_err(|e| e.to_string())?;
+    }
+    let meta = std::fs::metadata(&target).map_err(|e| e.to_string())?;
+    if !meta.is_dir() {
+        return Err("path is not a directory".into());
+    }
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project.id,
+        "project_name": project.name,
+        "path": rel,
+        "created": !existed,
+    }))
+}
+
+fn project_files_delete_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let project =
+        resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
+    let rel_path = required_string_param(&params, "path", "path")?;
+    let recursive = bool_param(&params, "recursive", "recursive").unwrap_or(false);
+    let root = canonical_project_root(&project.root)?;
+    let target = resolve_project_file_path(&root, &rel_path)?;
+    if target == root {
+        return Err("refusing to delete project root".into());
+    }
+    let meta = std::fs::symlink_metadata(&target).map_err(|e| e.to_string())?;
+    let kind = project_file_kind(&meta);
+    if meta.is_dir() && !meta.file_type().is_symlink() {
+        if recursive {
+            std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+        } else {
+            std::fs::remove_dir(&target).map_err(|e| e.to_string())?;
+        }
+    } else {
+        std::fs::remove_file(&target).map_err(|e| e.to_string())?;
+    }
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project.id,
+        "project_name": project.name,
+        "path": project_rel_path(&root, &target)?,
+        "kind": kind,
+    }))
+}
+
 fn resolve_project_file_target(
     app: &AppHandle,
     app_id: &str,
     params: &serde_json::Value,
+    scope: &str,
+    linked_allowed: bool,
 ) -> Result<project::Project, String> {
     if let Some(project_id) = string_param(params, "project_id", "projectId") {
         let project = list_user_projects(app)?
             .into_iter()
             .find(|project| project.id == project_id)
             .ok_or_else(|| format!("project not found: {project_id}"))?;
-        ensure_project_scope_access(app, app_id, "project.files.read", &project)?;
+        if linked_allowed {
+            ensure_project_scope_access(app, app_id, scope, &project)?;
+        } else {
+            ensure_scoped_permission(app, app_id, scope, &project.id)?;
+        }
         return Ok(project);
     }
-    let linked = linked_projects_for_app(app, app_id)?;
-    if linked.len() == 1 {
-        return Ok(linked.into_iter().next().expect("one linked project"));
+    let targets: Vec<project::Project> = list_user_projects(app)?
+        .into_iter()
+        .filter(|project| {
+            (linked_allowed && project_is_linked_to_app(app, app_id, project))
+                || scoped_permission_allowed(app, app_id, scope, &project.id)
+        })
+        .collect();
+    if targets.len() == 1 {
+        return Ok(targets.into_iter().next().expect("one project file target"));
     }
-    Err("missing project_id; pass one from system.context().linked_projects".into())
+    if targets.is_empty() {
+        return Err(format!(
+            "missing project_id; pass one from system.context().linked_projects or add manifest.permissions entry '{scope}:<project>'"
+        ));
+    }
+    Err("missing project_id; multiple project file targets are available".into())
 }
 
 fn canonical_project_root(root: &str) -> Result<PathBuf, String> {
@@ -3126,6 +3254,82 @@ fn resolve_project_file_path(root: &Path, raw: &str) -> Result<PathBuf, String> 
     Ok(canonical)
 }
 
+fn resolve_project_mutation_path(
+    root: &Path,
+    raw: &str,
+    create_parent_dirs: bool,
+) -> Result<(PathBuf, String), String> {
+    let root = root
+        .canonicalize()
+        .map_err(|e| format!("canonicalize project root: {e}"))?;
+    let rel = normalize_project_mutation_rel_path(raw)?;
+    let candidate = root.join(&rel);
+    let parent = candidate
+        .parent()
+        .ok_or_else(|| "path must have a parent directory".to_string())?;
+    let existing_parent = nearest_existing_ancestor(parent)?;
+    let existing_parent_canon = existing_parent
+        .canonicalize()
+        .map_err(|e| format!("canonicalize project file parent: {e}"))?;
+    if !existing_parent_canon.starts_with(&root) {
+        return Err("path must stay inside the selected project root".into());
+    }
+    if create_parent_dirs {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let parent_canon = parent
+        .canonicalize()
+        .map_err(|e| format!("canonicalize project file parent: {e}"))?;
+    if !parent_canon.starts_with(&root) {
+        return Err("path must stay inside the selected project root".into());
+    }
+    if std::fs::symlink_metadata(&candidate).is_ok() {
+        let canonical = candidate
+            .canonicalize()
+            .map_err(|e| format!("canonicalize project file path: {e}"))?;
+        if !canonical.starts_with(&root) {
+            return Err("path must stay inside the selected project root".into());
+        }
+        if project_path_is_blocked(&root, &canonical) {
+            return Err("project.files cannot access .reflex internals".into());
+        }
+    }
+    Ok((candidate, project_rel_string(&rel)))
+}
+
+fn normalize_project_mutation_rel_path(raw: &str) -> Result<PathBuf, String> {
+    let trimmed = raw.trim().trim_start_matches('/');
+    let mut out = PathBuf::new();
+    for component in Path::new(trimmed).components() {
+        match component {
+            Component::Normal(name) if name == ".reflex" => {
+                return Err("project.files cannot access .reflex internals".into());
+            }
+            Component::Normal(name) => out.push(name),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err("path must be relative and stay inside the selected project root".into());
+            }
+        }
+    }
+    if out.as_os_str().is_empty() {
+        return Err("path is required".into());
+    }
+    Ok(out)
+}
+
+fn nearest_existing_ancestor(path: &Path) -> Result<PathBuf, String> {
+    let mut current = path.to_path_buf();
+    loop {
+        if current.exists() {
+            return Ok(current);
+        }
+        if !current.pop() {
+            return Err("no existing parent directory".into());
+        }
+    }
+}
+
 fn collect_project_file_entries(
     root: &Path,
     dir: &Path,
@@ -3161,13 +3365,7 @@ fn project_file_entry(
     meta: &std::fs::Metadata,
 ) -> Result<serde_json::Value, String> {
     let rel = project_rel_path(root, path)?;
-    let kind = if meta.file_type().is_symlink() {
-        "symlink"
-    } else if meta.is_dir() {
-        "directory"
-    } else {
-        "file"
-    };
+    let kind = project_file_kind(meta);
     let modified_ms = meta
         .modified()
         .ok()
@@ -3184,11 +3382,22 @@ fn project_file_entry(
 }
 
 fn project_rel_path(root: &Path, path: &Path) -> Result<String, String> {
-    Ok(path
-        .strip_prefix(root)
-        .map_err(|e| e.to_string())?
-        .to_string_lossy()
-        .replace('\\', "/"))
+    let rel = path.strip_prefix(root).map_err(|e| e.to_string())?;
+    Ok(project_rel_string(rel))
+}
+
+fn project_rel_string(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn project_file_kind(meta: &std::fs::Metadata) -> &'static str {
+    if meta.file_type().is_symlink() {
+        "symlink"
+    } else if meta.is_dir() {
+        "directory"
+    } else {
+        "file"
+    }
 }
 
 fn project_path_is_blocked(root: &Path, path: &Path) -> bool {
@@ -4061,9 +4270,20 @@ mod tests {
             project_rel_path(&canonical_root, &resolved).unwrap(),
             "src/readme.md"
         );
+        let (target, rel) =
+            resolve_project_mutation_path(&canonical_root, "generated/report.md", true).unwrap();
+        assert!(target.ends_with("generated/report.md"));
+        assert_eq!(rel, "generated/report.md");
+        assert!(target.parent().unwrap().exists());
         assert!(resolve_project_file_path(&canonical_root, ".reflex/project.json")
             .unwrap_err()
             .contains(".reflex"));
+        assert!(resolve_project_mutation_path(&canonical_root, ".reflex/new.json", true)
+            .unwrap_err()
+            .contains(".reflex"));
+        assert!(resolve_project_mutation_path(&canonical_root, "../outside.md", true)
+            .unwrap_err()
+            .contains("relative"));
         assert!(resolve_project_file_path(
             &canonical_root,
             &format!("../{}", outside.file_name().unwrap().to_string_lossy())

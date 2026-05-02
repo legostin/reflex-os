@@ -97,6 +97,9 @@ The injected runtime overlay provides:
 - `window.reflexMcpServers(params)`
 - `window.reflexProjectFilesList(pathOrParams, recursive?)`
 - `window.reflexProjectFilesRead(pathOrParams)`
+- `window.reflexProjectFilesWrite(pathOrParams, content?)`
+- `window.reflexProjectFilesMkdir(pathOrParams)`
+- `window.reflexProjectFilesDelete(pathOrParams, recursive?)`
 - `window.reflexBrowserInit(params)`
 - `window.reflexBrowserTabs()`
 - `window.reflexBrowserOpen(url)`
@@ -209,6 +212,15 @@ Core methods:
 - `project.files.read({ projectId?, path })` ->
   `{ project_id, project_name, path, size, content }`; reads UTF-8 text up to
   1 MiB. `.reflex` internals are always blocked.
+- `project.files.write({ projectId?, path, content, createDirs?, overwrite? })`
+  -> `{ ok, project_id, project_name, path, created, size }`; requires
+  `project.files.write:<project>` or `project.files.write:*`.
+- `project.files.mkdir({ projectId?, path, recursive? })` ->
+  `{ ok, project_id, project_name, path, created }`; requires
+  `project.files.write:<project>` or `project.files.write:*`.
+- `project.files.delete({ projectId?, path, recursive? })` ->
+  `{ ok, project_id, project_name, path, kind }`; refuses to delete the project
+  root and requires `project.files.write:<project>` or `project.files.write:*`.
 - `browser.init`, `browser.tabs.list`, `browser.open`, `browser.navigate`.
 - `browser.readText`, `browser.readOutline`, `browser.screenshot`.
 - `browser.clickText`, `browser.clickSelector`, `browser.fill`.
@@ -282,7 +294,8 @@ Workflow steps call normal bridge methods and can pass previous results through
 `apps.open` are not valid inside schedules. `projects.open`, `topics.open`,
 `scheduler.runNow`, `scheduler.setPaused`, `scheduler.upsert`, and
 `scheduler.delete` are also blocked inside schedule steps to prevent unattended
-recursive runs.
+recursive runs. Non-UI methods such as `project.files.*` can run in schedules
+when the app has the required manifest permissions.
 
 ## Development
 

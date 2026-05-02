@@ -71,6 +71,8 @@ const PERMISSION_EXAMPLES = [
   "mcp.read:*",
   "project.files.read:<project>",
   "project.files.read:*",
+  "project.files.write:<project>",
+  "project.files.write:*",
   "browser.read",
   "browser.control",
   "browser.project:<project>",
