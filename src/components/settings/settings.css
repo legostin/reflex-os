@@ -78,6 +78,14 @@
   margin-bottom: 10px;
 }
 
+.settings-section-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
 .settings-section h2 {
   margin: 0 0 8px 0;
   font-size: 13px;
@@ -94,6 +102,7 @@
   color: rgba(180, 185, 195, 0.65);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
+  white-space: nowrap;
 }
 
 .settings-section p {
@@ -107,6 +116,35 @@
   font-size: 12px !important;
   color: rgba(180, 185, 195, 0.65) !important;
   font-style: italic;
+}
+
+.settings-bridge-search {
+  width: min(260px, 36vw);
+  min-width: 140px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(245, 245, 247, 0.95);
+  padding: 0 9px;
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+}
+
+.settings-bridge-search:focus {
+  border-color: rgba(74, 140, 255, 0.42);
+}
+
+.settings-empty-inline {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: rgba(180, 185, 195, 0.62);
+  font-size: 12px;
 }
 
 .settings-cap-grid {
@@ -198,6 +236,20 @@
   .settings-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .settings-section-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .settings-section-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .settings-bridge-search {
+    width: 100%;
   }
 
   .settings-flow {

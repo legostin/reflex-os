@@ -76,6 +76,16 @@ const PERMISSION_EXAMPLES = [
   "net.fetch requires manifest.network.allowed_hosts",
 ] as const;
 
+const BRIDGE_API_COUNT = BRIDGE_API_GROUPS.reduce(
+  (sum, group) => sum + group.methods.length,
+  0,
+);
+
+const BRIDGE_HELPER_COUNT = BRIDGE_HELPER_GROUPS.reduce(
+  (sum, group) => sum + group.helpers.length,
+  0,
+);
+
 export function SettingsScreen() {
   const [tab, setTab] = useState<Tab>("capabilities");
   return (
@@ -103,6 +113,38 @@ export function SettingsScreen() {
 }
 
 function CapabilitiesPane() {
+  const [bridgeQuery, setBridgeQuery] = useState("");
+  const normalizedBridgeQuery = bridgeQuery.trim().toLowerCase();
+
+  const visibleApiGroups = useMemo(() => {
+    if (!normalizedBridgeQuery) return BRIDGE_API_GROUPS;
+    return BRIDGE_API_GROUPS.map((group) => ({
+      ...group,
+      methods: group.methods.filter((method) =>
+        method.toLowerCase().includes(normalizedBridgeQuery),
+      ),
+    })).filter((group) => group.methods.length > 0);
+  }, [normalizedBridgeQuery]);
+
+  const visibleHelperGroups = useMemo(() => {
+    if (!normalizedBridgeQuery) return BRIDGE_HELPER_GROUPS;
+    return BRIDGE_HELPER_GROUPS.map((group) => ({
+      ...group,
+      helpers: group.helpers.filter((helper) =>
+        helper.toLowerCase().includes(normalizedBridgeQuery),
+      ),
+    })).filter((group) => group.helpers.length > 0);
+  }, [normalizedBridgeQuery]);
+
+  const visibleApiCount = visibleApiGroups.reduce(
+    (sum, group) => sum + group.methods.length,
+    0,
+  );
+  const visibleHelperCount = visibleHelperGroups.reduce(
+    (sum, group) => sum + group.helpers.length,
+    0,
+  );
+
   return (
     <div className="settings-pane capabilities-pane">
       <section className="settings-section">
@@ -129,41 +171,59 @@ function CapabilitiesPane() {
       <section className="settings-section settings-section-open">
         <div className="settings-section-title-row">
           <h2>Bridge generated apps</h2>
-          <span className="settings-section-meta">
-            window.reflexInvoke(method, params)
-          </span>
+          <div className="settings-section-controls">
+            <input
+              className="settings-bridge-search"
+              placeholder="Поиск bridge…"
+              value={bridgeQuery}
+              onChange={(e) => setBridgeQuery(e.currentTarget.value)}
+            />
+            <span className="settings-section-meta">
+              {visibleApiCount}/{BRIDGE_API_COUNT} methods
+            </span>
+          </div>
         </div>
-        <div className="settings-api-grid">
-          {BRIDGE_API_GROUPS.map((group) => (
-            <article className="settings-api-group" key={group.title}>
-              <h3>{group.title}</h3>
-              <div className="settings-method-list">
-                {group.methods.map((method) => (
-                  <code key={method}>{method}</code>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
+        {visibleApiGroups.length === 0 ? (
+          <div className="settings-empty-inline">Нет совпадений.</div>
+        ) : (
+          <div className="settings-api-grid">
+            {visibleApiGroups.map((group) => (
+              <article className="settings-api-group" key={group.title}>
+                <h3>{group.title}</h3>
+                <div className="settings-method-list">
+                  {group.methods.map((method) => (
+                    <code key={method}>{method}</code>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="settings-section settings-section-open">
         <div className="settings-section-title-row">
           <h2>Runtime overlay helpers</h2>
-          <span className="settings-section-meta">window.reflex*</span>
+          <span className="settings-section-meta">
+            {visibleHelperCount}/{BRIDGE_HELPER_COUNT} helpers
+          </span>
         </div>
-        <div className="settings-helper-grid">
-          {BRIDGE_HELPER_GROUPS.map((group) => (
-            <article className="settings-api-group" key={group.title}>
-              <h3>{group.title}</h3>
-              <div className="settings-method-list">
-                {group.helpers.map((helper) => (
-                  <code key={helper}>{helper}</code>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
+        {visibleHelperGroups.length === 0 ? (
+          <div className="settings-empty-inline">Нет совпадений.</div>
+        ) : (
+          <div className="settings-helper-grid">
+            {visibleHelperGroups.map((group) => (
+              <article className="settings-api-group" key={group.title}>
+                <h3>{group.title}</h3>
+                <div className="settings-method-list">
+                  {group.helpers.map((helper) => (
+                    <code key={helper}>{helper}</code>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
         <p className="settings-hint">
           Generated apps should prefer these helpers over manual postMessage;
           permissions and manifest.network rules still apply to the underlying
