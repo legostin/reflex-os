@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { RunSummary } from "./types";
+import { callerLabel, runStatusLabel } from "./labels";
 
 export function RunHistoryView({
   onSelect,
@@ -79,7 +80,7 @@ export function RunHistoryView({
           <option value="all">Все статусы</option>
           {statusOptions.map((status) => (
             <option key={status} value={status}>
-              {status}
+              {runStatusLabel(status)}
             </option>
           ))}
         </select>
@@ -87,9 +88,9 @@ export function RunHistoryView({
           className="automations-select"
           value={appFilter}
           onChange={(e) => setAppFilter(e.currentTarget.value)}
-          aria-label="Фильтр app"
+          aria-label="Фильтр утилиты"
         >
-          <option value="all">Все apps</option>
+          <option value="all">Все утилиты</option>
           {appOptions.map((appId) => (
             <option key={appId} value={appId}>
               {appId}
@@ -100,7 +101,7 @@ export function RunHistoryView({
           className="automations-search"
           type="search"
           value={query}
-          placeholder="run, app, schedule, error..."
+          placeholder="ID запуска, утилита, расписание, ошибка..."
           onChange={(e) => setQuery(e.currentTarget.value)}
         />
         <button
@@ -108,7 +109,7 @@ export function RunHistoryView({
           type="button"
           onClick={() => setTick((n) => n + 1)}
         >
-          Refresh
+          Обновить
         </button>
         <span className="automations-count">
           {filteredRuns.length} / {runs.length}
@@ -128,9 +129,9 @@ export function RunHistoryView({
           <thead>
             <tr>
               <th>Время</th>
-              <th>App</th>
-              <th>Schedule / Action</th>
-              <th>Caller</th>
+              <th>Утилита</th>
+              <th>Расписание / действие</th>
+              <th>Инициатор</th>
               <th>Статус</th>
               <th>Длительность</th>
             </tr>
@@ -147,15 +148,17 @@ export function RunHistoryView({
                 <td>
                   <code>{r.schedule_id ?? r.action_id ?? "—"}</code>
                 </td>
-                <td>{r.caller}</td>
+                <td>{callerLabel(r.caller)}</td>
                 <td>
-                  <span className={`pill pill-${r.status}`}>{r.status}</span>
+                  <span className={`pill pill-${r.status}`}>
+                    {runStatusLabel(r.status)}
+                  </span>
                   {r.error_preview && (
                     <div className="run-err">{r.error_preview}</div>
                   )}
                 </td>
                 <td>
-                  {r.ended_ms ? `${r.ended_ms - r.started_ms} ms` : "…"}
+                  {r.ended_ms ? `${r.ended_ms - r.started_ms} мс` : "…"}
                 </td>
               </tr>
             ))}

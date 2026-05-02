@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { RunRecord } from "./types";
+import { callerLabel, runStatusLabel } from "./labels";
 
 export function RunDetailPanel({
   runId,
@@ -37,8 +38,8 @@ export function RunDetailPanel({
         onClick={(e) => e.stopPropagation()}
       >
         <header>
-          <h3>Run {runId}</h3>
-          <button className="icon-btn" onClick={onClose}>
+          <h3>Запуск {runId}</h3>
+          <button className="icon-btn" onClick={onClose} title="Закрыть">
             ✕
           </button>
         </header>
@@ -49,24 +50,24 @@ export function RunDetailPanel({
         {record && (
           <div className="run-body">
             <dl className="run-meta">
-              <dt>App</dt>
+              <dt>Утилита</dt>
               <dd>{record.app_id}</dd>
-              <dt>Schedule</dt>
+              <dt>Расписание</dt>
               <dd>{record.schedule_id ?? "—"}</dd>
-              <dt>Action</dt>
+              <dt>Действие</dt>
               <dd>{record.action_id ?? "—"}</dd>
-              <dt>Caller</dt>
-              <dd>{record.caller}</dd>
+              <dt>Инициатор</dt>
+              <dd>{callerLabel(record.caller)}</dd>
               <dt>Статус</dt>
               <dd>
                 <span className={`pill pill-${record.status}`}>
-                  {record.status}
+                  {runStatusLabel(record.status)}
                 </span>
               </dd>
               <dt>Длительность</dt>
               <dd>
                 {record.ended_ms
-                  ? `${record.ended_ms - record.started_ms} ms`
+                  ? `${record.ended_ms - record.started_ms} мс`
                   : "не завершён"}
               </dd>
             </dl>
@@ -82,18 +83,18 @@ export function RunDetailPanel({
                   <li key={i} className={`step step-${s.status}`}>
                     <div className="step-head">
                       <span className={`pill pill-${s.status}`}>
-                        {s.status}
+                        {runStatusLabel(s.status)}
                       </span>
                       <code>{s.method}</code>
                       <span className="step-name">→ {s.name}</span>
                       <span className="step-time">
-                        {s.ended_ms - s.started_ms} ms
+                        {s.ended_ms - s.started_ms} мс
                       </span>
                     </div>
                     {s.error && <pre className="run-error-block">{s.error}</pre>}
                     {s.output_preview && (
                       <details>
-                        <summary>output ({s.output_size} bytes)</summary>
+                        <summary>вывод ({s.output_size} байт)</summary>
                         <pre className="step-output">{s.output_preview}</pre>
                       </details>
                     )}

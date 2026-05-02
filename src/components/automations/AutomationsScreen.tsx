@@ -150,7 +150,7 @@ export function AutomationsScreen({
   return (
     <div className="automations-root">
       <header className="automations-header">
-        <h1>Automations</h1>
+        <h1>Автоматизации</h1>
         <div className="automations-header-actions">
           {onCreateAutomation && (
             <button
@@ -179,7 +179,7 @@ export function AutomationsScreen({
 
       {error && <div className="automations-error">{error}</div>}
 
-      <section className="automations-summary" aria-label="Automation summary">
+      <section className="automations-summary" aria-label="Сводка автоматизаций">
         <SummaryCard
           label="Всего"
           value={stats.total}
@@ -200,7 +200,7 @@ export function AutomationsScreen({
           detail={
             lastError
               ? `Последняя: ${lastErrorTarget}`
-              : `${stats.recentOk}/${stats.recentSample} ok`
+              : `${stats.recentOk}/${stats.recentSample} успешно`
           }
           tone={stats.recentErrors > 0 ? "bad" : "ok"}
           onClick={
@@ -215,8 +215,8 @@ export function AutomationsScreen({
           {sortedItems.length === 0 ? (
             <div className="automations-empty automations-empty-panel">
               <div>
-                Расписаний нет. Создай app из шаблона Automation, и Reflex
-                сам добавит <code>schedules</code> в его manifest.
+                Расписаний нет. Создай утилиту из шаблона «Автоматизация», и
+                Reflex сам добавит <code>schedules</code> в её manifest.
               </div>
               {onCreateAutomation && (
                 <button
@@ -232,8 +232,8 @@ export function AutomationsScreen({
               <thead>
                 <tr>
                   <th>Состояние</th>
-                  <th>App / Schedule</th>
-                  <th>Cron</th>
+                  <th>Утилита / расписание</th>
+                  <th>cron</th>
                   <th>Следующий запуск</th>
                   <th>Последний</th>
                   <th></th>
@@ -347,12 +347,12 @@ function ScheduleRow({
   onOpenLastRun: () => void;
 }) {
   const stateLabel = !s.valid
-    ? "invalid cron"
+    ? "ошибка cron"
     : s.paused
-      ? "paused"
+      ? "пауза"
       : isRunning
-        ? "running"
-        : "active";
+        ? "идёт запуск"
+        : "активно";
   const stateClass = !s.valid
     ? "row-invalid"
     : s.paused
