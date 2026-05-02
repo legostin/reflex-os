@@ -57,6 +57,9 @@ The injected runtime overlay provides:
 - `window.reflexWidgetsList()`
 - `window.reflexWidgetsUpsert(widgetOrParams)`
 - `window.reflexWidgetsDelete(widgetIdOrParams, deleteEntry?)`
+- `window.reflexActionsList()`
+- `window.reflexActionsUpsert(actionOrParams)`
+- `window.reflexActionsDelete(actionIdOrParams)`
 - `window.reflexCapabilities()`
 - `window.reflexAgentAsk(promptOrParams)`
 - `window.reflexAgentStartTopic(promptOrParams, projectId?)`
@@ -144,6 +147,10 @@ Core methods:
   optionally write its HTML entry file.
 - `widgets.delete({ widgetId, deleteEntry? })` -> remove a dashboard widget and
   optionally delete its entry file.
+- `actions.list()` -> this app's manifest actions.
+- `actions.upsert({ id, name?, description?, public?, params_schema?, steps })`
+  or `actions.upsert({ action })` -> create/update a callable workflow.
+- `actions.delete({ actionId })` -> remove this app's callable workflow.
 - `agent.ask({ prompt })` -> one-shot agent answer.
 - `agent.startTopic({ prompt, projectId? })` -> full Reflex topic.
 - `agent.task({ prompt, sandbox?, cwd?, memoryThreadId?, includeContext? })` -> isolated sub-agent result.
@@ -239,6 +246,7 @@ Apps can expose:
 - `actions`: callable workflows for other apps via `apps.invoke`.
   Actions may include optional `params_schema` JSON Schema metadata; caller
   input is available to workflow steps as `{{input.<field>}}`.
+  Apps can publish their own callable API at runtime with `actions.upsert`.
 - `widgets`: compact pages shown on a linked project's dashboard.
   Apps can manage their own dashboard widgets at runtime with `widgets.upsert`
   and `widgets.delete`.

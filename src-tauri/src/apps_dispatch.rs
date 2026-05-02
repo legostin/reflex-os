@@ -35,6 +35,9 @@ pub async fn dispatch_app_method(
         "widgets.list" => widgets_list_for_app(app, app_id),
         "widgets.upsert" => widgets_upsert_for_app(app, app_id, params),
         "widgets.delete" => widgets_delete_for_app(app, app_id, params),
+        "actions.list" => actions_list_for_app(app, app_id),
+        "actions.upsert" => actions_upsert_for_app(app, app_id, params),
+        "actions.delete" => actions_delete_for_app(app, app_id, params),
         "agent.ask" => {
             let prompt = params
                 .get("prompt")
@@ -919,6 +922,140 @@ fn normalize_widget_size(raw: &str) -> Result<String, String> {
 
 fn emit_apps_changed(app: &AppHandle) {
     let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+}
+
+fn actions_list_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "actions": manifest.actions }))
+}
+
+fn actions_upsert_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let action = parse_action_upsert(params)?;
+    let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let created = match manifest
+        .actions
+        .iter()
+        .position(|existing| existing.id == action.id)
+    {
+        Some(idx) => {
+            manifest.actions[idx] = action.clone();
+            false
+        }
+        None => {
+            manifest.actions.push(action.clone());
+            true
+        }
+    };
+    apps::write_manifest(app, app_id, &manifest).map_err(|e| e.to_string())?;
+    emit_apps_changed(app);
+    Ok(serde_json::json!({
+        "ok": true,
+        "created": created,
+        "action": action,
+    }))
+}
+
+fn actions_delete_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let id = string_param(&params, "action_id", "actionId")
+        .or_else(|| string_param(&params, "id", "id"))
+        .ok_or_else(|| "missing action_id".to_string())?;
+    validate_action_id(&id)?;
+    let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let removed = manifest.actions.iter().find(|action| action.id == id).cloned();
+    let Some(removed) = removed else {
+        return Ok(serde_json::json!({
+            "ok": true,
+            "deleted": false,
+            "action_id": id,
+        }));
+    };
+    manifest.actions.retain(|action| action.id != id);
+    apps::write_manifest(app, app_id, &manifest).map_err(|e| e.to_string())?;
+    emit_apps_changed(app);
+    Ok(serde_json::json!({
+        "ok": true,
+        "deleted": true,
+        "action_id": id,
+        "action": removed,
+    }))
+}
+
+fn parse_action_upsert(params: serde_json::Value) -> Result<apps::ActionDef, String> {
+    let mut value = params
+        .get("action")
+        .cloned()
+        .unwrap_or(params);
+    let obj = value
+        .as_object_mut()
+        .ok_or_else(|| "action must be a JSON object".to_string())?;
+    let id = obj
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .ok_or_else(|| "action.id is required".to_string())?;
+    validate_action_id(&id)?;
+    obj.insert("id".into(), serde_json::Value::String(id.clone()));
+    if !obj.contains_key("name") {
+        obj.insert("name".into(), serde_json::Value::String(id));
+    }
+    if let Some(params_schema) = obj.remove("paramsSchema") {
+        obj.entry("params_schema").or_insert(params_schema);
+    }
+    let mut action: apps::ActionDef =
+        serde_json::from_value(value).map_err(|e| format!("invalid action: {e}"))?;
+    action.id = action.id.trim().to_string();
+    action.name = action.name.trim().to_string();
+    validate_action_def(&action)?;
+    if let Some(desc) = action.description.as_mut() {
+        *desc = desc.trim().to_string();
+    }
+    Ok(action)
+}
+
+fn validate_action_def(action: &apps::ActionDef) -> Result<(), String> {
+    validate_action_id(&action.id)?;
+    if action.name.trim().is_empty() {
+        return Err("action.name is required".into());
+    }
+    if action.steps.is_empty() {
+        return Err("action.steps must contain at least one step".into());
+    }
+    if let Some(schema) = &action.params_schema {
+        if !schema.is_object() {
+            return Err("action.params_schema must be a JSON object".into());
+        }
+    }
+    for step in &action.steps {
+        if step.method.trim().is_empty() {
+            return Err("action step method is required".into());
+        }
+    }
+    Ok(())
+}
+
+fn validate_action_id(id: &str) -> Result<(), String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("action.id is required".into());
+    }
+    if id.len() > 80 {
+        return Err("action.id must be 80 characters or fewer".into());
+    }
+    if !id
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    {
+        return Err("action.id may contain only ASCII letters, numbers, '-', '_' or '.'".into());
+    }
+    Ok(())
 }
 
 fn system_context(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
@@ -3299,5 +3436,43 @@ mod tests {
         assert_eq!(widget.entry, "widgets/today.html");
         assert_eq!(widget.size, "small");
         assert_eq!(html.as_deref(), Some("<html></html>"));
+    }
+
+    #[test]
+    fn action_upsert_defaults_name_and_accepts_params_schema_alias() {
+        let action = parse_action_upsert(serde_json::json!({
+            "id": "today",
+            "public": true,
+            "paramsSchema": {
+                "type": "object",
+                "properties": { "limit": { "type": "integer" } }
+            },
+            "steps": [
+                { "method": "storage.get", "params": { "key": "today" } }
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(action.id, "today");
+        assert_eq!(action.name, "today");
+        assert!(action.public);
+        assert!(action.params_schema.is_some());
+        assert_eq!(action.steps.len(), 1);
+    }
+
+    #[test]
+    fn action_validation_rejects_bad_id_and_empty_steps() {
+        assert!(validate_action_id("../bad").is_err());
+        let action = apps::ActionDef {
+            id: "ok".into(),
+            name: "OK".into(),
+            description: None,
+            params_schema: None,
+            public: false,
+            steps: Vec::new(),
+        };
+        assert!(validate_action_def(&action)
+            .unwrap_err()
+            .contains("steps"));
     }
 }

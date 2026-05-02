@@ -13,6 +13,9 @@ export const BRIDGE_API_GROUPS = [
       "widgets.list",
       "widgets.upsert",
       "widgets.delete",
+      "actions.list",
+      "actions.upsert",
+      "actions.delete",
     ],
   },
   {
@@ -136,6 +139,9 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexWidgetsList",
       "reflexWidgetsUpsert",
       "reflexWidgetsDelete",
+      "reflexActionsList",
+      "reflexActionsUpsert",
+      "reflexActionsDelete",
       "reflexCapabilities",
     ],
   },
@@ -237,8 +243,8 @@ export const BRIDGE_RECIPE_CARDS = [
   {
     title: "App как сервис",
     body: "Публикуй actions и dashboard widgets, затем вызывай их из других apps или schedules.",
-    calls: ["widgets.upsert", "apps.invoke", "events.emit"],
-    example: "await reflexWidgetsUpsert({ id, name, html });",
+    calls: ["actions.upsert", "widgets.upsert", "apps.invoke"],
+    example: "await reflexActionsUpsert({ id, public: true, steps });",
   },
   {
     title: "Автоматизация",
