@@ -602,6 +602,12 @@ pub async fn dispatch_app_method(
         "apps.restore" => apps_restore_for_app(app, app_id, params),
         "apps.purge" => apps_purge_for_app(app, app_id, params),
         "apps.status" => apps_status_for_app(app, app_id, params),
+        "apps.diff" => apps_diff_for_app(app, app_id, params),
+        "apps.commit" => apps_commit_for_app(app, app_id, params),
+        "apps.commitPartial" | "apps.commit_partial" => {
+            apps_commit_partial_for_app(app, app_id, params)
+        }
+        "apps.revert" => apps_revert_for_app(app, app_id, params),
         "apps.server.status" => apps_server_status_for_app(app, app_id, params).await,
         "apps.server.logs" => apps_server_logs_for_app(app, app_id, params).await,
         "apps.server.start" => apps_server_start_for_app(app, app_id, params).await,
@@ -1350,6 +1356,10 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "apps.restore",
                 "apps.purge",
                 "apps.status",
+                "apps.diff",
+                "apps.commit",
+                "apps.commitPartial",
+                "apps.revert",
                 "apps.server.status",
                 "apps.server.logs",
                 "apps.server.start",
@@ -1489,6 +1499,10 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexAppsRestore",
                 "reflexAppsPurge",
                 "reflexAppsStatus",
+                "reflexAppsDiff",
+                "reflexAppsCommit",
+                "reflexAppsCommitPartial",
+                "reflexAppsRevert",
                 "reflexAppsServerStatus",
                 "reflexAppsServerLogs",
                 "reflexAppsServerStart",
@@ -2951,6 +2965,53 @@ fn apps_status_for_app(
     ensure_apps_manage_permission(app, caller_app_id)?;
     let target_app_id = required_string_param(&params, "app_id", "appId")?;
     crate::app_status(app.clone(), target_app_id)
+}
+
+fn apps_diff_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    let diff = crate::app_diff(app.clone(), target_app_id.clone())?;
+    Ok(serde_json::json!({ "app_id": target_app_id, "diff": diff }))
+}
+
+fn apps_commit_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    let message = string_param(&params, "message", "message");
+    crate::app_save(app.clone(), target_app_id.clone(), message)?;
+    Ok(serde_json::json!({ "ok": true, "app_id": target_app_id }))
+}
+
+fn apps_commit_partial_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    let patch = required_string_param(&params, "patch", "patch")?;
+    let message = string_param(&params, "message", "message");
+    crate::app_save_partial(app.clone(), target_app_id.clone(), patch, message)?;
+    Ok(serde_json::json!({ "ok": true, "app_id": target_app_id }))
+}
+
+fn apps_revert_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    crate::app_revert(app.clone(), target_app_id.clone())?;
+    Ok(serde_json::json!({ "ok": true, "app_id": target_app_id }))
 }
 
 async fn apps_server_status_for_app(

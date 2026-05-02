@@ -150,6 +150,10 @@ The injected runtime overlay provides:
 - `window.reflexAppsRestore(trashIdOrParams)`
 - `window.reflexAppsPurge(trashIdOrParams)`
 - `window.reflexAppsStatus(appIdOrParams)`
+- `window.reflexAppsDiff(appIdOrParams)`
+- `window.reflexAppsCommit(appIdOrParams, message?)`
+- `window.reflexAppsCommitPartial(appIdOrParams, patch?, message?)`
+- `window.reflexAppsRevert(appIdOrParams)`
 - `window.reflexAppsServerStatus(appIdOrParams)`
 - `window.reflexAppsServerLogs(appIdOrParams)`
 - `window.reflexAppsServerStart(appIdOrParams)`
@@ -304,6 +308,10 @@ Core methods:
   removes a trashed app.
 - `apps.status({ app_id })`; requires `apps.manage` or `apps:*` and returns
   revision, dirty state, last commit message, and entry readiness.
+- `apps.diff({ app_id })` -> `{ app_id, diff }`;
+  `apps.commit({ app_id, message? })`, `apps.commitPartial({ app_id, patch, message? })`,
+  and `apps.revert({ app_id })` require `apps.manage` or `apps:*` and manage app
+  code revisions.
 - `apps.server.status({ app_id })`, `apps.server.logs({ app_id })`,
   `apps.server.start({ app_id })`, `apps.server.stop({ app_id })`, and
   `apps.server.restart({ app_id })`; require `apps.manage` or `apps:*` and
@@ -381,9 +389,10 @@ Apps can expose:
 Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,
 `clipboard.*`, `system.openUrl`, `system.openPath`, `system.revealPath`,
-`apps.create`, `apps.import`, `apps.delete`, `apps.restore`, `apps.purge`, and
-`apps.open` are not valid inside schedules. `projects.open`, `topics.open`,
-`scheduler.runNow`, `scheduler.setPaused`, `scheduler.upsert`, and
+`apps.create`, `apps.import`, `apps.commit`, `apps.commitPartial`, `apps.delete`,
+`apps.restore`, `apps.revert`, `apps.purge`, and `apps.open` are not valid inside
+schedules. `projects.open`, `topics.open`, `scheduler.runNow`,
+`scheduler.setPaused`, `scheduler.upsert`, and
 `scheduler.delete` are also blocked inside schedule steps to prevent unattended
 recursive runs. Non-UI methods such as `project.files.*` can run in schedules
 when the app has the required manifest permissions.

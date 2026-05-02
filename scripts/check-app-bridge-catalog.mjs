@@ -125,6 +125,7 @@ const dispatchAliasesOrInternal = new Set([
   "browser.tabsList",
   "clipboard.read_text",
   "clipboard.write_text",
+  "apps.commit_partial",
   "events.clearSubscriptions",
   "mcp.list",
   "memory.forget_path",

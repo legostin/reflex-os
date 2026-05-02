@@ -968,6 +968,22 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
     return reflexInvokeRaw('apps.status', params);
   };
+  window.reflexAppsDiff = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.diff', params);
+  };
+  window.reflexAppsCommit = function(appIdOrParams, message) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams, message: message || null} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.commit', params);
+  };
+  window.reflexAppsCommitPartial = function(appIdOrParams, patch, message) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams, patch: patch, message: message || null} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.commitPartial', params);
+  };
+  window.reflexAppsRevert = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.revert', params);
+  };
   window.reflexAppsServerStatus = function(appIdOrParams) {
     var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
     return reflexInvokeRaw('apps.server.status', params);
