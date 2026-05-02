@@ -595,6 +595,10 @@ pub async fn dispatch_app_method(
         }
         "apps.list" => list_app_summaries(app),
         "apps.create" => apps_create_for_app(app, app_id, params).await,
+        "apps.delete" => apps_delete_for_app(app, app_id, params),
+        "apps.trashList" => apps_trash_list_for_app(app, app_id),
+        "apps.restore" => apps_restore_for_app(app, app_id, params),
+        "apps.purge" => apps_purge_for_app(app, app_id, params),
         "apps.open" => {
             let target_id = params
                 .get("app_id")
@@ -1331,6 +1335,10 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "events.clearSubscriptions",
                 "apps.list",
                 "apps.create",
+                "apps.delete",
+                "apps.trashList",
+                "apps.restore",
+                "apps.purge",
                 "apps.open",
                 "apps.invoke",
                 "apps.list_actions",
@@ -1458,6 +1466,10 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexSchedulerRunDetail",
                 "reflexAppsList",
                 "reflexAppsCreate",
+                "reflexAppsDelete",
+                "reflexAppsTrashList",
+                "reflexAppsRestore",
+                "reflexAppsPurge",
                 "reflexAppsOpen",
                 "reflexAppsInvoke",
                 "reflexAppsListActions",
@@ -1491,6 +1503,9 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "system.openPath",
                 "system.revealPath",
                 "apps.create",
+                "apps.delete",
+                "apps.restore",
+                "apps.purge",
                 "apps.open",
                 "projects.open",
                 "topics.open"
@@ -1520,7 +1535,7 @@ fn bridge_permission_hints() -> serde_json::Value {
         { "scope": "memory", "grants": ["memory.global.read", "memory.global.write"] },
         { "scope": "agent", "grants": ["agent.project:<project>", "agent.project:*", "agent.cwd:*"] },
         { "scope": "scheduler", "grants": ["scheduler.read:*", "scheduler.run:<app>", "scheduler.write:<app>::<schedule>", "scheduler.write:*", "scheduler:*"] },
-        { "scope": "apps", "grants": ["apps.create", "apps:*", "apps.invoke:*", "apps.invoke:<app>", "apps.invoke:<app>::<action>"] }
+        { "scope": "apps", "grants": ["apps.create", "apps.manage", "apps:*", "apps.invoke:*", "apps.invoke:<app>", "apps.invoke:<app>::<action>"] }
     ])
 }
 
@@ -2782,6 +2797,22 @@ fn ensure_apps_create_permission(app: &AppHandle, app_id: &str) -> Result<(), St
     }
 }
 
+fn ensure_apps_manage_permission(app: &AppHandle, app_id: &str) -> Result<(), String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    if manifest
+        .permissions
+        .iter()
+        .any(|permission| matches!(permission.as_str(), "*" | "apps:*" | "apps.manage"))
+    {
+        Ok(())
+    } else {
+        Err(
+            "permission denied: app lifecycle management requires manifest.permissions entry 'apps.manage' or 'apps:*'"
+                .into(),
+        )
+    }
+}
+
 async fn apps_create_for_app(
     app: &AppHandle,
     app_id: &str,
@@ -2799,6 +2830,54 @@ async fn apps_create_for_app(
         None
     };
     crate::create_app(app.clone(), description, template, project_id).await
+}
+
+fn apps_delete_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_id = string_param(&params, "app_id", "appId")
+        .ok_or_else(|| "missing app_id".to_string())?;
+    if target_id == caller_app_id {
+        return Err("apps.delete cannot delete the calling app".into());
+    }
+    let entry = crate::delete_app(app.clone(), target_id)?;
+    serde_json::to_value(entry).map_err(|e| e.to_string())
+}
+
+fn apps_trash_list_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let entries = crate::list_trashed_apps(app.clone())?;
+    serde_json::to_value(entries).map_err(|e| e.to_string())
+}
+
+fn apps_restore_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let trash_id = string_param(&params, "trash_id", "trashId")
+        .ok_or_else(|| "missing trash_id".to_string())?;
+    let app_id = crate::restore_app(app.clone(), trash_id)?;
+    Ok(serde_json::json!({ "ok": true, "app_id": app_id }))
+}
+
+fn apps_purge_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let trash_id = string_param(&params, "trash_id", "trashId")
+        .ok_or_else(|| "missing trash_id".to_string())?;
+    crate::purge_trashed_app(app.clone(), trash_id)?;
+    Ok(serde_json::json!({ "ok": true }))
 }
 
 fn list_actions(

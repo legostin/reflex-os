@@ -941,6 +941,21 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof descriptionOrParams === 'string') ? {description: descriptionOrParams, template: template || null} : (descriptionOrParams || {});
     return reflexInvokeRaw('apps.create', params);
   };
+  window.reflexAppsDelete = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.delete', params);
+  };
+  window.reflexAppsTrashList = function() {
+    return reflexInvokeRaw('apps.trashList', {});
+  };
+  window.reflexAppsRestore = function(trashIdOrParams) {
+    var params = (typeof trashIdOrParams === 'string') ? {trash_id: trashIdOrParams} : (trashIdOrParams || {});
+    return reflexInvokeRaw('apps.restore', params);
+  };
+  window.reflexAppsPurge = function(trashIdOrParams) {
+    var params = (typeof trashIdOrParams === 'string') ? {trash_id: trashIdOrParams} : (trashIdOrParams || {});
+    return reflexInvokeRaw('apps.purge', params);
+  };
   window.reflexAppsOpen = function(appIdOrParams) {
     var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
     return reflexInvokeRaw('apps.open', params);
