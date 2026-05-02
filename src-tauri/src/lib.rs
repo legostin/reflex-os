@@ -560,13 +560,14 @@ fn app_revise(
   • agent.stream({{prompt}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}\n\
   • storage.get/set, fs.read/write (в app-папке)\n\
   • projects.list / topics.list — read-only обзор доступных проектов и топиков; чужие требуют permission projects.read/topics.read\n\
+  • skills.list / mcp.servers — preferred skills и MCP server names; raw MCP config требует permission mcp.read:<project>|*\n\
   • browser.init/tabs.list/open/navigate/readText/readOutline/screenshot/clickText/clickSelector/fill — встроенный browser sidecar; требует browser.read/control\n\
   • memory.save/list/delete/search/recall/indexPath/pathStatus/forgetPath — память Reflex; project scope по умолчанию, global требует permission memory.global.read/write\n\
   • scheduler.list/runNow/setPaused/runs/runDetail — читать и управлять своими расписаниями; чужие требуют permission scheduler.read/run/write\n\
   • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
   • notify.show — macOS push\n\
   • net.fetch({{url, method?, headers?, body?}}) — требует manifest.network.allowed_hosts (поддержка \"*.foo.com\")\n\
-- Overlay helpers: reflexAgentAsk/Task/Stream/StreamAbort, reflexStorageGet/Set, reflexFsRead/Write, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
+- Overlay helpers: reflexAgentAsk/Task/Stream/StreamAbort, reflexStorageGet/Set, reflexFsRead/Write, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
 - iframe sandbox=\"allow-scripts allow-forms\" (для server runtime + allow-same-origin). Никаких внешних CDN — только inline или локальные файлы.\n\
 - Reflex автоматически инжектит overlay-скрипт в HTML: ловит window.onerror/unhandledrejection (юзер увидит ✨Fix), и режим Inspector (юзер кликает → ты получишь selector + outerHTML). Не пиши свой обработчик с теми же типами событий.\n\
 - После твоих правок iframe перезагрузится сам (file watcher), для server runtime — процесс перезапустится. Не требуй ручного reload.\n\
