@@ -440,6 +440,10 @@ function previewJsonValue(value: unknown): string {
   }
 }
 
+function actionParamsSchema(action: AppAction): unknown {
+  return action.params_schema ?? action.paramsSchema ?? null;
+}
+
 function buildAppCapabilityFacts(
   manifest: AppManifest | null,
   serverPort: number | null,
@@ -2692,6 +2696,20 @@ function AppViewer({
 
   async function runManifestAction(action: AppAction) {
     if (actionBusy) return;
+    let actionParams: unknown = {};
+    if (actionParamsSchema(action)) {
+      const raw = window.prompt(
+        `Params JSON for ${action.name || action.id}`,
+        "{}",
+      );
+      if (raw === null) return;
+      try {
+        actionParams = JSON.parse(raw.trim() || "{}");
+      } catch (e) {
+        setError(`Invalid action params JSON: ${String(e)}`);
+        return;
+      }
+    }
     setActionBusy(action.id);
     setActionResult(null);
     setError(null);
@@ -2702,7 +2720,7 @@ function AppViewer({
         params: {
           app_id: appId,
           action_id: action.id,
-          params: {},
+          params: actionParams,
         },
       });
       setActionResult({
@@ -3018,7 +3036,7 @@ function AppViewer({
                 {action.public && (
                   <span className="appviewer-action-public">public</span>
                 )}
-                {(action.params_schema || action.paramsSchema) && (
+                {!!actionParamsSchema(action) && (
                   <span className="appviewer-action-public">params</span>
                 )}
               </button>
