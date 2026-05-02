@@ -444,6 +444,45 @@ function actionParamsSchema(action: AppAction): unknown {
   return action.params_schema ?? action.paramsSchema ?? null;
 }
 
+function isJsonObject(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function sampleValueFromJsonSchema(schema: unknown, depth = 0): unknown {
+  if (!isJsonObject(schema) || depth > 5) return {};
+  if ("default" in schema) return schema.default;
+  if ("const" in schema) return schema.const;
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) return schema.enum[0];
+
+  const typeValue = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  if (typeValue === "object" || isJsonObject(schema.properties)) {
+    const out: Record<string, unknown> = {};
+    const properties = isJsonObject(schema.properties) ? schema.properties : {};
+    for (const [key, childSchema] of Object.entries(properties)) {
+      out[key] = sampleValueFromJsonSchema(childSchema, depth + 1);
+    }
+    return out;
+  }
+  if (typeValue === "array") {
+    const minItems =
+      typeof schema.minItems === "number" ? Math.max(0, schema.minItems) : 0;
+    if (minItems <= 0) return [];
+    return Array.from({ length: Math.min(minItems, 3) }, () =>
+      sampleValueFromJsonSchema(schema.items, depth + 1),
+    );
+  }
+  if (typeValue === "boolean") return false;
+  if (typeValue === "integer" || typeValue === "number") return 0;
+  if (typeValue === "null") return null;
+  return "";
+}
+
+function defaultActionParamsJson(action: AppAction): string {
+  const schema = actionParamsSchema(action);
+  const sample = schema ? sampleValueFromJsonSchema(schema) : {};
+  return JSON.stringify(sample, null, 2);
+}
+
 function buildAppCapabilityFacts(
   manifest: AppManifest | null,
   serverPort: number | null,
@@ -2700,7 +2739,7 @@ function AppViewer({
     if (actionParamsSchema(action)) {
       const raw = window.prompt(
         `Params JSON for ${action.name || action.id}`,
-        "{}",
+        defaultActionParamsJson(action),
       );
       if (raw === null) return;
       try {
