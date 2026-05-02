@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "../../i18n";
 import "./file-drawer.css";
 
 export type DrawerTarget = {
@@ -42,13 +43,13 @@ interface Props {
   onStatusChanged?: () => void;
 }
 
-const CLASS_LABEL: Record<FileClass, string> = {
-  text: "Документ",
-  code: "Исходный код",
-  image: "Изображение",
-  binary: "Бинарный файл",
-  toolarge: "Слишком большой",
-  unsupported: "Не поддерживается",
+const CLASS_LABEL_KEY: Record<FileClass, string> = {
+  text: "file.class.text",
+  code: "file.class.code",
+  image: "file.class.image",
+  binary: "file.class.binary",
+  toolarge: "file.class.toolarge",
+  unsupported: "file.class.unsupported",
 };
 
 export function FileActionsDrawer({
@@ -58,6 +59,7 @@ export function FileActionsDrawer({
   onStartTopic,
   onStatusChanged,
 }: Props) {
+  const { t } = useI18n();
   const [status, setStatus] = useState<PathStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -169,16 +171,16 @@ export function FileActionsDrawer({
 
   function talkPrompt(): string {
     if (isDir) {
-      return `Расскажи про папку \`${target!.path}\`: что в ней лежит, какова её роль в проекте, на что обратить внимание.`;
+      return `For the folder \`${target!.path}\`, explain what it contains, its role in the project, and what I should pay attention to.`;
     }
     if (cls === "image") {
-      return `Посмотри на картинку \`${target!.path}\` и расскажи что на ней изображено и зачем она нужна в этом проекте.`;
+      return `Look at the image \`${target!.path}\` and describe what is shown and why it matters in this project.`;
     }
-    return `Прочитай файл \`${target!.path}\` и расскажи о его содержимом: назначение, ключевые места, потенциальные проблемы.`;
+    return `Read the file \`${target!.path}\` and explain its contents: purpose, key sections, and potential issues.`;
   }
 
   function editPrompt(): string {
-    return `Открой \`${target!.path}\`, опиши что в нём сейчас, и спроси у меня какие изменения внести. Пока ничего не правь.`;
+    return `Open \`${target!.path}\`, describe its current contents, and ask me what changes to make. Do not edit anything yet.`;
   }
 
   function startTalk() {
@@ -192,10 +194,10 @@ export function FileActionsDrawer({
   }
 
   const indexButtonLabel = (() => {
-    if (busy === "index") return "Индексирую…";
-    if (busy === "reindex") return "Переиндексирую…";
-    if (status?.indexed) return "Переиндексировать";
-    return "Проиндексировать";
+    if (busy === "index") return t("file.indexing");
+    if (busy === "reindex") return t("file.reindexing");
+    if (status?.indexed) return t("file.reindex");
+    return t("file.index");
   })();
 
   return (
@@ -204,7 +206,7 @@ export function FileActionsDrawer({
         className="file-drawer"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="Действия с файлом"
+        aria-label={t("file.actionsAria")}
       >
         <header className="file-drawer-header">
           <div className="file-drawer-icon">
@@ -218,13 +220,15 @@ export function FileActionsDrawer({
             {status && (
               <div className="file-drawer-meta">
                 <span className="file-drawer-tag">
-                  {CLASS_LABEL[status.class] ?? status.kind}
+                  {t(CLASS_LABEL_KEY[status.class] ?? status.kind)}
                 </span>
                 {status.indexed && (
                   <span className="file-drawer-tag file-drawer-tag-on">
                     {isDir
-                      ? `в RAG: ${status.indexed_under ?? "?"}`
-                      : "в RAG"}
+                      ? t("file.inRagCount", {
+                          count: status.indexed_under ?? "?",
+                        })
+                      : t("file.inRag")}
                   </span>
                 )}
               </div>
@@ -233,30 +237,32 @@ export function FileActionsDrawer({
           <button
             className="file-drawer-close"
             onClick={onClose}
-            title="Закрыть (Esc)"
+            title={t("file.closeEsc")}
           >
             ✕
           </button>
         </header>
 
-        {loading && <div className="file-drawer-loading">Загружаю статус…</div>}
+        {loading && (
+          <div className="file-drawer-loading">{t("file.loadingStatus")}</div>
+        )}
 
         <div className="file-drawer-actions">
           <button
             className="file-drawer-btn file-drawer-btn-primary"
             onClick={startTalk}
           >
-            <span className="file-drawer-btn-title">Поговорить о содержимом</span>
+            <span className="file-drawer-btn-title">{t("file.talkTitle")}</span>
             <span className="file-drawer-btn-hint">
-              Запустит топик с этим путём в контексте
+              {t("file.talkHint")}
             </span>
           </button>
 
           {canEdit && (
             <button className="file-drawer-btn" onClick={startEdit}>
-              <span className="file-drawer-btn-title">Изменить</span>
+              <span className="file-drawer-btn-title">{t("file.editTitle")}</span>
               <span className="file-drawer-btn-hint">
-                Топик с предложением правок
+                {t("file.editHint")}
               </span>
             </button>
           )}
@@ -270,20 +276,19 @@ export function FileActionsDrawer({
               <span className="file-drawer-btn-title">{indexButtonLabel}</span>
               <span className="file-drawer-btn-hint">
                 {isDir
-                  ? "Рекурсивно: файлы, картинки, исходники"
+                  ? t("file.indexDirHint")
                   : cls === "image"
-                    ? "Через codex описание + bge-m3"
-                    : "Через bge-m3 (Ollama)"}
+                    ? t("file.indexImageHint")
+                    : t("file.indexTextHint")}
               </span>
             </button>
           )}
 
           {!indexable && cls && (
             <div className="file-drawer-note">
-              {cls === "binary" && "Бинарный файл индексировать нельзя."}
-              {cls === "toolarge" &&
-                "Файл слишком большой (лимит: 1 MB для текста, 5 MB для картинок)."}
-              {cls === "unsupported" && "Файл этого типа не индексируется."}
+              {cls === "binary" && t("file.binaryNote")}
+              {cls === "toolarge" && t("file.tooLargeNote")}
+              {cls === "unsupported" && t("file.unsupportedNote")}
             </div>
           )}
 
@@ -293,15 +298,17 @@ export function FileActionsDrawer({
               onClick={doForget}
               disabled={busy !== null}
             >
-              <span className="file-drawer-btn-title">Удалить из памяти</span>
+              <span className="file-drawer-btn-title">
+                {t("file.forgetTitle")}
+              </span>
               <span className="file-drawer-btn-hint">
-                Очистит RAG-записи для этого пути
+                {t("file.forgetHint")}
               </span>
             </button>
           )}
 
           <button className="file-drawer-btn" onClick={doReveal}>
-            <span className="file-drawer-btn-title">Открыть в Finder</span>
+            <span className="file-drawer-btn-title">{t("file.openFinder")}</span>
           </button>
         </div>
 
@@ -310,15 +317,17 @@ export function FileActionsDrawer({
         {outcome && (
           <div className="file-drawer-outcome">
             <div>
-              Индексировано: <strong>{outcome.indexed}</strong>
+              {t("file.indexedCount", { count: outcome.indexed })}
             </div>
             {outcome.skipped.length > 0 && (
               <details>
-                <summary>Пропущено: {outcome.skipped.length}</summary>
+                <summary>
+                  {t("file.skippedCount", { count: outcome.skipped.length })}
+                </summary>
                 <ul>
                   {outcome.skipped.slice(0, 30).map((s) => (
                     <li key={s.path}>
-                      <code>{s.path}</code> — {s.reason}
+                      <code>{s.path}</code> - {s.reason}
                     </li>
                   ))}
                 </ul>
