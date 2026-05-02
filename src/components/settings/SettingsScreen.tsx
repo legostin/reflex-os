@@ -21,20 +21,135 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   error: 4,
 };
 
-type Tab = "general" | "logs";
+type Tab = "capabilities" | "logs";
+
+const CAPABILITY_GROUPS = [
+  {
+    title: "Проекты",
+    body: "Папки с sandbox, browser MCP, MCP servers, agent profile, preferred skills, linked apps, widgets и indexed files.",
+  },
+  {
+    title: "Топики",
+    body: "Codex threads с project profile, memory recall и продолжением рабочей сессии.",
+  },
+  {
+    title: "Генерируемые утилиты",
+    body: "Static или local server apps с manifest, storage, actions, widgets и Reflex bridge APIs.",
+  },
+  {
+    title: "Память",
+    body: "Global, project и topic notes, плюс RAG по индексированным файлам и сохранённым фактам.",
+  },
+  {
+    title: "Автоматизации",
+    body: "Manifest schedules и actions, которые исполняются теми же bridge methods, что доступны apps.",
+  },
+  {
+    title: "MCP и skills",
+    body: "Project-scoped MCP JSON и preferred skills внедряются в новые, продолженные и auto-resumed topics.",
+  },
+] as const;
+
+const API_GROUPS = [
+  {
+    title: "Система и manifest",
+    methods: [
+      "system.context",
+      "manifest.get",
+      "manifest.update",
+    ],
+  },
+  {
+    title: "Агентный runtime",
+    methods: [
+      "agent.ask",
+      "agent.startTopic",
+      "agent.task",
+      "agent.stream",
+      "agent.streamAbort",
+    ],
+  },
+  {
+    title: "Данные app и файлы",
+    methods: [
+      "storage.get",
+      "storage.set",
+      "fs.read",
+      "fs.write",
+    ],
+  },
+  {
+    title: "Нативный macOS",
+    methods: [
+      "dialog.openDirectory",
+      "dialog.openFile",
+      "dialog.saveFile",
+      "notify.show",
+    ],
+  },
+  {
+    title: "Сеть",
+    methods: ["net.fetch"],
+  },
+  {
+    title: "Память",
+    methods: [
+      "memory.save",
+      "memory.list",
+      "memory.delete",
+      "memory.search",
+      "memory.recall",
+      "memory.indexPath",
+      "memory.pathStatus",
+      "memory.forgetPath",
+    ],
+  },
+  {
+    title: "Автоматизации",
+    methods: [
+      "scheduler.list",
+      "scheduler.runNow",
+      "scheduler.setPaused",
+      "scheduler.runs",
+      "scheduler.runDetail",
+    ],
+  },
+  {
+    title: "Сетка apps",
+    methods: [
+      "events.emit",
+      "events.subscribe",
+      "events.unsubscribe",
+      "apps.invoke",
+      "apps.list_actions",
+    ],
+  },
+] as const;
+
+const PERMISSION_EXAMPLES = [
+  "memory.global.read",
+  "memory.global.write",
+  "memory.project:*",
+  "apps.invoke:*",
+  "apps.invoke:<app>",
+  "scheduler.read:*",
+  "scheduler.run:<app>",
+  "scheduler.write:<app>::<schedule>",
+  "net.fetch requires manifest.network.allowed_hosts",
+] as const;
 
 export function SettingsScreen() {
-  const [tab, setTab] = useState<Tab>("logs");
+  const [tab, setTab] = useState<Tab>("capabilities");
   return (
     <div className="settings-root">
       <header className="settings-header">
         <h1>Настройки</h1>
         <div className="settings-tabs">
           <button
-            className={tab === "general" ? "tab-on" : ""}
-            onClick={() => setTab("general")}
+            className={tab === "capabilities" ? "tab-on" : ""}
+            onClick={() => setTab("capabilities")}
           >
-            Общие
+            Возможности
           </button>
           <button
             className={tab === "logs" ? "tab-on" : ""}
@@ -44,26 +159,80 @@ export function SettingsScreen() {
           </button>
         </div>
       </header>
-      {tab === "general" ? <GeneralPane /> : <LogsPane />}
+      {tab === "capabilities" ? <CapabilitiesPane /> : <LogsPane />}
     </div>
   );
 }
 
-function GeneralPane() {
+function CapabilitiesPane() {
   return (
-    <div className="settings-pane">
+    <div className="settings-pane capabilities-pane">
       <section className="settings-section">
-        <h2>О приложении</h2>
+        <h2>Слой Reflex OS</h2>
         <p>
-          Reflex — macOS-агент-надстройка с локальным Codex CLI, встроенным
-          браузером и системой памяти.
+          Reflex — локальная macOS-надстройка над Codex CLI: проекты, темы,
+          browser/MCP bridge, generated apps, widgets, memory, RAG и scheduled
+          automations живут в одном workspace.
         </p>
       </section>
+
+      <section className="settings-section settings-section-open">
+        <h2>Карта системы</h2>
+        <div className="settings-cap-grid">
+          {CAPABILITY_GROUPS.map((group) => (
+            <article className="settings-cap-card" key={group.title}>
+              <h3>{group.title}</h3>
+              <p>{group.body}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="settings-section settings-section-open">
+        <div className="settings-section-title-row">
+          <h2>Bridge generated apps</h2>
+          <span className="settings-section-meta">
+            window.reflexInvoke(method, params)
+          </span>
+        </div>
+        <div className="settings-api-grid">
+          {API_GROUPS.map((group) => (
+            <article className="settings-api-group" key={group.title}>
+              <h3>{group.title}</h3>
+              <div className="settings-method-list">
+                {group.methods.map((method) => (
+                  <code key={method}>{method}</code>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section className="settings-section">
-        <h2>Действия</h2>
+        <div className="settings-section-title-row">
+          <h2>Разрешения</h2>
+          <span className="settings-section-meta">manifest.json</span>
+        </div>
+        <div className="settings-token-list">
+          {PERMISSION_EXAMPLES.map((permission) => (
+            <code key={permission}>{permission}</code>
+          ))}
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h2>Поток автоматизации</h2>
+        <div className="settings-flow">
+          <span>manifest.schedules</span>
+          <span>scheduler runner</span>
+          <span>bridge steps</span>
+          <span>run history</span>
+        </div>
         <p className="settings-hint">
-          Заглушка. Скоро добавим переключатели для Codex CLI, Ollama,
-          параметров браузера и т.д.
+          Generated apps могут обновлять собственный manifest, добавлять
+          schedules/actions, смотреть runs и отдавать widgets или public
+          actions другим apps.
         </p>
       </section>
     </div>
