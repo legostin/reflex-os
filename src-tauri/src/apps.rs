@@ -1181,6 +1181,14 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexMcpServers = function(params) {
     return reflexInvokeRaw('mcp.servers', params || {});
   };
+  window.reflexProjectMcpUpsert = function(nameOrParams, config) {
+    var params = (typeof nameOrParams === 'string') ? {name: nameOrParams, config: config} : (nameOrParams || {});
+    return reflexInvokeRaw('project.mcp.upsert', params);
+  };
+  window.reflexProjectMcpDelete = function(nameOrParams) {
+    var params = (typeof nameOrParams === 'string') ? {name: nameOrParams} : (nameOrParams || {});
+    return reflexInvokeRaw('project.mcp.delete', params);
+  };
   window.reflexProjectFilesList = function(pathOrParams, recursive) {
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams, recursive: !!recursive} : (pathOrParams || {});
     return reflexInvokeRaw('project.files.list', params);

@@ -632,6 +632,8 @@ pub async fn dispatch_app_method(
         "project.skills.ensure" => project_skills_ensure_for_app(app, app_id, params),
         "project.skills.revoke" => project_skills_revoke_for_app(app, app_id, params),
         "mcp.servers" | "mcp.list" => mcp_servers_for_app(app, app_id, params),
+        "project.mcp.upsert" => project_mcp_upsert_for_app(app, app_id, params),
+        "project.mcp.delete" => project_mcp_delete_for_app(app, app_id, params),
         "project.files.list" => project_files_list_for_app(app, app_id, params),
         "project.files.read" => project_files_read_for_app(app, app_id, params),
         "project.files.search" => project_files_search_for_app(app, app_id, params),
@@ -1237,6 +1239,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "project.skills.ensure",
                 "project.skills.revoke",
                 "mcp.servers",
+                "project.mcp.upsert",
+                "project.mcp.delete",
                 "project.files.list",
                 "project.files.read",
                 "project.files.search",
@@ -1384,6 +1388,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexProjectSkillsEnsure",
                 "reflexProjectSkillsRevoke",
                 "reflexMcpServers",
+                "reflexProjectMcpUpsert",
+                "reflexProjectMcpDelete",
                 "reflexProjectFilesList",
                 "reflexProjectFilesRead",
                 "reflexProjectFilesSearch",
@@ -1480,7 +1486,7 @@ fn bridge_permission_hints() -> serde_json::Value {
         { "scope": "projects", "grants": ["projects.read:*"] },
         { "scope": "topics", "grants": ["topics.read:<project>", "topics.read:*"] },
         { "scope": "skills", "grants": ["skills.read:<project>", "skills.read:*", "skills.write:<project>", "skills.write:*"] },
-        { "scope": "mcp", "grants": ["mcp.read:<project>", "mcp.read:*"] },
+        { "scope": "mcp", "grants": ["mcp.read:<project>", "mcp.read:*", "mcp.write:<project>", "mcp.write:*"] },
         { "scope": "project.files", "grants": ["project.files.read:<project>", "project.files.read:*", "project.files.write:<project>", "project.files.write:*"] },
         { "scope": "memory", "grants": ["memory.global.read", "memory.global.write"] },
         { "scope": "agent", "grants": ["agent.project:<project>", "agent.project:*", "agent.cwd:*"] },
@@ -3155,6 +3161,184 @@ fn mcp_servers_for_app(
     }
 
     Ok(serde_json::Value::Array(out))
+}
+
+fn project_mcp_upsert_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut project = resolve_project_mcp_write_target(app, app_id, &params)?;
+    let name = normalize_mcp_server_name(
+        &mcp_server_name_param(&params).ok_or("missing name or serverName")?,
+    )?;
+    let config = normalize_mcp_server_config(
+        params
+            .get("config")
+            .cloned()
+            .or_else(|| params.get("server").cloned())
+            .ok_or("missing config")?,
+    )?;
+    let mut servers = project
+        .mcp_servers
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let object = servers
+        .as_object_mut()
+        .ok_or("project mcp_servers must be a JSON object")?;
+    let replaced = object.insert(name.clone(), config.clone()).is_some();
+    let server_names = sorted_mcp_server_names(&servers);
+    project.mcp_servers = Some(servers);
+    write_project_and_register(app, &project)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project.id,
+        "project_name": project.name,
+        "name": name,
+        "replaced": replaced,
+        "server": config,
+        "server_names": server_names,
+    }))
+}
+
+fn project_mcp_delete_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut project = resolve_project_mcp_write_target(app, app_id, &params)?;
+    let names = parse_mcp_server_names(&params)?;
+    let mut removed = Vec::new();
+    if let Some(servers) = project.mcp_servers.as_mut() {
+        let object = servers
+            .as_object_mut()
+            .ok_or("project mcp_servers must be a JSON object")?;
+        for name in names {
+            if object.remove(&name).is_some() {
+                removed.push(name);
+            }
+        }
+    }
+    let next_names = project
+        .mcp_servers
+        .as_ref()
+        .map(sorted_mcp_server_names)
+        .unwrap_or_default();
+    if next_names.is_empty() {
+        project.mcp_servers = None;
+    }
+    write_project_and_register(app, &project)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project.id,
+        "project_name": project.name,
+        "removed": removed,
+        "server_names": next_names,
+    }))
+}
+
+fn resolve_project_mcp_write_target(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<project::Project, String> {
+    if let Some(project_id) = string_param(params, "project_id", "projectId") {
+        let project = list_user_projects(app)?
+            .into_iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| format!("project not found: {project_id}"))?;
+        ensure_scoped_permission(app, app_id, "mcp.write", &project.id)?;
+        return Ok(project);
+    }
+    let targets: Vec<project::Project> = list_user_projects(app)?
+        .into_iter()
+        .filter(|project| scoped_permission_allowed(app, app_id, "mcp.write", &project.id))
+        .collect();
+    if targets.len() == 1 {
+        return Ok(targets.into_iter().next().expect("one mcp write target"));
+    }
+    if targets.is_empty() {
+        return Err(
+            "missing project_id; add manifest.permissions entry 'mcp.write:<project>' or 'mcp.write:*'"
+                .into(),
+        );
+    }
+    Err("missing project_id; multiple mcp.write targets are available".into())
+}
+
+fn normalize_mcp_server_config(value: serde_json::Value) -> Result<serde_json::Value, String> {
+    match value {
+        serde_json::Value::Object(object) if !object.is_empty() => {
+            Ok(serde_json::Value::Object(object))
+        }
+        serde_json::Value::Object(_) => Err("config must be a non-empty JSON object".into()),
+        _ => Err("config must be a JSON object".into()),
+    }
+}
+
+fn parse_mcp_server_names(params: &serde_json::Value) -> Result<Vec<String>, String> {
+    if let Some(value) = mcp_server_name_param(params) {
+        return Ok(vec![normalize_mcp_server_name(&value)?]);
+    }
+    let value = params
+        .get("names")
+        .or_else(|| params.get("server_names"))
+        .or_else(|| params.get("serverNames"))
+        .ok_or("missing name or names")?;
+    let raw = if let Some(value) = value.as_str() {
+        vec![value.to_string()]
+    } else {
+        value
+            .as_array()
+            .ok_or("names must be a string or array of strings")?
+            .iter()
+            .filter_map(|item| item.as_str())
+            .map(str::to_string)
+            .collect()
+    };
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for name in raw {
+        let name = normalize_mcp_server_name(&name)?;
+        if seen.insert(name.to_ascii_lowercase()) {
+            out.push(name);
+        }
+    }
+    if out.is_empty() {
+        return Err("names must include at least one MCP server name".into());
+    }
+    Ok(out)
+}
+
+fn mcp_server_name_param(params: &serde_json::Value) -> Option<String> {
+    string_param(params, "name", "name")
+        .or_else(|| string_param(params, "server_name", "serverName"))
+}
+
+fn normalize_mcp_server_name(raw: &str) -> Result<String, String> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err("MCP server name must be non-empty".into());
+    }
+    if name.len() > 80 {
+        return Err("MCP server name must be 80 characters or fewer".into());
+    }
+    if name
+        .chars()
+        .any(|ch| ch.is_control() || ch == ',' || ch == '/' || ch == '\\')
+    {
+        return Err("MCP server name must not contain commas, slashes, or control characters".into());
+    }
+    Ok(name.to_string())
+}
+
+fn sorted_mcp_server_names(value: &serde_json::Value) -> Vec<String> {
+    let mut names: Vec<String> = value
+        .as_object()
+        .map(|object| object.keys().cloned().collect())
+        .unwrap_or_default();
+    names.sort();
+    names
 }
 
 fn project_files_list_for_app(
@@ -5112,5 +5296,23 @@ mod tests {
             ]
         );
         assert!(normalize_project_skill_name("bad,skill").is_err());
+    }
+
+    #[test]
+    fn mcp_server_names_are_normalized_and_deduped() {
+        let params = serde_json::json!({
+            "serverNames": [" reflex_browser ", "REFLEX_BROWSER", "linear"]
+        });
+        assert_eq!(
+            parse_mcp_server_names(&params).unwrap(),
+            vec!["reflex_browser".to_string(), "linear".to_string()]
+        );
+        assert!(normalize_mcp_server_name("bad/server").is_err());
+        assert!(normalize_mcp_server_config(serde_json::json!({})).is_err());
+        assert!(normalize_mcp_server_config(serde_json::json!({
+            "command": "node",
+            "args": ["bridge.js"]
+        }))
+        .is_ok());
     }
 }

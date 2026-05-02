@@ -71,6 +71,8 @@ const PERMISSION_EXAMPLES = [
   "skills.write:*",
   "mcp.read:<project>",
   "mcp.read:*",
+  "mcp.write:<project>",
+  "mcp.write:*",
   "project.files.read:<project>",
   "project.files.read:*",
   "project.files.write:<project>",

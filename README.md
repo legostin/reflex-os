@@ -97,6 +97,8 @@ The injected runtime overlay provides:
 - `window.reflexProjectSkillsEnsure(skillOrParams)`
 - `window.reflexProjectSkillsRevoke(skillOrParams)`
 - `window.reflexMcpServers(params)`
+- `window.reflexProjectMcpUpsert(nameOrParams, config?)`
+- `window.reflexProjectMcpDelete(nameOrParams)`
 - `window.reflexProjectFilesList(pathOrParams, recursive?)`
 - `window.reflexProjectFilesRead(pathOrParams)`
 - `window.reflexProjectFilesSearch(queryOrParams, includeContent?)`
@@ -216,6 +218,14 @@ Core methods:
   `project.skills.revoke({ projectId?, skills })` -> `{ ok, removed, skills }`;
   requires `skills.write:<project>` or `skills.write:*`.
 - `mcp.servers({ projectId?, includeAll?, includeConfig? })`.
+- `project.mcp.upsert({ projectId?, name, config })` or
+  `project.mcp.upsert({ projectId?, serverName, config })` ->
+  `{ ok, name, replaced, server, server_names }`; requires
+  `mcp.write:<project>` or `mcp.write:*`.
+- `project.mcp.delete({ projectId?, name })` or
+  `project.mcp.delete({ projectId?, names })` ->
+  `{ ok, removed, server_names }`; requires `mcp.write:<project>` or
+  `mcp.write:*`.
 - `project.files.list({ projectId?, path?, recursive?, includeHidden? })` ->
   `{ project_id, project_name, entries }`; linked projects are available by
   default, other projects require `project.files.read:<project>` or
@@ -257,7 +267,8 @@ default. Cross-project overview requires `projects.read:*`,
 Skills and MCP server names are available for linked projects; cross-project
 skills require `skills.read:<project>` or `skills.read:*`, skill mutations
 require `skills.write:<project>` or `skills.write:*`, and raw MCP config requires
-`mcp.read:<project>` or `mcp.read:*`.
+`mcp.read:<project>` or `mcp.read:*`. MCP server mutations require
+`mcp.write:<project>` or `mcp.write:*`.
 Browser methods require `browser.read` for read-only inspection or
 `browser.control` for init/open/navigate/click/fill. Project browser state
 requires a linked project or `browser.project:<project>`.

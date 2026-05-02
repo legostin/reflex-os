@@ -59,6 +59,8 @@ export const BRIDGE_API_GROUPS = [
       "project.skills.ensure",
       "project.skills.revoke",
       "mcp.servers",
+      "project.mcp.upsert",
+      "project.mcp.delete",
       "project.files.list",
       "project.files.read",
       "project.files.search",
@@ -210,6 +212,8 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexProjectSkillsEnsure",
       "reflexProjectSkillsRevoke",
       "reflexMcpServers",
+      "reflexProjectMcpUpsert",
+      "reflexProjectMcpDelete",
       "reflexProjectFilesList",
       "reflexProjectFilesRead",
       "reflexProjectFilesSearch",
@@ -300,8 +304,9 @@ export const BRIDGE_RECIPE_CARDS = [
   },
   {
     title: "MCP и skills проекта",
-    body: "Читай project files, закрепляй preferred skills и записывай артефакты с явными grants.",
-    calls: ["project.skills.ensure", "project.files.search", "project.files.write"],
-    example: 'await reflexProjectSkillsEnsure("build-web-apps:react-best-practices");',
+    body: "Закрепляй preferred skills, подключай MCP servers и записывай артефакты с явными grants.",
+    calls: ["project.skills.ensure", "project.mcp.upsert", "project.files.write"],
+    example:
+      'await reflexProjectMcpUpsert("linear", { command: "npx", args: ["-y", "linear-mcp"] });',
   },
 ] as const;
