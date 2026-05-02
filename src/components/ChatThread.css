@@ -1076,10 +1076,6 @@
   background: rgba(255, 255, 255, 0.025);
 }
 
-.header-action-group-grow {
-  min-width: 300px;
-}
-
 .header-action-group-compact {
   margin-left: auto;
 }
@@ -1115,36 +1111,6 @@
   background: rgba(240, 198, 116, 0.12);
   border-color: rgba(240, 198, 116, 0.25);
   color: #f8e4a4;
-}
-
-.header-project-select {
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 22px;
-  max-width: 200px;
-  text-overflow: ellipsis;
-  background-image: linear-gradient(
-      45deg,
-      transparent 50%,
-      rgba(245, 245, 247, 0.55) 50%
-    ),
-    linear-gradient(
-      135deg,
-      rgba(245, 245, 247, 0.55) 50%,
-      transparent 50%
-    );
-  background-position:
-    calc(100% - 12px) 9px,
-    calc(100% - 8px) 9px;
-  background-size:
-    4px 4px,
-    4px 4px;
-  background-repeat: no-repeat;
-}
-
-.header-project-select:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .apps-root {
@@ -2640,10 +2606,6 @@
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;
-  }
-
-  .header-action-group-grow {
-    min-width: 240px;
   }
 
   .home-start {

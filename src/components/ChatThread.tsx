@@ -793,6 +793,11 @@ export default function ChatThread() {
     });
   };
 
+  const openProjectRoute = (projectId: string) => {
+    void setActiveProject(projectId);
+    navigate({ kind: "project", project_id: projectId });
+  };
+
   const addPane = () => {
     setLayout((prev) => {
       const id = nextPaneId();
@@ -990,6 +995,7 @@ export default function ChatThread() {
       setNewProjectPath(null);
       setNewProjectDescription("");
       navigate({ kind: "project", project_id: p.id });
+      void setActiveProject(p.id);
       if (description) {
         try {
           const apps = await invoke<
@@ -1222,7 +1228,7 @@ export default function ChatThread() {
       "reflex://project-open-request",
       (e) => {
         if (e.payload.project_id) {
-          navigate({ kind: "project", project_id: e.payload.project_id });
+          openProjectRoute(e.payload.project_id);
         }
       },
     );
@@ -1326,9 +1332,7 @@ export default function ChatThread() {
             threads={threads}
             openAppIds={openAppIds}
             activeProjectId={activeProjectId}
-            onSelectProject={(id) =>
-              navigate({ kind: "project", project_id: id })
-            }
+            onSelectProject={openProjectRoute}
             onSelectTopic={(id) => navigate({ kind: "topic", thread_id: id })}
             onSelectApp={(id) => navigate({ kind: "app", app_id: id })}
             onOpenApps={() => navigate({ kind: "apps" })}
@@ -1457,8 +1461,6 @@ export default function ChatThread() {
         route={currentRoute}
         threads={threads}
         projects={projects}
-        activeProjectId={activeProjectId}
-        onSelectActiveProject={(id) => void setActiveProject(id)}
         onNavigate={navigate}
         onAddPane={addPane}
         onCreateProject={() => void createNewProject()}
@@ -1569,8 +1571,6 @@ function Header({
   route,
   threads,
   projects,
-  activeProjectId,
-  onSelectActiveProject,
   onNavigate,
   onAddPane,
   onCreateProject,
@@ -1578,16 +1578,11 @@ function Header({
   route: Route;
   threads: Thread[];
   projects: Project[];
-  activeProjectId: string | null;
-  onSelectActiveProject: (id: string) => void;
   onNavigate: (r: Route) => void;
   onAddPane: () => void;
   onCreateProject: () => void;
 }) {
   const { t } = useI18n();
-  const activeProject = activeProjectId
-    ? projects.find((p) => p.id === activeProjectId)
-    : null;
   const crumbs: { label: string; route: Route | null }[] = [
     { label: "Reflex", route: { kind: "home" } },
   ];
@@ -1637,6 +1632,29 @@ function Header({
     crumbs.push({ label: t("nav.settings"), route: null });
   }
 
+  const openMemoryRoute = () => {
+    const routeThreadId =
+      route.kind === "topic" || route.kind === "memory"
+        ? route.thread_id
+        : undefined;
+    const activeThread = routeThreadId
+      ? threads.find((t) => t.id === routeThreadId)
+      : null;
+    const projectId =
+      route.kind === "project"
+        ? route.project_id
+        : activeThread
+          ? activeThread.project_id
+          : route.kind === "memory"
+            ? route.project_id
+            : undefined;
+    onNavigate({
+      kind: "memory",
+      project_id: projectId,
+      thread_id: activeThread?.id,
+    });
+  };
+
   return (
     <header className="chat-header">
       <div className="chat-header-top">
@@ -1682,79 +1700,15 @@ function Header({
           </button>
         </div>
 
-        <div className="header-action-group header-action-group-grow">
-          <span className="header-action-label">{t("nav.groupWork")}</span>
-          <select
-            className="header-tab header-project-select"
-            value={activeProjectId ?? ""}
-            onChange={(e) => {
-              const v = e.currentTarget.value;
-              if (v) onSelectActiveProject(v);
-            }}
-            disabled={projects.length === 0}
-            title={t("nav.activeProject")}
-            aria-label={t("nav.activeProject")}
-          >
-            {projects.length === 0 ? (
-              <option value="">{t("nav.noProjects")}</option>
-            ) : (
-              <>
-                {!activeProjectId && (
-                  <option value="" disabled>
-                    {t("nav.chooseProject")}
-                  </option>
-                )}
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
-          {activeProject && (
-            <button
-              className={`header-tab ${route.kind === "project" && route.project_id === activeProject.id ? "active" : ""}`}
-              onClick={() =>
-                onNavigate({ kind: "project", project_id: activeProject.id })
-              }
-              title={activeProject.name}
-            >
-              {t("nav.openProject")}
-            </button>
-          )}
+        <div className="header-action-group">
+          <span className="header-action-label">{t("nav.groupTools")}</span>
           <button
             className={`header-tab ${route.kind === "memory" ? "active" : ""}`}
-            onClick={() => {
-              const routeThreadId =
-                route.kind === "topic" || route.kind === "memory"
-                  ? route.thread_id
-                  : undefined;
-              const activeThread = routeThreadId
-                ? threads.find((t) => t.id === routeThreadId)
-                : null;
-              const projectId =
-                route.kind === "project"
-                  ? route.project_id
-                  : activeThread
-                    ? activeThread.project_id
-                    : route.kind === "memory"
-                      ? route.project_id
-                      : activeProjectId ?? undefined;
-              onNavigate({
-                kind: "memory",
-                project_id: projectId,
-                thread_id: activeThread?.id,
-              });
-            }}
+            onClick={openMemoryRoute}
             title={t("nav.memory")}
           >
             {t("nav.memory")}
           </button>
-        </div>
-
-        <div className="header-action-group">
-          <span className="header-action-label">{t("nav.groupTools")}</span>
           <button
             className={`header-tab ${route.kind === "apps" || route.kind === "app" ? "active" : ""}`}
             onClick={() => onNavigate({ kind: "apps" })}
