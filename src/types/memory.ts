@@ -46,6 +46,12 @@ export interface RecallResult {
   rag: RagHit[];
 }
 
+export interface MemoryListFilter {
+  kind?: MemoryKind | null;
+  tag?: string | null;
+  query?: string | null;
+}
+
 export const MEMORY_SCOPES: MemoryScope[] = ["global", "project", "topic"];
 export const MEMORY_KINDS: MemoryKind[] = [
   "user",

@@ -59,6 +59,69 @@
   align-items: center;
 }
 
+.memory-context-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.memory-context-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(245, 245, 247, 0.72);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.memory-context-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(245, 245, 247, 0.45);
+  font-size: 11px;
+}
+
+.memory-view-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  flex: 0 0 auto;
+}
+
+.memory-view-tab {
+  min-width: 76px;
+  background: transparent;
+  border: none;
+  color: rgba(245, 245, 247, 0.65);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.memory-view-tab.active {
+  background: rgba(74, 140, 255, 0.2);
+  color: #dce4ff;
+}
+
+.memory-view-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .memory-btn {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -303,6 +366,27 @@
   justify-content: flex-end;
 }
 
+.memory-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(120px, 160px) minmax(96px, 140px) auto;
+  gap: 8px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.memory-tag-filter {
+  min-width: 0;
+}
+
+.memory-recall-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
 /* Recall view */
 .recall-root {
   display: flex;
@@ -468,3 +552,33 @@
   gap: 6px;
 }
 
+@media (max-width: 720px) {
+  .memory-root {
+    padding: 14px;
+  }
+
+  .memory-header,
+  .memory-item-row,
+  .memory-search-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .memory-actions,
+  .memory-item-actions {
+    flex-wrap: wrap;
+  }
+
+  .memory-filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-view-tabs {
+    align-self: stretch;
+  }
+
+  .memory-view-tab {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}

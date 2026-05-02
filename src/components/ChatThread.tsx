@@ -146,7 +146,7 @@ type Route =
       createRequestId?: number;
     }
   | { kind: "app"; app_id: string }
-  | { kind: "memory"; project_id?: string }
+  | { kind: "memory"; project_id?: string; thread_id?: string }
   | { kind: "automations" }
   | { kind: "browser" }
   | { kind: "settings" };
@@ -164,7 +164,11 @@ function routeKey(r: Route): string {
     case "app":
       return `app:${r.app_id}`;
     case "memory":
-      return r.project_id ? `memory:${r.project_id}` : "memory";
+      return r.thread_id
+        ? `memory:${r.project_id ?? "global"}:${r.thread_id}`
+        : r.project_id
+          ? `memory:${r.project_id}`
+          : "memory";
     case "automations":
       return "automations";
     case "browser":
@@ -218,6 +222,10 @@ function tabLabel(
     case "app":
       return r.app_id;
     case "memory": {
+      if (r.thread_id) {
+        const t = threads.find((x) => x.id === r.thread_id);
+        return `Memory · ${t?.title ?? t?.prompt?.slice(0, 32) ?? r.thread_id}`;
+      }
       if (!r.project_id) return "Memory";
       const p = projects.find((x) => x.id === r.project_id);
       return `Memory · ${p?.name ?? r.project_id}`;
@@ -1016,14 +1024,21 @@ export default function ChatThread() {
           />
         );
       case "memory": {
-        const project = r.project_id
-          ? projects.find((p) => p.id === r.project_id)
+        const thread = r.thread_id
+          ? threads.find((t) => t.id === r.thread_id)
           : null;
+        const projectId = r.project_id ?? thread?.project_id;
+        const project = projectId
+          ? projects.find((p) => p.id === projectId)
+          : null;
+        const projectRoot = project?.root ?? thread?.cwd ?? null;
         return (
           <MemoryPanel
-            projectRoot={project?.root ?? null}
-            threadId={null}
-            initialScope={project ? "project" : "global"}
+            projectRoot={projectRoot}
+            threadId={thread?.id ?? null}
+            initialScope={thread ? "topic" : project ? "project" : "global"}
+            initialView={thread ? "recall" : "notes"}
+            initialRecallQuery={thread ? mostRecentTopicPrompt(thread) : ""}
           />
         );
       }
@@ -1218,11 +1233,21 @@ function Header({
     crumbs.push({ label: "Apps", route: { kind: "apps" } });
     crumbs.push({ label: route.app_id, route: null });
   } else if (route.kind === "memory") {
-    if (route.project_id) {
-      const p = projects.find((x) => x.id === route.project_id);
+    const thread = route.thread_id
+      ? threads.find((x) => x.id === route.thread_id)
+      : null;
+    const projectId = route.project_id ?? thread?.project_id;
+    if (projectId) {
+      const p = projects.find((x) => x.id === projectId);
       crumbs.push({
-        label: p?.name ?? route.project_id,
-        route: { kind: "project", project_id: route.project_id },
+        label: p?.name ?? projectId,
+        route: { kind: "project", project_id: projectId },
+      });
+    }
+    if (thread) {
+      crumbs.push({
+        label: thread.title ?? thread.prompt.slice(0, 32) ?? thread.id,
+        route: { kind: "topic", thread_id: thread.id },
       });
     }
     crumbs.push({ label: "Memory", route: null });
@@ -1271,15 +1296,26 @@ function Header({
         <button
           className={`header-tab ${route.kind === "memory" ? "active" : ""}`}
           onClick={() => {
+            const routeThreadId =
+              route.kind === "topic" || route.kind === "memory"
+                ? route.thread_id
+                : undefined;
+            const activeThread = routeThreadId
+              ? threads.find((t) => t.id === routeThreadId)
+              : null;
             const projectId =
               route.kind === "project"
                 ? route.project_id
-                : route.kind === "topic"
-                  ? threads.find((t) => t.id === route.thread_id)?.project_id
+                : activeThread
+                  ? activeThread.project_id
                   : route.kind === "memory"
                     ? route.project_id
                     : undefined;
-            onNavigate({ kind: "memory", project_id: projectId });
+            onNavigate({
+              kind: "memory",
+              project_id: projectId,
+              thread_id: activeThread?.id,
+            });
           }}
           title="Memory"
         >
