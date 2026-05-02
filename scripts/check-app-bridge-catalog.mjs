@@ -49,7 +49,17 @@ const readmeOverlayBlock = sliceBetween(
   "The injected runtime overlay provides:",
   "## App Bridge API",
 );
+const readmeApiBlock = sliceBetween(
+  readme,
+  "## App Bridge API",
+  "## Manifest Automation",
+);
 const dispatchBlock = sliceBetween(dispatch, "match method {", "other => Err");
+const promptMethodBlock = sliceBetween(
+  libRs,
+  "ДОСТУПНЫЕ МЕТОДЫ:",
+  "Permissions для apps.invoke",
+);
 const promptHelperBlock = sliceBetween(
   libRs,
   "В iframe runtime overlay уже есть helpers",
@@ -59,6 +69,14 @@ const promptHelperBlock = sliceBetween(
 const catalogMethods = setFromMatches(
   apiBlock,
   /"([a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)"/g,
+);
+const readmeMethods = setFromMatches(
+  readmeApiBlock,
+  /\b([a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)\b/g,
+);
+const promptMethods = setFromMatches(
+  promptMethodBlock,
+  /\b([a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)\b/g,
 );
 const catalogHelpers = setFromMatches(helperBlock, /"(reflex[A-Za-z0-9_]+)"/g);
 const overlayHelpers = setFromMatches(
@@ -113,6 +131,16 @@ recordDiff(
   failures,
   "Public dispatch methods missing from src/appBridgeCatalog.ts",
   difference(publicDispatchMethods, catalogMethods),
+);
+recordDiff(
+  failures,
+  "Catalog API methods missing from README App Bridge API section",
+  difference(catalogMethods, readmeMethods),
+);
+recordDiff(
+  failures,
+  "Catalog API methods missing from app creation prompt method docs",
+  difference(catalogMethods, promptMethods),
 );
 recordDiff(
   failures,

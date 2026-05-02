@@ -116,6 +116,7 @@ Core methods:
 - `agent.startTopic({ prompt, projectId? })` -> full Reflex topic.
 - `agent.task({ prompt, sandbox?, cwd? })` -> isolated sub-agent result.
 - `agent.stream({ prompt, sandbox?, cwd? })` -> streamed agent response.
+- `agent.streamAbort({ threadId })` -> abort a streamed app-agent turn.
   `cwd` may be the app root or a linked project; another project requires
   `agent.project:<project>` or `agent.project:*`, and arbitrary cwd requires
   `agent.cwd:*`. Project cwd automatically receives that project's MCP config.
