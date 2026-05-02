@@ -562,7 +562,7 @@ CURRENT BRIDGE / RUNTIME NOTES:\n\
 - After edits, the iframe reloads automatically; server runtime processes restart automatically. Do not ask for manual reload.\n\
 - Do not touch .reflex/, .git/, or storage.json. You may update manifest.json permissions, network.allowed_hosts, runtime, and server fields."
     );
-    continue_thread(app, project.id, latest.meta.id.clone(), prompt, None)?;
+    continue_thread(app, project.id, latest.meta.id.clone(), prompt, None, None)?;
     Ok(serde_json::json!({"thread_id": latest.meta.id}))
 }
 
@@ -2053,6 +2053,38 @@ pub(crate) fn submit_quick_impl(
     Ok(thread_id)
 }
 
+fn validate_local_image_paths(image_paths: Option<Vec<String>>) -> Result<Vec<String>, String> {
+    let Some(paths) = image_paths else {
+        return Ok(Vec::new());
+    };
+    if paths.len() > 8 {
+        return Err("too many image attachments; maximum is 8".into());
+    }
+
+    const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "heic"];
+    let mut out = Vec::new();
+    for path in paths {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let path_buf = PathBuf::from(trimmed);
+        if !path_buf.is_file() {
+            return Err(format!("image attachment is not a file: {trimmed}"));
+        }
+        let ext = path_buf
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if !IMAGE_EXTS.contains(&ext.as_str()) {
+            return Err(format!("unsupported image attachment type: {trimmed}"));
+        }
+        out.push(trimmed.to_string());
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 fn continue_thread(
     app: AppHandle,
@@ -2060,6 +2092,7 @@ fn continue_thread(
     thread_id: String,
     prompt: String,
     plan_confirmed: Option<bool>,
+    image_paths: Option<Vec<String>>,
 ) -> Result<(), String> {
     eprintln!(
         "[reflex] continue_thread: project={project_id} thread={thread_id} prompt_len={}",
@@ -2069,6 +2102,7 @@ fn continue_thread(
     if trimmed.is_empty() {
         return Err("empty prompt".into());
     }
+    let image_paths = validate_local_image_paths(image_paths)?;
 
     let project = project::get_by_id(&app, &project_id)
         .map_err(|e| e.to_string())?
@@ -2180,6 +2214,7 @@ fn continue_thread(
     let prompt_owned = prompt_for_model;
     let root_for_task = project_root.clone();
     let project_id_for_task = project_id.clone();
+    let image_paths_for_task = image_paths.clone();
     tauri::async_runtime::spawn(async move {
         let proj_now = project::get_by_id(&app_handle, &project_id_for_task)
             .ok()
@@ -2254,7 +2289,9 @@ fn continue_thread(
             initial_seq,
         );
 
-        let mut turn_result = server.turn_start(&sid, &prompt_owned).await;
+        let mut turn_result = server
+            .turn_start_with_local_images(&sid, &prompt_owned, &image_paths_for_task)
+            .await;
 
         // If app-server forgot the thread (e.g. fresh process), start a new session and retry.
         let lost = matches!(&turn_result, Err(e) if e.get("message").and_then(|m| m.as_str()).map(|s| s.contains("thread not found")).unwrap_or(false));
@@ -2276,7 +2313,13 @@ fn continue_thread(
                         initial_seq,
                     );
                     sid = new_sid;
-                    turn_result = server.turn_start(&sid, &prompt_owned).await;
+                    turn_result = server
+                        .turn_start_with_local_images(
+                            &sid,
+                            &prompt_owned,
+                            &image_paths_for_task,
+                        )
+                        .await;
                 }
                 Err(e) => {
                     eprintln!("[reflex] thread_start retry failed: {e}");

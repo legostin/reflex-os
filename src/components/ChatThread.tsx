@@ -5425,7 +5425,7 @@ function ThreadCard({
 
   const running = !thread.done;
 
-  async function sendFollowupText(prompt: string) {
+  async function sendFollowupText(prompt: string, imagePaths: string[] = []) {
     const text = prompt.trim();
     if (!text || submitting) return;
     setError(null);
@@ -5445,6 +5445,7 @@ function ThreadCard({
         prompt: confirmsPlan ? "go - execute the plan as described." : text,
       };
       if (confirmsPlan) args.planConfirmed = true;
+      if (imagePaths.length > 0) args.imagePaths = imagePaths;
       await invoke("continue_thread", args);
     } catch (e) {
       console.error("[reflex] continue_thread failed", e);

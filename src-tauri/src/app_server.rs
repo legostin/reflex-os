@@ -258,13 +258,30 @@ impl AppServerClient {
     }
 
     pub async fn turn_start(&self, thread_id: &str, prompt: &str) -> Result<Value, Value> {
+        self.turn_start_with_local_images(thread_id, prompt, &[])
+            .await
+    }
+
+    pub async fn turn_start_with_local_images(
+        &self,
+        thread_id: &str,
+        prompt: &str,
+        local_images: &[String],
+    ) -> Result<Value, Value> {
+        let mut input = vec![serde_json::json!({
+            "type": "text",
+            "text": prompt,
+            "text_elements": [],
+        })];
+        for path in local_images {
+            input.push(serde_json::json!({
+                "type": "localImage",
+                "path": path,
+            }));
+        }
         let params = serde_json::json!({
             "threadId": thread_id,
-            "input": [{
-                "type": "text",
-                "text": prompt,
-                "text_elements": [],
-            }],
+            "input": input,
         });
         self.request("turn/start", params).await
     }

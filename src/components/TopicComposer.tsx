@@ -33,7 +33,7 @@ interface TopicComposerProps {
   stopping: boolean;
   apps: TopicComposerApp[];
   widgetsVisible: boolean;
-  onSend: (prompt: string) => Promise<void>;
+  onSend: (prompt: string, imagePaths: string[]) => Promise<void>;
   onStop: () => Promise<void>;
   onOpenApp?: (appId: string) => void;
   onToggleWidgets?: () => void;
@@ -401,7 +401,10 @@ export function TopicComposer({
 
     try {
       const prompt = withContext(commandPrompt(text), files, images);
-      await onSend(prompt);
+      await onSend(
+        prompt,
+        images.map((image) => image.path),
+      );
       setDraft("");
       setImages([]);
     } catch (e) {
