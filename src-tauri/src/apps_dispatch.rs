@@ -1951,3 +1951,41 @@ fn scheduler_permission_allowed(
                 .unwrap_or(false)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_summary_omits_raw_mcp_and_agent_instructions() {
+        let project = project::Project {
+            id: "p1".into(),
+            name: "Project".into(),
+            root: "/tmp/project".into(),
+            created_at_ms: 42,
+            sandbox: "workspace-write".into(),
+            mcp_servers: Some(serde_json::json!({
+                "private_server": {
+                    "command": "node",
+                    "args": ["server.js"],
+                    "env": { "TOKEN": "secret" }
+                }
+            })),
+            description: Some("desc".into()),
+            agent_instructions: Some("private instructions".into()),
+            skills: vec!["build-web-apps:react-best-practices".into()],
+            apps: vec!["app1".into()],
+        };
+
+        let summary = project_summary(&project);
+
+        assert!(summary.get("mcp_servers").is_none());
+        assert!(summary.get("agent_instructions").is_none());
+        assert_eq!(summary["mcp_server_names"], serde_json::json!(["private_server"]));
+        assert_eq!(summary["has_agent_instructions"], true);
+        assert_eq!(
+            summary["skills"],
+            serde_json::json!(["build-web-apps:react-best-practices"])
+        );
+    }
+}
