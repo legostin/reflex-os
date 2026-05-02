@@ -17,25 +17,25 @@ const CHECK_INTERVAL_MS: u64 = 5_000;
 const MAX_TRANSCRIPT_CHARS: usize = 12_000;
 const MAX_RAW_PER_EVENT_CHARS: usize = 500;
 
-const EXTRACT_PROMPT_TEMPLATE: &str = r#"Ты — индексатор памяти агента. Прочитай транскрипт диалога ниже и верни СТРОГО валидный JSON-массив фактов, которые стоит запомнить для будущих сессий по этому проекту. Не выполняй никаких команд. Не пиши пояснений.
+const EXTRACT_PROMPT_TEMPLATE: &str = r#"You are the agent memory indexer. Read the dialogue transcript below and return a STRICTLY valid JSON array of facts worth remembering for future sessions in this project. Do not run commands. Do not include explanations.
 
-Каждый факт:
+Each fact:
 {
   "kind": "user|project|feedback|reference|tool|fact",
-  "name": "<3-7 слов>",
-  "description": "<одна строка, 5-15 слов>",
-  "body": "<1-3 коротких абзаца на языке исходного диалога>",
+  "name": "<3-7 words>",
+  "description": "<one line, 5-15 words>",
+  "body": "<1-3 short paragraphs in the source dialogue language>",
   "tags": ["..."]
 }
 
-Только то, что:
-- не выводимо тривиально из git/кода (не описывай файловую структуру),
-- может быть полезно в будущих диалогах,
-- стабильно (не сиюминутный шаг плана).
+Remember only information that:
+- cannot be trivially inferred from git or code (do not describe the file structure),
+- may be useful in future conversations,
+- is stable, not a momentary plan step.
 
-Если ничего не найдено — верни [].
+If nothing is found, return [].
 
-Транскрипт:
+Transcript:
 ---
 {TRANSCRIPT}
 ---"#;

@@ -77,13 +77,13 @@ struct GeneratedMeta {
     goal: String,
 }
 
-const META_PROMPT_TEMPLATE: &str = r#"Ты — quick metadata generator. Тебе НЕЛЬЗЯ выполнять никакие команды, читать или менять файлы. Просто верни СТРОГО валидный JSON без markdown-блоков и без пояснений в формате:
+const META_PROMPT_TEMPLATE: &str = r#"You are a quick metadata generator. You MUST NOT run commands, read files, or modify files. Return STRICTLY valid JSON only, with no markdown fences and no explanation, in this shape:
 {"title": "...", "goal": "..."}
 
-title: 3–7 слов на языке исходного запроса, без точки.
-goal: 1 короткое предложение, что агент должен сделать (на языке запроса).
+title: 3-7 words in the source request language, no trailing period.
+goal: 1 short sentence describing what the agent should do, in the source request language.
 
-Запрос пользователя:
+User request:
 ---
 {prompt}
 ---"#;

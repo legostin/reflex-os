@@ -35,35 +35,35 @@ pub struct SuggestionResult {
     pub raw: Option<String>,
 }
 
-const PROMPT_TEMPLATE: &str = r#"Ты — помощник Reflex, который смотрит на описание нового проекта и каталог уже установленных утилит, и решает что подойдёт.
+const PROMPT_TEMPLATE: &str = r#"You are a Reflex assistant. You inspect a new project description and the catalog of installed utilities, then decide what should be attached or created.
 
-ЦЕЛЬ:
-1. Какие СУЩЕСТВУЮЩИЕ утилиты подходят и должны быть привязаны.
-2. Какие НОВЫЕ утилиты стоит создать.
-3. Если две идеи новой утилиты сильно перекрываются — объединяй их в ОДНУ более крупную.
+GOAL:
+1. Which EXISTING utilities fit and should be linked.
+2. Which NEW utilities should be created.
+3. If two new utility ideas overlap heavily, merge them into ONE broader utility.
 
-ПРАВИЛА:
-- Не предлагай создавать новую утилиту, если уже есть подходящая existing — выбирай её в use_existing.
-- НЕ дублируй уже существующие в create_new.
-- reason — одна короткая фраза почему.
-- Если ничего нового не нужно — create_new = [].
-- Если ничего из существующих не подходит — use_existing = [].
-- Думай прагматично: что реально полезно владельцу проекта в первый день. Не плоди утилиты на всякий случай.
+RULES:
+- Do not suggest creating a new utility when a suitable existing one exists; put it in use_existing.
+- Do NOT duplicate existing utilities in create_new.
+- reason must be one short phrase explaining why.
+- If nothing new is needed, return create_new = [].
+- If none of the existing utilities fit, return use_existing = [].
+- Be pragmatic: recommend what is actually useful to the project owner on day one. Do not create utilities just in case.
 
-ОТВЕТ — СТРОГО JSON, БЕЗ ПОЯСНЕНИЙ И БЕЗ MARKDOWN-ФЕНСОВ:
+RESPONSE: STRICT JSON ONLY, WITH NO EXPLANATION AND NO MARKDOWN FENCES:
 {
   "use_existing": [ {"app_id": "...", "reason": "..."} ],
   "create_new": [ {"name": "...", "description": "...", "reason": "..."} ]
 }
 
-ПРОЕКТ:
-Имя: {PROJECT_NAME}
-Описание: {PROJECT_DESCRIPTION}
+PROJECT:
+Name: {PROJECT_NAME}
+Description: {PROJECT_DESCRIPTION}
 
-КАТАЛОГ УЖЕ ПРИВЯЗАННЫХ К ЭТОМУ ПРОЕКТУ:
+CATALOG ALREADY LINKED TO THIS PROJECT:
 {LINKED}
 
-КАТАЛОГ ОСТАЛЬНЫХ УСТАНОВЛЕННЫХ УТИЛИТ:
+CATALOG OF OTHER INSTALLED UTILITIES:
 {INSTALLED}
 "#;
 
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn parses_plain_json() {
-        let raw = r#"{"use_existing":[{"app_id":"a","reason":"подходит"}],"create_new":[]}"#;
+        let raw = r#"{"use_existing":[{"app_id":"a","reason":"fits"}],"create_new":[]}"#;
         let p = parse_plan(raw);
         assert_eq!(p.use_existing.len(), 1);
         assert_eq!(p.use_existing[0].app_id, "a");
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn falls_back_on_garbage() {
-        let p = parse_plan("это не json совсем");
+        let p = parse_plan("this is not json at all");
         assert!(p.use_existing.is_empty());
         assert!(p.create_new.is_empty());
     }
@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn extracts_json_from_prose() {
         let raw =
-            "Вот мой ответ:\n{\"use_existing\":[{\"app_id\":\"x\",\"reason\":\"y\"}],\"create_new\":[]}\nспасибо";
+            "Here is my answer:\n{\"use_existing\":[{\"app_id\":\"x\",\"reason\":\"y\"}],\"create_new\":[]}\nthanks";
         let p = parse_plan(raw);
         assert_eq!(p.use_existing.len(), 1);
     }

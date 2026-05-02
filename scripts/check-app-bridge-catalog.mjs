@@ -57,13 +57,13 @@ const readmeApiBlock = sliceBetween(
 const dispatchBlock = sliceBetween(dispatch, "match method {", "other => Err");
 const promptMethodBlock = sliceBetween(
   libRs,
-  "ДОСТУПНЫЕ МЕТОДЫ:",
-  "Permissions для apps.invoke",
+  "AVAILABLE METHODS:",
+  "Permissions for apps.invoke",
 );
 const promptHelperBlock = sliceBetween(
   libRs,
-  "В iframe runtime overlay уже есть helpers",
-  "Permissions для apps.invoke",
+  "The iframe runtime overlay already provides helpers",
+  "Permissions for apps.invoke",
 );
 const runtimeCatalogMethodBlock = sliceBetween(
   dispatch,

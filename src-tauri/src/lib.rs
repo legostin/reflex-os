@@ -396,7 +396,7 @@ fn build_empty_app_thread(
     let meta = storage::ThreadMeta {
         id: thread_id.clone(),
         project_id: Some(project.id.clone()),
-        prompt: format!("Доработка app: {label}"),
+        prompt: format!("App revision: {label}"),
         cwd: project.root.clone(),
         frontmost_app: None,
         finder_target: None,
@@ -405,7 +405,7 @@ fn build_empty_app_thread(
         done: true,
         session_id: None,
         title: Some(format!("App · {label}")),
-        goal: Some("Доработка утилиты".into()),
+        goal: Some("Revise the utility".into()),
         plan_mode: true,
         plan_confirmed: false,
         source: "quick".into(),
@@ -546,41 +546,21 @@ fn app_revise(
         .max_by_key(|t| t.meta.created_at_ms)
         .ok_or_else(|| "no thread for this app".to_string())?;
     let prompt = format!(
-        "Доработай Reflex app в текущей рабочей папке.\n\n\
-ИЗМЕНЕНИЯ: {trimmed}\n\n\
-ПАМЯТКА (актуальный bridge / runtime):\n\
-- Можно использовать любую структуру: index.html + style.css + app.js + assets/. Reflex отдаёт всё через reflexapp:// scheme c правильным mime.\n\
-- Два runtime: static (default) или server (manifest.runtime=\"server\" + manifest.server.command — node/python stdlib, listen на process.env.PORT).\n\
-- В HTML уже инжектится runtime overlay. Предпочитай helpers window.reflex*; raw postMessage нужен только для нестандартного bridge-вызова.\n\
-- Сохраняй UI на русском, если пользователь явно не попросил другой язык. Не оставляй видимые Send/Run/Refresh/Save/Cancel/Loading/Error; используй «Отправить», «Запустить», «Обновить», «Сохранить», «Отмена», «Загрузка», «Ошибка». Имена API, permissions, ids и manifest keys оставляй техническими токенами.\n\
-- После доработки проверь empty/loading/error/success states и доступность основных controls. Первый экран должен оставаться рабочей утилитой, а не описанием возможностей.\n\
-- Доступные методы bridge:\n\
-  • bridge.catalog() → {{methods, helpers, permissions, app, notes}}; runtime self-discovery bridge API и текущих grants app\n\
-  • system.context() → {{app_id, app_root, manifest, app_project, linked_projects, memory_defaults}}; app_project/linked_projects are summaries with skills and mcp_server_names, not raw MCP config\n\
-  • system.openPanel({{panel, projectId?, threadId?}}) — открыть панель Reflex: apps|memory|automations|browser|settings; для memory можно передать context\n\
-  • system.openUrl({{url}}) / openPath({{path}}) / revealPath({{path}}) — открыть URL или локальный файл/папку в macOS; path может быть абсолютным или относительным к app root\n\
-  • logs.write({{level?, source?, message}}) / logs.list({{limit?, sinceSeq?, source?, level?}}) — диагностические события app в Settings → Logs\n\
-  • manifest.get/update; permissions.list/ensure/revoke; network.hosts/allowHost/revokeHost; widgets.list/upsert/delete; actions.list/upsert/delete — безопасно обновлять manifest capabilities\n\
-  • agent.ask({{prompt}}) → {{answer}}\n\
-  • agent.task({{prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}}) → {{threadId, result}} — изолированный sub-агент; project cwd получает MCP, preferred skills, profile и memory/RAG; includeContext=false только для raw prompt\n\
-  • agent.stream({{prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}; cwd rules как у agent.task\n\
-  • storage.get/set/list/delete, fs.read/list/write/delete (в app-папке)\n\
-  • clipboard.readText/writeText — буфер обмена macOS; требует permission clipboard.read/clipboard.write или clipboard:*\n\
-  • projects.list/open / project.profile.update / project.sandbox.set / project.apps.link/unlink / topics.list/open — обзор проектов/топиков и обновление project profile/sandbox/linked apps; чужие read требуют projects.read/topics.read, mutations требуют projects.write:<project>|*\n\
-  • skills.list / project.skills.ensure/revoke / mcp.servers / project.mcp.upsert/delete — preferred skills и MCP server names; mutations требуют skills.write:<project>|* или mcp.write:<project>|*, raw MCP config требует mcp.read:<project>|*\n\
-  • project.files.list/read/search/write/mkdir/move/copy/delete — файлы linked project; search может искать UTF-8 content с лимитами; mutations всегда требуют permission project.files.write:<project>|*; .reflex всегда закрыт\n\
-  • browser.init / project.browser.setEnabled / tabs.list/open/close/setActive/navigate/back/forward/reload/currentUrl/readText/readOutline/screenshot/clickText/clickSelector/fill/scroll/waitFor — встроенный browser sidecar; project Browser MCP toggle требует mcp.write:<project>|*\n\
-  • memory.save/read/update/list/delete/search/recall/stats/indexPath/pathStatus/forgetPath — память Reflex; project scope по умолчанию, global требует permission memory.global.read/write\n\
-  • scheduler.list/upsert/delete/runNow/setPaused/runs/stats/runDetail — читать и управлять своими расписаниями; чужие требуют permission scheduler.read/run/write\n\
-  • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
-  • notify.show — macOS push\n\
-  • net.fetch({{url, method?, headers?, body?}}) — требует manifest.network.allowed_hosts (поддержка \"*.foo.com\"); добавляй через network.allowHost\n\
-  • events.emit/subscribe/unsubscribe/subscriptions/recent/clearSubscriptions — inter-app event bus; recent возвращает последние события текущей app или подписанных topic\n\
-- Overlay helpers: reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgentAsk/StartTopic/Task/Stream/StreamAbort, reflexStorageGet/Set/List/Delete, reflexFsRead/List/Write/Delete, reflexClipboardReadText/WriteText, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList/Open, reflexProjectProfileUpdate, reflexProjectSandboxSet, reflexProjectAppsLink/Unlink, reflexTopicsList/Open, reflexSkillsList, reflexProjectSkillsEnsure/Revoke, reflexMcpServers, reflexProjectMcpUpsert/Delete, reflexProjectFilesList/Read/Search/Write/Mkdir/Move/Copy/Delete, reflexProjectBrowserSetEnabled, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsList, reflexAppsCreate, reflexAppsExport, reflexAppsImport, reflexAppsDelete, reflexAppsTrashList, reflexAppsRestore, reflexAppsPurge, reflexAppsStatus, reflexAppsDiff, reflexAppsCommit, reflexAppsCommitPartial, reflexAppsRevert, reflexAppsServerStatus, reflexAppsServerLogs, reflexAppsServerStart, reflexAppsServerStop, reflexAppsServerRestart, reflexAppsOpen, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions.\n\
-- iframe sandbox=\"allow-scripts allow-forms\" (для server runtime + allow-same-origin). Никаких внешних CDN — только inline или локальные файлы.\n\
-- Reflex автоматически инжектит overlay-скрипт в HTML: ловит window.onerror/unhandledrejection (юзер увидит ✨Fix), и режим Inspector (юзер кликает → ты получишь selector + outerHTML). Не пиши свой обработчик с теми же типами событий.\n\
-- После твоих правок iframe перезагрузится сам (file watcher), для server runtime — процесс перезапустится. Не требуй ручного reload.\n\
-- Не трогай .reflex/, .git/, storage.json. Manifest можно обновлять (permissions, network.allowed_hosts, runtime, server)."
+        "Revise the Reflex app in the current working directory.\n\n\
+REQUESTED CHANGES: {trimmed}\n\n\
+CURRENT BRIDGE / RUNTIME NOTES:\n\
+- You may use any structure: index.html + style.css + app.js + assets/. Reflex serves files through the reflexapp:// scheme with the correct MIME type.\n\
+- Runtime options: static (default) or server (manifest.runtime=\"server\" + manifest.server.command; use Node/Python stdlib and listen on process.env.PORT).\n\
+- The runtime overlay is already injected into HTML. Prefer window.reflex* helpers; use raw postMessage only for unusual bridge calls.\n\
+- Keep or add multilingual user-facing UI when appropriate. Do not force Russian or English as the only UI language. Keep API names, permissions, ids, paths, and manifest keys as technical tokens.\n\
+- Any prompt strings sent to agent.ask/agent.task/agent.stream must be written in English. If user input is in another language, pass it as data inside an English instruction.\n\
+- After revising, check empty/loading/error/success states and main control accessibility. The first screen must remain a real usable tool, not a feature description.\n\
+- Available bridge methods: bridge.catalog, system.context, system.openPanel, system.openUrl/openPath/revealPath, logs.write/list, manifest.get/update, permissions.*, network.*, widgets.*, actions.*, agent.*, storage.*, fs.*, clipboard.*, projects.*, topics.*, skills.*, mcp.*, project.files.*, browser.*, memory.*, scheduler.*, dialog.*, notify.show, net.fetch, events.*, apps.*.\n\
+- Overlay helpers include reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjects*, reflexTopics*, reflexSkills*, reflexMcp*, reflexProjectFiles*, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexApps*, reflexEvent*.\n\
+- iframe sandbox=\"allow-scripts allow-forms\"; server runtime also gets allow-same-origin. No external CDNs: use inline or local files.\n\
+- Reflex injects an overlay script that captures window.onerror/unhandledrejection for Fix and supports Inspector pick events. Do not override those same event types with your own global handler.\n\
+- After edits, the iframe reloads automatically; server runtime processes restart automatically. Do not ask for manual reload.\n\
+- Do not touch .reflex/, .git/, or storage.json. You may update manifest.json permissions, network.allowed_hosts, runtime, and server fields."
     );
     continue_thread(app, project.id, latest.meta.id.clone(), prompt, None)?;
     Ok(serde_json::json!({"thread_id": latest.meta.id}))
@@ -663,8 +643,8 @@ async fn create_app(
         exit_code: None,
         done: false,
         session_id: None,
-        title: Some(format!("Создание app: {label}")),
-        goal: Some(format!("Написать Reflex app: {trimmed}")),
+        title: Some(format!("App creation: {label}")),
+        goal: Some(format!("Create a Reflex app: {trimmed}")),
         plan_mode: true,
         plan_confirmed: false,
         source: "quick".into(),
@@ -742,40 +722,40 @@ fn short_label(s: &str) -> String {
 
 fn wrap_with_plan_mode(prompt: &str) -> String {
     format!(
-        "⚠️ РЕЖИМ ПЛАНИРОВАНИЯ — ИЗУЧИ, ПОТОМ СОСТАВЬ ПЛАН\n\n\
-Сначала ИЗУЧИ репозиторий и контекст, потом составь план по итогам изучения. План — это документ для исполнения, а не описание того, как ты будешь изучать.\n\n\
-ЧТО МОЖНО НА ЭТОМ ХОДУ:\n\
-- читать файлы (cat/read), листать директории (ls/find/tree), грепать (rg/grep), смотреть git log/diff;\n\
-- запускать любые read-only команды для понимания (например `cargo check`, `--help`);\n\
-- задавать тулзовым вызовам столько чтения сколько нужно для уверенности.\n\n\
-ЧТО НЕЛЬЗЯ:\n\
-- модифицировать файлы, создавать/удалять что-либо;\n\
-- ставить зависимости, запускать миграции, любые команды с сайд-эффектами;\n\
-- угадывать поведение если можно прочитать и убедиться.\n\n\
-ПОРЯДОК:\n\
-1) Найди и прочитай релевантные файлы. Укажи в плане конкретные пути и строки которые ты посмотрел.\n\
-2) Найди существующие паттерны/функции/типы которые можно переиспользовать вместо того чтобы писать с нуля.\n\
-3) Только после этого — пиши план.\n\n\
-СТРУКТУРА ПЛАНА (всё конкретное, без воды):\n\
-- Контекст: что я понял из задачи и из кода (1-3 предложения).\n\
-- Затронутые файлы: список путей с пометкой создать/изменить и зачем.\n\
-- Реиспользуемые building blocks: какие функции/типы уже есть и я их буду звать (с file:line).\n\
-- Шаги исполнения: пошаговый список действий по которому ты пойдёшь после `go`.\n\
-- Ключевые решения: структура, API, библиотеки — с обоснованием почему именно так.\n\
-- Верификация: как проверим что работает (тесты, ручные сценарии, команды).\n\
-- Открытые вопросы (если есть): только реальные неоднозначности, не выдуманные.\n\n\
-В конце ОБЯЗАТЕЛЬНО:\n\
-«Жду подтверждения. Напиши `go` чтобы я выполнил план как есть, или скажи что поправить — я перепланирую и снова покажу.»\n\n\
-ЗАДАЧА:\n{prompt}"
+        "PLANNING MODE: inspect first, then write the plan.\n\n\
+First inspect the repository and relevant context, then write a plan based on what you found. The plan is an execution document, not a description of how you will inspect.\n\n\
+ALLOWED IN THIS TURN:\n\
+- read files, list directories, search with rg/grep, inspect git log/diff;\n\
+- run read-only commands for understanding, such as `cargo check` or `--help`;\n\
+- read as much as needed through tools to be confident.\n\n\
+NOT ALLOWED:\n\
+- modify files, create files, or delete anything;\n\
+- install dependencies, run migrations, or run any command with side effects;\n\
+- guess behavior when you can inspect and verify it.\n\n\
+ORDER:\n\
+1. Find and read the relevant files. In the plan, cite concrete paths and lines you inspected.\n\
+2. Identify existing patterns, functions, and types to reuse instead of writing from scratch.\n\
+3. Only then write the plan.\n\n\
+PLAN STRUCTURE, concrete and concise:\n\
+- Context: what you understood from the task and code, in 1-3 sentences.\n\
+- Files touched: paths marked create/change and why.\n\
+- Reusable building blocks: existing functions/types you will call, with file:line.\n\
+- Execution steps: the step-by-step list you will follow after `go`.\n\
+- Key decisions: structure, API, libraries, and why.\n\
+- Verification: tests, manual scenarios, and commands.\n\
+- Open questions: only real ambiguities, if any.\n\n\
+End with exactly this confirmation request:\n\
+`Waiting for confirmation. Type go and I will execute the plan as written, or tell me what to change and I will re-plan.`\n\n\
+TASK:\n{prompt}"
     )
 }
 
 fn wrap_with_plan_revision(feedback: &str) -> String {
     format!(
-        "⚠️ РЕЖИМ ПЛАНИРОВАНИЯ — ЭТО ПРАВКА ПЛАНА, НЕ ВЫПОЛНЕНИЕ\n\n\
-Пользователь уточнил или поправил предыдущий план. НЕ модифицируй файлы и не запускай команды с сайд-эффектами на этом ходу. Дочитать что нужно для правки — можно (read-only). \
-Обнови план с учетом замечания и снова попроси подтверждение перед выполнением.\n\n\
-ПРАВКА ПОЛЬЗОВАТЕЛЯ:\n{feedback}"
+        "PLANNING MODE: this is a plan revision, not execution.\n\n\
+The user clarified or corrected the previous plan. Do NOT modify files and do NOT run side-effecting commands in this turn. You may read additional context if needed. \
+Update the plan according to the feedback and ask for confirmation again before executing.\n\n\
+USER FEEDBACK:\n{feedback}"
     )
 }
 
@@ -902,55 +882,55 @@ fn stored_event_has_agent_output(ev: &storage::StoredEvent) -> bool {
 fn template_skeleton(template: &str) -> Option<&'static str> {
     match template {
         "chat" => Some(
-            "Шаблон CHAT-UTILITY:\n\
-- Layout: список сообщений сверху + textarea + кнопка «Отправить» снизу.\n\
-- Использовать `window.reflexAgentStream({prompt})` для стриминга ответа. Ловить window 'message' с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done'.\n\
-- Хранить историю сообщений через `window.reflexStorageGet/Set(\"messages\", value)`.\n\
-- Сообщения user/agent визуально разные. Streaming-сообщение растёт по токенам.\n",
+            "CHAT-UTILITY TEMPLATE:\n\
+- Layout: message list on top, textarea, and a localized action button below.\n\
+- Use `window.reflexAgentStream({prompt})` to stream the response. Listen for window 'message' events with {source:'reflex', type:'stream.token', streamId, token} and 'stream.done'.\n\
+- Store message history through `window.reflexStorageGet/Set(\"messages\", value)`.\n\
+- User and agent messages should be visually distinct. The streaming message grows token by token.\n",
         ),
         "dashboard" => Some(
-            "Шаблон DASHBOARD:\n\
-- Кнопка «Обновить» вызывает `window.reflexAgentTask({prompt: \"...запрос за данными...\"})` и парсит JSON-ответ.\n\
-- Для health/ops dashboard сначала проверь готовые APIs: `window.reflexSchedulerStats()`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsStatus(appId)`.\n\
-- Показывать данные в таблице или как summary-карточки; ошибки должны вести к деталям запуска/сервиса, если есть id.\n\
-- Кэшировать последний результат через `window.reflexStorageSet(\"lastResult\", data)`.\n",
+            "DASHBOARD TEMPLATE:\n\
+- A localized refresh action calls `window.reflexAgentTask({prompt: \"Return the requested data as strict JSON.\"})` and parses the JSON response.\n\
+- For health/ops dashboards, first check ready-made APIs: `window.reflexSchedulerStats()`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsStatus(appId)`.\n\
+- Show data in a table or summary cards; errors should link to run/service detail when an id exists.\n\
+- Cache the latest result with `window.reflexStorageSet(\"lastResult\", data)`.\n",
         ),
         "health-dashboard" => Some(
-            "Шаблон HEALTH-DASHBOARD:\n\
-- Добавь в manifest.permissions минимум `scheduler.read:*` и `apps.manage`; для произвольного projectId вне linked projects добавь `memory.project:*`.\n\
-- Построй operational dashboard без agent.task на первом экране: `window.reflexSystemContext()`, `window.reflexSchedulerStats({includeAll: true, recentLimit: 200})`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsList()` и `window.reflexAppsStatus(appId)` для linked apps.\n\
-- Если app привязан к проекту, бери projectId из `system.context().linked_projects[0]?.id`; если проекта нет — покажи scheduler/app health и мягкое пустое состояние для RAG.\n\
-- Summary cards: active/paused/invalid schedules, next fire, recent run errors, indexed/stale/missing memory docs, linked app health. Ошибка запуска должна открываться через `window.reflexSchedulerRunDetail(runId)`.\n\
-- Добавь кнопку «Обновить», автосохранение последнего снимка через `window.reflexStorageSet(\"healthSnapshot\", data)` и восстановление через `window.reflexStorageGet`.\n\
-- Добавь manifest.widgets с компактным `widgets/health.html`, который показывает те же ключевые counters и открывает основную app.\n",
+            "HEALTH-DASHBOARD TEMPLATE:\n\
+- Add at least `scheduler.read:*` and `apps.manage` to manifest.permissions; for arbitrary projectId outside linked projects, add `memory.project:*`.\n\
+- Build the first-screen operational dashboard without agent.task: use `window.reflexSystemContext()`, `window.reflexSchedulerStats({includeAll: true, recentLimit: 200})`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsList()`, and `window.reflexAppsStatus(appId)` for linked apps.\n\
+- If the app is linked to a project, get projectId from `system.context().linked_projects[0]?.id`; if there is no project, show scheduler/app health and a soft empty state for RAG.\n\
+- Summary cards: active/paused/invalid schedules, next fire, recent run errors, indexed/stale/missing memory docs, linked app health. A run error should open through `window.reflexSchedulerRunDetail(runId)`.\n\
+- Add a localized refresh action, autosave the latest snapshot through `window.reflexStorageSet(\"healthSnapshot\", data)`, and restore through `window.reflexStorageGet`.\n\
+- Add manifest.widgets with a compact `widgets/health.html` that shows the same key counters and opens the main app.\n",
         ),
         "form" => Some(
-            "Шаблон FORM-TOOL:\n\
-- Несколько input-полей сверху, кнопка «Запустить» снизу.\n\
-- На submit собрать значения, дёрнуть `window.reflexAgentTask({prompt: \"...на основе значений...\"})`, показать результат.\n\
-- Сохранять последний submit через `window.reflexStorageSet(\"lastSubmit\", values)` для preset'а.\n",
+            "FORM-TOOL TEMPLATE:\n\
+- Put several input fields at the top and a localized submit action below.\n\
+- On submit, collect values, call `window.reflexAgentTask({prompt: \"Use these form values to complete the requested task: ...\"})`, and show the result.\n\
+- Store the latest submit with `window.reflexStorageSet(\"lastSubmit\", values)` as a preset.\n",
         ),
         "api-client" => Some(
-            "Шаблон API-CLIENT:\n\
-- Используй `window.reflexNetFetch(...)` к указанному API. Перед первым запросом вызови `await window.reflexNetworkAllowHost(\"<host>\")`, чтобы host попал в manifest.network.allowed_hosts без ручного merge.\n\
-- Кнопка «Запросить», отображение результата (JSON pretty-print).\n\
-- Если нужны секреты — спроси у пользователя через input-field, храни через `window.reflexStorageSet`.\n",
+            "API-CLIENT TEMPLATE:\n\
+- Use `window.reflexNetFetch(...)` for the target API. Before the first request, call `await window.reflexNetworkAllowHost(\"<host>\")` so the host is added to manifest.network.allowed_hosts without manual merging.\n\
+- Provide a localized request action and render the result with JSON pretty-printing.\n\
+- If secrets are needed, ask the user through an input field and store them with `window.reflexStorageSet`.\n",
         ),
         "automation" => Some(
-            "Шаблон AUTOMATION:\n\
-- Обязательно добавь в manifest.schedules хотя бы одно расписание с 6-польным cron (sec min hour dom month dow, UTC).\n\
-- В schedule.steps используй bridge methods без UI: agent.task, storage.*, fs.*, project.files.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/stats/runDetail.\n\
-- Не используй dialog.*, clipboard.*, system.openPanel/openUrl/openPath/revealPath, apps.create/import/commit/commitPartial/delete/restore/revert/purge, apps.open, projects.open, topics.open и scheduler.runNow/setPaused/upsert/delete внутри schedule.steps.\n\
-- Добавь обычный UI, где видно состояние: `window.reflexSchedulerStats()`, `window.reflexSchedulerList()`, `window.reflexSchedulerRuns({limit: 20})`, детали запуска через `window.reflexSchedulerRunDetail(runId)`, кнопка ручного запуска через `window.reflexSchedulerRunNow(scheduleId)`.\n\
-- Если автоматизация производит полезные данные, сохраняй их через `window.reflexStorageSet` или `window.reflexMemorySave` и добавь manifest.actions для других apps.\n\
-- Если результат нужен на проектном дашборде, добавь manifest.widgets с компактной страницей widgets/<id>.html.\n",
+            "AUTOMATION TEMPLATE:\n\
+- Add at least one manifest.schedules entry with a 6-field cron expression (sec min hour dom month dow, UTC).\n\
+- In schedule.steps, use non-UI bridge methods: agent.task, storage.*, fs.*, project.files.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/stats/runDetail.\n\
+- Do not use dialog.*, clipboard.*, system.openPanel/openUrl/openPath/revealPath, apps.create/import/commit/commitPartial/delete/restore/revert/purge, apps.open, projects.open, topics.open, or scheduler.runNow/setPaused/upsert/delete inside schedule.steps.\n\
+- Add a normal UI showing state: `window.reflexSchedulerStats()`, `window.reflexSchedulerList()`, `window.reflexSchedulerRuns({limit: 20})`, run detail through `window.reflexSchedulerRunDetail(runId)`, and manual run through `window.reflexSchedulerRunNow(scheduleId)`.\n\
+- If the automation produces useful data, store it through `window.reflexStorageSet` or `window.reflexMemorySave`, and add manifest.actions for other apps.\n\
+- If the result belongs on a project dashboard, add manifest.widgets with a compact widgets/<id>.html page.\n",
         ),
         "node-server" => Some(
-            "Шаблон NODE-SERVER:\n\
-- runtime=server, command=[\"node\", \"server.js\"].\n\
-- В server.js — Node.js stdlib `http`, слушать `process.env.PORT`.\n\
-- Базовые маршруты: GET / → index.html (через fs.readFileSync), GET /api/... → JSON.\n\
-- index.html обращается к /api через fetch (same-origin благодаря allow-same-origin sandbox).\n",
+            "NODE-SERVER TEMPLATE:\n\
+- Use runtime=server with command=[\"node\", \"server.js\"].\n\
+- In server.js, use Node.js stdlib `http` and listen on `process.env.PORT`.\n\
+- Basic routes: GET / -> index.html via fs.readFileSync, GET /api/... -> JSON.\n\
+- index.html calls /api through fetch; same-origin works because server runtime gets allow-same-origin sandbox.\n",
         ),
         _ => None,
     }
@@ -962,41 +942,43 @@ fn build_app_creation_prompt(
     target_project: Option<&project::Project>,
 ) -> String {
     let mut p = String::new();
-    p.push_str("Ты создаёшь Reflex app в текущей рабочей папке.\n\n");
-    p.push_str("ВАЖНО — КОНТЕКСТ:\n");
-    p.push_str("- Тот, кто описывает задачу, НЕ программист. Он не знает терминов, библиотек, edge-cases. Он формулирует на бытовом языке.\n");
-    p.push_str("- Ты — помощник, а не коллега-разработчик. Вся техническая логика — на тебе. Не задавай вопросов «какой стек выбрать» / «как назвать функцию» / «что вернуть из API» — это твои решения.\n");
-    p.push_str("- Технические решения выбирай самые оптимальные и подходящие для задачи: предпочитай stdlib и минимум зависимостей где это уместно, но не упрощай в ущерб результату. Никакой over-engineering и никакого недо-engineering.\n");
-    p.push_str("- Досконально продумывай логику ДО написания кода: edge-cases, ошибки, пустые состояния, кому что показывать. Лучше 5 минут думать чем переписывать после ревизии.\n");
-    p.push_str("- ЗАДАВАЙ ВОПРОСЫ юзеру если что-то про САМУ задачу неясно: \"какие именно поля нужно показывать\", \"что должно происходить при пустом списке\", \"какой источник данных брать\". НЕ задавай технические вопросы — на них отвечай сам.\n");
-    p.push_str("- Делай работу только когда уверен, что понял задачу правильно. Если есть существенная неоднозначность — лучше спроси.\n\n");
-    p.push_str("ФАЙЛЫ:\n");
-    p.push_str("- manifest.json уже есть с заглушкой. Обнови поля: name, icon (один emoji), description (1 предложение), permissions (массив API-методов).\n");
-    p.push_str("- Можно использовать любую файловую структуру: index.html + style.css + app.js + assets/, modules, и т.д. Reflex отдаёт все файлы из папки app по mime-type автоматически.\n");
-    p.push_str("- Тёмная тема: color #f5f5f7 на transparent background. Чистый минимальный UI.\n\n");
+    p.push_str("You are creating a Reflex app in the current working directory.\n\n");
+    p.push_str("IMPORTANT CONTEXT:\n");
+    p.push_str("- The person describing the task is not necessarily a programmer. They may use everyday language and may not know libraries, edge cases, or implementation details.\n");
+    p.push_str("- You are an assistant, not a developer peer asking for technical decisions. Own the technical design. Do not ask which stack to use, how to name functions, or what an API should return unless the product behavior itself is unclear.\n");
+    p.push_str("- Choose the most appropriate technical solution for the task. Prefer stdlib and minimal dependencies when suitable, but do not underbuild. Avoid both over-engineering and under-engineering.\n");
+    p.push_str("- Think through logic before coding: edge cases, errors, empty states, and what the user sees. It is better to reason carefully than to need a revision.\n");
+    p.push_str("- Ask the user only when the actual product task is ambiguous, for example which fields to show, what should happen for an empty list, or which data source to use. Answer technical questions yourself.\n");
+    p.push_str("- Do the work only when you understand the task. If there is substantial ambiguity, ask first.\n\n");
+    p.push_str("FILES:\n");
+    p.push_str("- manifest.json already exists as a stub. Update name, icon (one emoji), description (one sentence), and permissions (array of API permission strings).\n");
+    p.push_str("- You may use any file structure: index.html + style.css + app.js + assets/, modules, and so on. Reflex serves all files from the app directory with automatic MIME types.\n");
+    p.push_str("- Use a dark theme with color #f5f5f7 on a transparent background. Keep the UI clean and minimal.\n\n");
     p.push_str("UI/UX:\n");
-    p.push_str("- Интерфейс и все пользовательские labels/empty/loading/error/success states по умолчанию на русском, в тоне основного Reflex UI. Имена API, permissions, paths, ids и manifest keys оставляй как технические токены.\n");
-    p.push_str("- Первый экран должен быть рабочей утилитой, а не landing page: сразу показывай данные, форму, dashboard или action controls.\n");
-    p.push_str("- Добавляй понятные controls и состояния: disabled, loading, empty, error, retry/refresh, последняя синхронизация, если это применимо.\n");
-    p.push_str("- Кнопки называй глаголами действия: «Обновить», «Запустить», «Сохранить», «Отправить», «Открыть». Не оставляй Send/Run/Refresh/Save, если это видит пользователь.\n\n");
-    p.push_str("ДВА RUNTIME:\n");
-    p.push_str("1) static (по умолчанию): чистый front-end. iframe смотрит на reflexapp://localhost/<id>/<entry>. Нет своего бэкенда.\n");
-    p.push_str("   - manifest: { runtime: \"static\", entry: \"index.html\" }  (либо просто опусти runtime).\n");
-    p.push_str("   - Не подключай внешние CDN — только локальные файлы или inline.\n");
-    p.push_str("2) server: при открытии Reflex поднимает локальный веб-сервер из manifest.server.command, передавая порт через env REFLEX_PORT и PORT. iframe смотрит на reflexserver://<app-id>/, который проксирует локальный сервер и инжектит overlay.\n");
+    p.push_str("- User-facing UI must be multilingual-ready when the app has meaningful labels, states, or messages. At minimum, keep labels centralized so Russian and English can be supported without rewriting business logic.\n");
+    p.push_str("- Choose the initial visible language from an explicit user request when provided; otherwise use the host/browser language when detectable. Do not hardcode Russian or English as the only UI language. Keep API names, permissions, paths, ids, and manifest keys as technical tokens.\n");
+    p.push_str("- Prompts sent through agent.ask, agent.task, or agent.stream must be written in English. If user-provided content is in another language, include it as data inside an English instruction.\n");
+    p.push_str("- The first screen must be a working utility, not a landing page: immediately show data, a form, a dashboard, or action controls.\n");
+    p.push_str("- Add clear controls and states: disabled, loading, empty, error, retry/refresh, and last synchronization when relevant.\n");
+    p.push_str("- Button labels should be localized action verbs. Do not leave placeholder English labels in a non-English UI, and do not leave untranslated Russian labels in an English UI.\n\n");
+    p.push_str("TWO RUNTIMES:\n");
+    p.push_str("1) static (default): pure front-end. The iframe points to reflexapp://localhost/<id>/<entry>. There is no app-owned backend.\n");
+    p.push_str("   - manifest: { runtime: \"static\", entry: \"index.html\" } or omit runtime.\n");
+    p.push_str("   - Do not load external CDNs; use local files or inline assets only.\n");
+    p.push_str("2) server: when opened, Reflex starts a local web server from manifest.server.command and passes the port through REFLEX_PORT and PORT. The iframe points to reflexserver://<app-id>/, which proxies the local server and injects the overlay.\n");
     p.push_str("   - manifest: { runtime: \"server\", server: { command: [\"node\", \"server.js\"], ready_timeout_ms: 15000 } }\n");
-    p.push_str("   - cwd процесса = папка app. Сервер ОБЯЗАН слушать на process.env.PORT (или REFLEX_PORT).\n");
-    p.push_str("   - Все зависимости (npm/pip и т.д.) должны быть либо vendored в app-папке, либо stdlib. Не предполагай глобальные npm install — пиши на чистом Node.js stdlib (http/fs/path) или Python stdlib (http.server/socketserver).\n");
-    p.push_str("   - entry в манифесте можно не задавать — это для server-режима не используется.\n\n");
-    p.push_str("BRIDGE (общение с Reflex через window.parent.postMessage):\n");
-    p.push_str("Запрос:  window.parent.postMessage({source:'reflex-app', type:'request', id, method, params}, '*');\n");
-    p.push_str("Ответ:   window.addEventListener('message', e => {\n");
+    p.push_str("   - Process cwd is the app directory. The server MUST listen on process.env.PORT or REFLEX_PORT.\n");
+    p.push_str("   - Dependencies must be vendored into the app directory or be stdlib. Do not assume global npm install. Prefer plain Node.js stdlib (http/fs/path) or Python stdlib (http.server/socketserver).\n");
+    p.push_str("   - entry can be omitted for server runtime because it is not used.\n\n");
+    p.push_str("BRIDGE, communicating with Reflex through window.parent.postMessage:\n");
+    p.push_str("Request:  window.parent.postMessage({source:'reflex-app', type:'request', id, method, params}, '*');\n");
+    p.push_str("Response: window.addEventListener('message', e => {\n");
     p.push_str("           if (e.data?.source==='reflex' && e.data.type==='response' && e.data.id===id) ...\n");
     p.push_str("         });\n\n");
     if let Some(project) = target_project {
-        p.push_str("ЦЕЛЕВОЙ ПРОЕКТ:\n");
+        p.push_str("TARGET PROJECT:\n");
         p.push_str(&format!(
-            "- Эта app будет автоматически привязана к project `{}` ({}) по пути `{}`.\n",
+            "- This app will be automatically linked to project `{}` ({}) at path `{}`.\n",
             project.name, project.id, project.root
         ));
         if let Some(description) = project
@@ -1004,11 +986,11 @@ fn build_app_creation_prompt(
             .as_ref()
             .filter(|s| !s.trim().is_empty())
         {
-            p.push_str(&format!("- Описание проекта: {}\n", description.trim()));
+            p.push_str(&format!("- Project description: {}\n", description.trim()));
         }
         if !project.skills.is_empty() {
             p.push_str(&format!(
-                "- Preferred skills проекта: {}.\n",
+                "- Project preferred skills: {}.\n",
                 project.skills.join(", ")
             ));
         }
@@ -1020,170 +1002,170 @@ fn build_app_creation_prompt(
             .unwrap_or_default();
         if !mcp_names.is_empty() {
             p.push_str(&format!(
-                "- MCP servers проекта доступны агентным задачам при cwd этого проекта: {}.\n",
+                "- Project MCP servers available to agent tasks when cwd is this project: {}.\n",
                 mcp_names.join(", ")
             ));
         }
-        p.push_str("- Runtime app увидит этот проект в system.context().linked_projects и сможет использовать его как default project memory scope.\n\n");
+        p.push_str("- The runtime app will see this project in system.context().linked_projects and can use it as the default project memory scope.\n\n");
     }
-    p.push_str("ДОСТУПНЫЕ МЕТОДЫ:\n");
-    p.push_str("  bridge.catalog() -> {methods, helpers, permissions, app, notes} — runtime self-discovery bridge API, overlay helpers, permission hints и текущих grants app\n");
-    p.push_str("  system.context() -> {app_id, app_root, manifest, app_project, linked_projects, memory_defaults} — контекст текущей утилиты; app_project/linked_projects это summaries со skills и mcp_server_names, без raw MCP config\n");
-    p.push_str("  system.openPanel({panel, projectId?, threadId?}) -> {ok, panel} — открыть панель Reflex: apps|memory|automations|browser|settings; для memory можно передать context\n");
-    p.push_str("  system.openUrl({url}) -> {ok, url}                 — открыть http/https/mailto/tel URL в системном приложении\n");
-    p.push_str("  system.openPath({path}) -> {ok, path}; system.revealPath({path}) -> {ok, path} — открыть или показать в Finder существующий локальный файл/папку. Относительный path считается от app-папки.\n");
-    p.push_str("  logs.write({level?, source?, message}) -> {ok}; logs.list({limit?, sinceSeq?, source?, level?}) -> {entries, latestSeq} — app-scoped diagnostics в Settings → Logs. level: trace|debug|info|warn|error\n");
-    p.push_str("  manifest.get() -> AppManifest; manifest.update({patch}) -> {ok, manifest} — безопасно обновить собственный manifest.json (id всегда остаётся текущим app)\n");
-    p.push_str("  permissions.list() -> {permissions}; permissions.ensure({permission}) или ensure({permissions}) -> {ok, added, permissions}; permissions.revoke(...) -> {ok, removed, permissions} — точечно обновлять manifest.permissions без ручного merge\n");
-    p.push_str("  network.hosts() -> {allowed_hosts}; network.allowHost({host}) или allowHost({hosts}) -> {ok, added, allowed_hosts}; network.revokeHost(...) -> {ok, removed, allowed_hosts} — точечно обновлять manifest.network.allowed_hosts для net.fetch\n");
-    p.push_str("  widgets.list() -> {widgets}; widgets.upsert({id, name?, entry?, size?, description?, html?}) или widgets.upsert({widget, html?}) -> {ok, created, widget}; widgets.delete({widgetId, deleteEntry?}) -> {ok, deleted} — управлять dashboard widgets без ручного manifest merge\n");
-    p.push_str("  actions.list() -> {actions}; actions.upsert({id, name?, description?, public?, params_schema?, steps}) или actions.upsert({action}) -> {ok, created, action}; actions.delete({actionId}) -> {ok, deleted} — публиковать callable API для apps.invoke без ручного manifest merge\n");
-    p.push_str("  agent.ask({prompt}) -> {answer}                       — короткий one-shot вопрос агенту\n");
-    p.push_str("  agent.startTopic({prompt, projectId?}) -> {threadId}   — создать полноценный тред\n");
-    p.push_str("  agent.task({prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}) -> {threadId, result}  — sub-агент изолированно; sandbox: read-only|workspace-write; ждёт turn.completed и возвращает финальный текст. cwd может быть app root или linked project; чужой project требует permission \"agent.project:<project>\" / \"agent.project:*\", произвольный cwd — \"agent.cwd:*\". Project cwd автоматически получает MCP config, preferred skills, project profile и memory/RAG context. includeContext=false только для raw prompt; memoryThreadId подключает topic memory.\n");
-    p.push_str("  agent.stream({prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}) -> {streamId, threadId}  — стрим токенов: app слушает window 'message' от parent с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done' с {streamId, result}. По завершении вызывай agent.streamAbort({threadId}) при размонтаже. cwd/context rules как у agent.task.\n");
-    p.push_str("  storage.get({key}) -> {value}                         — persist в storage.json\n");
+    p.push_str("AVAILABLE METHODS:\n");
+    p.push_str("  bridge.catalog() -> {methods, helpers, permissions, app, notes}; runtime self-discovery for bridge API, overlay helpers, permission hints, and current grants\n");
+    p.push_str("  system.context() -> {app_id, app_root, manifest, app_project, linked_projects, memory_defaults}; current app context; app_project/linked_projects are summaries with skills and mcp_server_names, not raw MCP config\n");
+    p.push_str("  system.openPanel({panel, projectId?, threadId?}) -> {ok, panel}; open a Reflex panel: apps|memory|automations|browser|settings; memory may receive context\n");
+    p.push_str("  system.openUrl({url}) -> {ok, url}; open http/https/mailto/tel URL in the default system app\n");
+    p.push_str("  system.openPath({path}) -> {ok, path}; system.revealPath({path}) -> {ok, path}; open or reveal an existing local file/folder. Relative paths resolve from the app directory.\n");
+    p.push_str("  logs.write({level?, source?, message}) -> {ok}; logs.list({limit?, sinceSeq?, source?, level?}) -> {entries, latestSeq}; app-scoped diagnostics in Settings -> Logs. level: trace|debug|info|warn|error\n");
+    p.push_str("  manifest.get() -> AppManifest; manifest.update({patch}) -> {ok, manifest}; safely merge-update this app's manifest.json. The id remains the current app id.\n");
+    p.push_str("  permissions.list() -> {permissions}; permissions.ensure({permission}) or ensure({permissions}) -> {ok, added, permissions}; permissions.revoke(...) -> {ok, removed, permissions}; targeted manifest.permissions updates without manual merging\n");
+    p.push_str("  network.hosts() -> {allowed_hosts}; network.allowHost({host}) or allowHost({hosts}) -> {ok, added, allowed_hosts}; network.revokeHost(...) -> {ok, removed, allowed_hosts}; targeted manifest.network.allowed_hosts updates for net.fetch\n");
+    p.push_str("  widgets.list() -> {widgets}; widgets.upsert({id, name?, entry?, size?, description?, html?}) or widgets.upsert({widget, html?}) -> {ok, created, widget}; widgets.delete({widgetId, deleteEntry?}) -> {ok, deleted}; manage dashboard widgets without manual manifest merging\n");
+    p.push_str("  actions.list() -> {actions}; actions.upsert({id, name?, description?, public?, params_schema?, steps}) or actions.upsert({action}) -> {ok, created, action}; actions.delete({actionId}) -> {ok, deleted}; publish callable API for apps.invoke without manual manifest merging\n");
+    p.push_str("  agent.ask({prompt}) -> {answer}; short one-shot question to the agent\n");
+    p.push_str("  agent.startTopic({prompt, projectId?}) -> {threadId}; create a full Reflex topic\n");
+    p.push_str("  agent.task({prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}) -> {threadId, result}; isolated sub-agent; sandbox: read-only|workspace-write; waits for turn.completed and returns final text. cwd may be app root or linked project; foreign projects require permission \"agent.project:<project>\" / \"agent.project:*\", arbitrary cwd requires \"agent.cwd:*\". Project cwd automatically receives MCP config, preferred skills, project profile, and memory/RAG context. includeContext=false only for a raw prompt; memoryThreadId attaches topic memory.\n");
+    p.push_str("  agent.stream({prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}) -> {streamId, threadId}; token stream. Listen for parent window 'message' with {source:'reflex', type:'stream.token', streamId, token} and 'stream.done' with {streamId, result}. Call agent.streamAbort({threadId}) when unmounting. cwd/context rules match agent.task.\n");
+    p.push_str("  storage.get({key}) -> {value}; persisted in storage.json\n");
     p.push_str("  storage.set({key, value}) -> {ok}\n");
-    p.push_str("  storage.list({prefix?}) -> {keys, entries}; storage.delete({key}) или storage.delete({keys}) -> {ok, deleted, missing}\n");
-    p.push_str("  fs.read({path}) -> {content}                          — читать файл в app-папке\n");
-    p.push_str("  fs.list({path?, recursive?, includeHidden?}) -> {entries} — список файлов app-папки\n");
-    p.push_str("  fs.write({path, content}) -> {ok}                     — писать файл в app-папке\n");
-    p.push_str("  fs.delete({path, recursive?}) -> {ok, path, kind}     — удалить файл/папку app; корень app удалить нельзя\n");
-    p.push_str("  clipboard.readText() -> {text}; clipboard.writeText({text}) -> {ok} — буфер обмена macOS; требует permission \"clipboard.read\"/\"clipboard.write\" или \"clipboard:*\"\n");
+    p.push_str("  storage.list({prefix?}) -> {keys, entries}; storage.delete({key}) or storage.delete({keys}) -> {ok, deleted, missing}\n");
+    p.push_str("  fs.read({path}) -> {content}; read a file inside the app directory\n");
+    p.push_str("  fs.list({path?, recursive?, includeHidden?}) -> {entries}; list files inside the app directory\n");
+    p.push_str("  fs.write({path, content}) -> {ok}; write a file inside the app directory\n");
+    p.push_str("  fs.delete({path, recursive?}) -> {ok, path, kind}; delete an app file/folder. The app root cannot be deleted.\n");
+    p.push_str("  clipboard.readText() -> {text}; clipboard.writeText({text}) -> {ok}; macOS clipboard; requires permission \"clipboard.read\"/\"clipboard.write\" or \"clipboard:*\"\n");
     p.push_str("  notify.show({title, body}) -> {ok}                    — macOS push\n");
-    p.push_str("  dialog.openDirectory({title?, defaultPath?}) -> {path|null}                          — нативное окно выбора папки (path = null если отмена)\n");
-    p.push_str("  dialog.openFile({title?, defaultPath?, filters?, multiple?}) -> {path|null} или {paths:[]}  — нативное окно выбора файла. filters: [{name, extensions:[\"txt\",...]}]\n");
-    p.push_str("  dialog.saveFile({title?, defaultPath?, filters?, content?}) -> {path|null}            — окно \"сохранить как\". Если передан content (string) — файл сразу записывается на выбранный путь\n");
-    p.push_str("  net.fetch({url, method?, headers?, body?, timeoutMs?}) -> {status, headers, body, encoding}  — HTTP-запрос. Хост ОБЯЗАН быть в manifest.network.allowed_hosts (поддержка \"*.example.com\"); добавляй через network.allowHost/reflexNetworkAllowHost. Body — string, либо JSON (auto-serialize). encoding=\"utf8\"|\"base64\".\n\n");
-    p.push_str("PROJECT/TOPIC API — используй для OS-dashboard, навигации и обзора работы агента.\n");
-    p.push_str("  projects.list({includeAll?}) -> ProjectSummary[] — по умолчанию только linked projects; includeAll требует permission \"projects.read:*\"\n");
-    p.push_str("  projects.open({projectId}) -> {ok, project_id} — открыть проект в основном UI; права как у projects.list\n");
-    p.push_str("  project.profile.update({projectId?, description?, agentInstructions?}) -> {ok, changed, project} — обновлять project description/agent profile можно только с permission \"projects.write:<project>\" или \"projects.write:*\"; null или пустая строка очищает поле\n");
-    p.push_str("  project.sandbox.set({projectId?, sandbox}) -> {ok, changed, sandbox, project} — sandbox: read-only|workspace-write|danger-full-access; требует permission \"projects.write:<project>\" или \"projects.write:*\"\n");
-    p.push_str("  project.apps.link({projectId?, appId?}) / project.apps.unlink({projectId?, appId?}) -> {ok, linked|unlinked, app_id, project} — привязать app к проекту; appId по умолчанию текущий app; требует \"projects.write:<project>\" или \"projects.write:*\"\n");
-    p.push_str("  topics.list({projectId?, limit?, includeAll?}) -> TopicSummary[] — метаданные топиков без raw events; чужие проекты требуют permission \"topics.read:<project>\" или \"topics.read:*\"\n");
-    p.push_str("  topics.open({threadId, projectId?}) -> {ok, project_id, thread_id} — открыть topic в основном UI; права как у topics.list\n");
-    p.push_str("  project.files.list({projectId?, path?, recursive?, includeHidden?}) -> {project_id, project_name, entries} — read-only список файлов linked project; чужие проекты требуют \"project.files.read:<project>\" или \"project.files.read:*\"; .reflex всегда скрыт\n");
-    p.push_str("  project.files.read({projectId?, path}) -> {project_id, project_name, path, size, content} — читать UTF-8 файл linked project до 1 MiB; .reflex всегда закрыт\n");
-    p.push_str("  project.files.search({projectId?, query, path?, recursive?, includeHidden?, includeContent?, limit?}) -> {project_id, project_name, query, matches, scanned, truncated} — ищет path/name, а includeContent=true сканирует UTF-8 файлы до 256 KiB каждый; права как у project.files.read\n");
-    p.push_str("  project.files.write({projectId?, path, content, createDirs?, overwrite?}) -> {ok, project_id, project_name, path, created, size}; project.files.mkdir({projectId?, path, recursive?}); project.files.move({projectId?, from, to, createDirs?, overwrite?}); project.files.copy({projectId?, from, to, createDirs?, overwrite?, recursive?}); project.files.delete({projectId?, path, recursive?}) — менять project files можно только с permission \"project.files.write:<project>\" или \"project.files.write:*\"; project root и .reflex защищены\n\n");
-    p.push_str("SKILLS/MCP API — используй для панелей возможностей проекта и выбора workflow.\n");
-    p.push_str("  skills.list({projectId?, includeAll?}) -> [{project_id, project_name, skills}] — linked projects доступны без permission; чужие требуют \"skills.read:<project>\" или \"skills.read:*\"\n");
-    p.push_str("  project.skills.ensure({projectId?, skill}) или ensure({projectId?, skills}) -> {ok, added, skills}; project.skills.revoke(...) -> {ok, removed, skills} — обновлять preferred skills проекта можно только с permission \"skills.write:<project>\" или \"skills.write:*\"\n");
-    p.push_str("  mcp.servers({projectId?, includeAll?, includeConfig?}) -> [{project_id, project_name, server_names, servers}] — names доступны для linked projects; includeConfig требует \"mcp.read:<project>\" или \"mcp.read:*\"\n");
-    p.push_str("  project.mcp.upsert({projectId?, name, config}) -> {ok, name, replaced, server_names}; project.mcp.delete({projectId?, name|names}) -> {ok, removed, server_names} — подключать/убирать MCP servers проекта можно только с permission \"mcp.write:<project>\" или \"mcp.write:*\"\n\n");
-    p.push_str("BROWSER API — встроенный Playwright/browser sidecar для research, QA и web workflows.\n");
+    p.push_str("  dialog.openDirectory({title?, defaultPath?}) -> {path|null}; native folder picker. path = null when cancelled.\n");
+    p.push_str("  dialog.openFile({title?, defaultPath?, filters?, multiple?}) -> {path|null} or {paths:[]}; native file picker. filters: [{name, extensions:[\"txt\",...]}]\n");
+    p.push_str("  dialog.saveFile({title?, defaultPath?, filters?, content?}) -> {path|null}; native save dialog. If content is provided as a string, the file is written immediately to the selected path.\n");
+    p.push_str("  net.fetch({url, method?, headers?, body?, timeoutMs?}) -> {status, headers, body, encoding}; HTTP request. The host MUST be in manifest.network.allowed_hosts; supports \"*.example.com\". Add hosts through network.allowHost/reflexNetworkAllowHost. Body may be a string or JSON, which is auto-serialized. encoding=\"utf8\"|\"base64\".\n\n");
+    p.push_str("PROJECT/TOPIC API: use it for OS dashboards, navigation, and agent work overview.\n");
+    p.push_str("  projects.list({includeAll?}) -> ProjectSummary[]; by default returns only linked projects. includeAll requires permission \"projects.read:*\"\n");
+    p.push_str("  projects.open({projectId}) -> {ok, project_id}; open a project in the main UI. Access rules match projects.list.\n");
+    p.push_str("  project.profile.update({projectId?, description?, agentInstructions?}) -> {ok, changed, project}; updating project description/agent profile requires \"projects.write:<project>\" or \"projects.write:*\". null or empty string clears the field.\n");
+    p.push_str("  project.sandbox.set({projectId?, sandbox}) -> {ok, changed, sandbox, project}; sandbox: read-only|workspace-write|danger-full-access; requires \"projects.write:<project>\" or \"projects.write:*\"\n");
+    p.push_str("  project.apps.link({projectId?, appId?}) / project.apps.unlink({projectId?, appId?}) -> {ok, linked|unlinked, app_id, project}; link app to project. appId defaults to current app. Requires \"projects.write:<project>\" or \"projects.write:*\"\n");
+    p.push_str("  topics.list({projectId?, limit?, includeAll?}) -> TopicSummary[]; topic metadata without raw events. Foreign projects require \"topics.read:<project>\" or \"topics.read:*\"\n");
+    p.push_str("  topics.open({threadId, projectId?}) -> {ok, project_id, thread_id}; open topic in the main UI. Access rules match topics.list.\n");
+    p.push_str("  project.files.list({projectId?, path?, recursive?, includeHidden?}) -> {project_id, project_name, entries}; read-only list of linked project files. Foreign projects require \"project.files.read:<project>\" or \"project.files.read:*\". .reflex is always hidden.\n");
+    p.push_str("  project.files.read({projectId?, path}) -> {project_id, project_name, path, size, content}; read UTF-8 linked project files up to 1 MiB. .reflex is always blocked.\n");
+    p.push_str("  project.files.search({projectId?, query, path?, recursive?, includeHidden?, includeContent?, limit?}) -> {project_id, project_name, query, matches, scanned, truncated}; searches path/name, and includeContent=true scans UTF-8 files up to 256 KiB each. Access rules match project.files.read.\n");
+    p.push_str("  project.files.write({projectId?, path, content, createDirs?, overwrite?}) -> {ok, project_id, project_name, path, created, size}; project.files.mkdir({projectId?, path, recursive?}); project.files.move({projectId?, from, to, createDirs?, overwrite?}); project.files.copy({projectId?, from, to, createDirs?, overwrite?, recursive?}); project.files.delete({projectId?, path, recursive?}); changing project files requires \"project.files.write:<project>\" or \"project.files.write:*\". The project root and .reflex are protected.\n\n");
+    p.push_str("SKILLS/MCP API: use it for project capability panels and workflow selection.\n");
+    p.push_str("  skills.list({projectId?, includeAll?}) -> [{project_id, project_name, skills}]; linked projects are available without permission. Foreign projects require \"skills.read:<project>\" or \"skills.read:*\"\n");
+    p.push_str("  project.skills.ensure({projectId?, skill}) or ensure({projectId?, skills}) -> {ok, added, skills}; project.skills.revoke(...) -> {ok, removed, skills}; updating project preferred skills requires \"skills.write:<project>\" or \"skills.write:*\"\n");
+    p.push_str("  mcp.servers({projectId?, includeAll?, includeConfig?}) -> [{project_id, project_name, server_names, servers}]; names are available for linked projects. includeConfig requires \"mcp.read:<project>\" or \"mcp.read:*\"\n");
+    p.push_str("  project.mcp.upsert({projectId?, name, config}) -> {ok, name, replaced, server_names}; project.mcp.delete({projectId?, name|names}) -> {ok, removed, server_names}; adding/removing project MCP servers requires \"mcp.write:<project>\" or \"mcp.write:*\"\n\n");
+    p.push_str("BROWSER API: built-in Playwright/browser sidecar for research, QA, and web workflows.\n");
     p.push_str("  browser.init({headless?, projectId?}); project.browser.setEnabled({projectId?, enabled}) -> {ok, enabled, server_names}; browser.tabs.list(); browser.open({url?}); browser.close({tabId}); browser.setActive({tabId}); browser.navigate({tabId, url}); browser.back({tabId}); browser.forward({tabId}); browser.reload({tabId})\n");
     p.push_str("  browser.currentUrl({tabId}); browser.readText({tabId}); browser.readOutline({tabId}); browser.screenshot({tabId, fullPage?})\n");
     p.push_str("  browser.clickText({tabId, text, exact?}); browser.clickSelector({tabId, selector}); browser.fill({tabId, selector, value}); browser.scroll({tabId, dx?, dy?}); browser.waitFor({tabId, selector, timeoutMs?})\n");
-    p.push_str("- Требует manifest.permissions: \"browser.read\" для чтения/currentUrl/waitFor или \"browser.control\" для init/open/close/setActive/navigate/back/forward/reload/click/fill/scroll. Project browser state требует linked project или \"browser.project:<project>\"; включение Reflex Browser MCP через project.browser.setEnabled требует \"mcp.write:<project>\" или \"mcp.write:*\".\n\n");
-    p.push_str("SCHEDULER API — панель или widget могут показывать и контролировать автоматизации без ручного JSON.\n");
-    p.push_str("  scheduler.list({appId?, includeAll?}) -> ScheduleListItem[] — по умолчанию только расписания текущего app\n");
-    p.push_str("  scheduler.upsert({id, name?, cron, enabled?, catch_up?, steps}) или scheduler.upsert({schedule}) -> {ok, created, schedule_id, schedule} — создать/обновить своё расписание\n");
-    p.push_str("  scheduler.delete({scheduleId}) -> {ok, deleted, schedule_id} — удалить своё расписание\n");
-    p.push_str("  scheduler.runNow({scheduleId}) -> {ok, schedule_id} — scheduleId может быть local id или \"app::schedule\"\n");
+    p.push_str("- Requires manifest.permissions: \"browser.read\" for read/currentUrl/waitFor, or \"browser.control\" for init/open/close/setActive/navigate/back/forward/reload/click/fill/scroll. Project browser state requires linked project or \"browser.project:<project>\". Enabling Reflex Browser MCP through project.browser.setEnabled requires \"mcp.write:<project>\" or \"mcp.write:*\".\n\n");
+    p.push_str("SCHEDULER API: panels and widgets can show/control automations without manual JSON.\n");
+    p.push_str("  scheduler.list({appId?, includeAll?}) -> ScheduleListItem[]; by default returns only schedules owned by this app\n");
+    p.push_str("  scheduler.upsert({id, name?, cron, enabled?, catch_up?, steps}) or scheduler.upsert({schedule}) -> {ok, created, schedule_id, schedule}; create/update this app's schedule\n");
+    p.push_str("  scheduler.delete({scheduleId}) -> {ok, deleted, schedule_id}; delete this app's schedule\n");
+    p.push_str("  scheduler.runNow({scheduleId}) -> {ok, schedule_id}; scheduleId may be a local id or \"app::schedule\"\n");
     p.push_str("  scheduler.setPaused({scheduleId, paused}) -> {ok, schedule_id, paused}\n");
     p.push_str("  scheduler.runs({limit?, beforeTs?, appId?, includeAll?}) -> RunSummary[]\n");
     p.push_str("  scheduler.stats({appId?, includeAll?, recentLimit?}) -> {schedules, recent_runs} — counts, next fire timestamp, recent run counts, last error summary\n");
     p.push_str("  scheduler.runDetail({runId}) -> RunRecord|null\n");
-    p.push_str("- Чужие app/schedule требуют manifest.permissions: \"scheduler.read:*\", \"scheduler.run:<app>\", \"scheduler.write:<app>::<schedule>\" или \"scheduler:*\".\n\n");
-    p.push_str("MEMORY API — используй для долгой памяти, RAG и проектного контекста вместо собственного JSON-хака.\n");
+    p.push_str("- Foreign apps/schedules require manifest.permissions: \"scheduler.read:*\", \"scheduler.run:<app>\", \"scheduler.write:<app>::<schedule>\", or \"scheduler:*\".\n\n");
+    p.push_str("MEMORY API: use it for durable memory, RAG, and project context instead of custom JSON hacks.\n");
     p.push_str("  memory.save({scope?, kind?, name, description?, body, tags?, projectId?, threadId?}) -> MemoryNote\n");
     p.push_str("  memory.read({scope?, relPath, projectId?, threadId?}) -> MemoryNote\n");
     p.push_str("  memory.update({scope?, relPath, name?, description?, body?, tags?, kind?, projectId?, threadId?}) -> MemoryNote\n");
     p.push_str("  memory.list({scope?, filter?, projectId?, threadId?}) -> MemoryNote[]; filter: {kind?, tag?, query?}\n");
     p.push_str("  memory.delete({scope?, relPath, projectId?, threadId?}) -> {ok}\n");
-    p.push_str("  memory.search({query, projectId?, limit?}) -> RagHit[] — поиск по индексированным файлам и заметкам проекта\n");
-    p.push_str("  memory.recall({query, projectId?, threadId?, maxNotes?, maxRag?}) -> {markdown, notes, rag} — готовый контекст для агента\n");
-    p.push_str("  memory.stats({projectId?}) -> {docs, chunks, sources, stale, missing, last_indexed_at_ms, kinds} — health/coverage RAG индекса для dashboard или schedule monitoring\n");
-    p.push_str("  memory.reindex({projectId?}) -> {indexed} — явное обслуживание RAG: переиндексировать поддерживаемые файлы проекта\n");
+    p.push_str("  memory.search({query, projectId?, limit?}) -> RagHit[]; search indexed project files and memory notes\n");
+    p.push_str("  memory.recall({query, projectId?, threadId?, maxNotes?, maxRag?}) -> {markdown, notes, rag}; ready-to-use context for agents\n");
+    p.push_str("  memory.stats({projectId?}) -> {docs, chunks, sources, stale, missing, last_indexed_at_ms, kinds}; RAG index health/coverage for dashboards or schedule monitoring\n");
+    p.push_str("  memory.reindex({projectId?}) -> {indexed}; explicit RAG maintenance: reindex supported project files\n");
     p.push_str("  memory.indexPath({path, projectId?}) -> {indexed, skipped}; memory.pathStatus({path, projectId?}); memory.pathStatusBatch({paths, projectId?}); memory.forgetPath({path, projectId?})\n");
-    p.push_str("- scope: \"project\" по умолчанию. Если app привязан ровно к одному проекту, project scope попадёт в память этого проекта; иначе — в память самого app.\n");
-    p.push_str("- Для выбора проекта вызови system.context() и передай projectId из linked_projects. Для global scope добавь permission \"memory.global.read\" или \"memory.global.write\".\n");
-    p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexBridgeCatalog(), reflexSystemContext(), reflexSystemOpenPanel(panelOrParams, projectId?, threadId?), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexLogList(params), reflexManifestGet(), reflexManifestUpdate(patch), reflexPermissionsList(), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexSchedulerList(params), reflexSchedulerUpsert(scheduleOrParams), reflexSchedulerDelete(scheduleIdOrParams), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerStats(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions.\n");
+    p.push_str("- scope defaults to \"project\". If the app is linked to exactly one project, project scope targets that project memory; otherwise it targets the app's own memory.\n");
+    p.push_str("- To choose a project, call system.context() and pass a projectId from linked_projects. For global scope, add permission \"memory.global.read\" or \"memory.global.write\".\n");
+    p.push_str("- The overlay already provides helpers: reflexInvoke(method, params), reflexBridgeCatalog(), reflexSystemContext(), reflexSystemOpenPanel(panelOrParams, projectId?, threadId?), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexLogList(params), reflexManifestGet(), reflexManifestUpdate(patch), reflexPermissionsList(), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexSchedulerList(params), reflexSchedulerUpsert(scheduleOrParams), reflexSchedulerDelete(scheduleIdOrParams), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerStats(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions.\n");
     p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set/List/Delete(...), reflexFsRead/List/Write/Delete(...), reflexClipboardReadText(), reflexClipboardWriteText(textOrParams), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
     p.push_str("  Browser helpers: reflexBrowserInit(params), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserClose(tabIdOrParams), reflexBrowserSetActive(tabIdOrParams), reflexBrowserNavigate(tabId, url), reflexBrowserBack(tabIdOrParams), reflexBrowserForward(tabIdOrParams), reflexBrowserReload(tabIdOrParams), reflexBrowserCurrentUrl(tabIdOrParams), reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?), reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?), reflexBrowserScroll(tabIdOrParams, dx?, dy?), reflexBrowserWaitFor(tabIdOrParams, selector?, timeoutMs?).\n");
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryUpdate(relPathOrParams, patch?), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryStats(params), reflexMemoryReindex(params), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryPathStatusBatch(pathsOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
-    p.push_str("MANIFEST.network (для net.fetch):\n");
+    p.push_str("MANIFEST.network for net.fetch:\n");
     p.push_str("  { \"network\": { \"allowed_hosts\": [\"api.example.com\", \"*.foo.com\"] } }\n\n");
-    p.push_str("- Предпочитай точечный вызов: await reflexNetworkAllowHost(\"api.example.com\") вместо ручного manifest.update.\n\n");
-    p.push_str("MANIFEST.schedules — повторяемые задачи. Reflex запускает их сам, даже когда окно app закрыто (Reflex живёт в трее).\n");
+    p.push_str("- Prefer targeted calls such as await reflexNetworkAllowHost(\"api.example.com\") instead of manual manifest.update.\n\n");
+    p.push_str("MANIFEST.schedules: recurring tasks. Reflex runs them while it is alive, even when the app window is closed.\n");
     p.push_str("  {\n");
     p.push_str("    \"schedules\": [{\n");
     p.push_str("      \"id\": \"morning-digest\",\n");
-    p.push_str("      \"name\": \"Утренний дайджест\",\n");
-    p.push_str("      \"cron\": \"0 0 8 * * *\",          // 6 полей: sec min hour dom month dow (UTC). \"0 */5 * * * *\" = каждые 5 минут\n");
+    p.push_str("      \"name\": \"Morning digest\",\n");
+    p.push_str("      \"cron\": \"0 0 8 * * *\",          // 6 fields: sec min hour dom month dow (UTC). \"0 */5 * * * *\" = every 5 minutes\n");
     p.push_str("      \"enabled\": true,\n");
-    p.push_str("      \"catch_up\": \"once\",              // если Reflex был выключен — выполнить ОДИН раз при старте\n");
+    p.push_str("      \"catch_up\": \"once\",              // if Reflex was off, run ONCE at startup\n");
     p.push_str("      \"steps\": [\n");
     p.push_str("        { \"method\": \"net.fetch\",  \"params\": {\"url\":\"...\"},                          \"save_as\": \"page\"    },\n");
-    p.push_str("        { \"method\": \"agent.task\", \"params\": {\"prompt\":\"Суммируй: {{steps.page.body}}\"}, \"save_as\": \"summary\" },\n");
+    p.push_str("        { \"method\": \"agent.task\", \"params\": {\"prompt\":\"Summarize this content: {{steps.page.body}}\"}, \"save_as\": \"summary\" },\n");
     p.push_str("        { \"method\": \"storage.set\",\"params\": {\"key\":\"today\", \"value\":\"{{steps.summary.result}}\"} }\n");
     p.push_str("      ]\n");
     p.push_str("    }]\n");
     p.push_str("  }\n");
-    p.push_str("- Шаги исполняются по очереди. Шаблоны {{steps.X.field}} подставляют результаты предыдущих шагов. Если плейсхолдер занимает всю строку — тип значения сохраняется (объект остаётся объектом).\n");
-    p.push_str("- В steps НЕЛЬЗЯ использовать dialog.openDirectory/openFile/saveFile, clipboard.readText/writeText, system.openPanel/openUrl/openPath/revealPath, apps.create/import/commit/commitPartial/delete/restore/revert/purge, apps.open, projects.open и topics.open — у автоматизаций нет UI.\n");
-    p.push_str("- Все остальные методы (agent.*, storage.*, fs.*, project.files.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/stats/runDetail) работают как обычно. scheduler.runNow/setPaused/upsert/delete в schedule.steps заблокированы, чтобы не запускать рекурсивные unattended-циклы.\n");
-    p.push_str("- Если задача звучит как «раз в N минут/часов делать X» — это schedule, не кнопка в UI.\n\n");
+    p.push_str("- Steps run sequentially. Templates such as {{steps.X.field}} insert previous step results. If the placeholder is the entire string, the value type is preserved, so objects remain objects.\n");
+    p.push_str("- schedule.steps MUST NOT use dialog.openDirectory/openFile/saveFile, clipboard.readText/writeText, system.openPanel/openUrl/openPath/revealPath, apps.create/import/commit/commitPartial/delete/restore/revert/purge, apps.open, projects.open, or topics.open because automations do not have UI.\n");
+    p.push_str("- All other methods (agent.*, storage.*, fs.*, project.files.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/stats/runDetail) work normally. scheduler.runNow/setPaused/upsert/delete are blocked in schedule.steps to avoid recursive unattended loops.\n");
+    p.push_str("- If the task sounds like \"do X every N minutes/hours\", use a schedule, not only a UI button.\n\n");
 
-    p.push_str("MANIFEST.actions — публичные операции, которые могут вызывать ДРУГИЕ apps через apps.invoke.\n");
+    p.push_str("MANIFEST.actions: public operations OTHER apps can call through apps.invoke.\n");
     p.push_str("  {\n");
     p.push_str("    \"actions\": [{\n");
     p.push_str("      \"id\": \"today-summary\",\n");
-    p.push_str("      \"name\": \"Сводка за сегодня\",\n");
-    p.push_str("      \"public\": true,                   // если false — caller должен иметь permission \"apps.invoke:<this_app_id>\"\n");
-    p.push_str("      \"params_schema\": {\"type\":\"object\",\"properties\":{}}, // опционально: JSON Schema для входных params\n");
+    p.push_str("      \"name\": \"Today summary\",\n");
+    p.push_str("      \"public\": true,                   // if false, caller must have permission \"apps.invoke:<this_app_id>\"\n");
+    p.push_str("      \"params_schema\": {\"type\":\"object\",\"properties\":{}}, // optional JSON Schema for input params\n");
     p.push_str("      \"steps\": [\n");
     p.push_str("        { \"method\": \"storage.get\", \"params\": {\"key\":\"today\"}, \"save_as\": \"output\" }\n");
     p.push_str("      ]\n");
     p.push_str("    }]\n");
     p.push_str("  }\n");
-    p.push_str("- Параметры от вызывающего доступны как {{input.X}}.\n");
-    p.push_str("- Возврат action — значение последнего шага (или save_as: \"output\" если хочешь явно).\n\n");
-    p.push_str("- Можно создать/обновить action одним вызовом: reflexActionsUpsert({id:\"today-summary\", public:true, steps:[...]}); затем другие apps вызывают его через reflexAppsInvoke.\n\n");
+    p.push_str("- Caller params are available as {{input.X}}.\n");
+    p.push_str("- The action return value is the last step value, or save_as: \"output\" when you want to be explicit.\n\n");
+    p.push_str("- You can create/update an action in one call: reflexActionsUpsert({id:\"today-summary\", public:true, steps:[...]}); then other apps call it through reflexAppsInvoke.\n\n");
 
-    p.push_str("MANIFEST.widgets — мини-страницы для дашборда проекта (компактные, читают/показывают данные).\n");
+    p.push_str("MANIFEST.widgets: mini-pages for the project dashboard. They are compact and read/show data.\n");
     p.push_str("  {\n");
     p.push_str("    \"widgets\": [{\n");
     p.push_str("      \"id\": \"today\",\n");
-    p.push_str("      \"name\": \"Сегодня\",\n");
+    p.push_str("      \"name\": \"Today\",\n");
     p.push_str("      \"entry\": \"widgets/today.html\",\n");
-    p.push_str("      \"size\": \"small\",         // small (1x1), medium (2x1), wide (3x1), large (2x2). Базовая клетка ~180px.\n");
-    p.push_str("      \"description\": \"что показывает виджет\"\n");
+    p.push_str("      \"size\": \"small\",         // small (1x1), medium (2x1), wide (3x1), large (2x2). Base cell is about 180px.\n");
+    p.push_str("      \"description\": \"what the widget shows\"\n");
     p.push_str("    }]\n");
     p.push_str("  }\n");
-    p.push_str("- Каждый widget.entry — отдельный HTML-файл в папке app, обычно `widgets/<id>.html`.\n");
-    p.push_str("- Можно создать/обновить виджет одним вызовом: reflexWidgetsUpsert({id:\"today\", name:\"Сегодня\", size:\"small\", html:\"<html>...</html>\"}); entry по умолчанию станет widgets/<id>.html.\n");
-    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjectsList/Open, reflexProjectProfileUpdate, reflexProjectSandboxSet, reflexProjectAppsLink/Unlink, reflexTopicsList/Open, reflexSkillsList, reflexProjectSkillsEnsure/Revoke, reflexMcpServers, reflexProjectMcpUpsert/Delete, reflexProjectFilesList/Read/Search/Write/Mkdir/Move/Copy/Delete, reflexProjectBrowserSetEnabled, reflexBrowser*, reflexScheduler*, reflexMemory*, reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions, reflexAppsList/Create/Export/Import/Delete/TrashList/Restore/Purge/Open/Invoke/ListActions).\n");
-    p.push_str("- Виджет компактный: тёмная прозрачная подложка (background:transparent), html/body высотой 100%, padding 12-14px, без своих рамок (рамки рисует grid).\n");
-    p.push_str("- Если данные обновляются часто — сам ставь setInterval на 5-30 сек.\n");
-    p.push_str("- Если виджет читает данные другой утилиты — используй reflexAppsInvoke('<app>','<action>',{...}); НЕ дублируй сбор данных.\n\n");
+    p.push_str("- Each widget.entry is a separate HTML file in the app directory, usually `widgets/<id>.html`.\n");
+    p.push_str("- You can create/update a widget in one call: reflexWidgetsUpsert({id:\"today\", name:\"Today\", size:\"small\", html:\"<html>...</html>\"}); by default, entry becomes widgets/<id>.html.\n");
+    p.push_str("- Widgets have access to the same bridge and runtime overlay (reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjectsList/Open, reflexProjectProfileUpdate, reflexProjectSandboxSet, reflexProjectAppsLink/Unlink, reflexTopicsList/Open, reflexSkillsList, reflexProjectSkillsEnsure/Revoke, reflexMcpServers, reflexProjectMcpUpsert/Delete, reflexProjectFilesList/Read/Search/Write/Mkdir/Move/Copy/Delete, reflexProjectBrowserSetEnabled, reflexBrowser*, reflexScheduler*, reflexMemory*, reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions, reflexAppsList/Create/Export/Import/Delete/TrashList/Restore/Purge/Open/Invoke/ListActions).\n");
+    p.push_str("- Keep widgets compact: dark transparent background, background:transparent, html/body height 100%, padding 12-14px, and no own frame because the dashboard grid draws it.\n");
+    p.push_str("- If data updates often, add setInterval yourself with a 5-30 second interval.\n");
+    p.push_str("- If the widget reads data from another utility, use reflexAppsInvoke('<app>','<action>',{...}); do NOT duplicate data collection.\n\n");
 
-    p.push_str("INTER-APP EVENTS И ВЫЗОВЫ:\n");
-    p.push_str("  events.emit({topic, payload})            — публикация события всем подписчикам\n");
-    p.push_str("  events.subscribe({topics: [\"...\"]})       — подписка. \"*\" = любой топик\n");
+    p.push_str("INTER-APP EVENTS AND CALLS:\n");
+    p.push_str("  events.emit({topic, payload}); publish an event to subscribers\n");
+    p.push_str("  events.subscribe({topics: [\"...\"]}); subscribe. \"*\" means any topic\n");
     p.push_str("  events.unsubscribe({topics: [...]})\n");
-    p.push_str("  events.subscriptions() -> {topics}; events.recent({topic?, limit?}) -> {events} — последние события текущей app или подписанных topic\n");
-    p.push_str("  events.clearSubscriptions()              — очистить все подписки текущей app\n");
-    p.push_str("  apps.list() -> AppSummary[]              — безопасный каталог installed apps без raw manifest/server command/steps\n");
-    p.push_str("  apps.create({description, template?, projectId?}) -> {app_id, thread_id, project_id} — создать новую Reflex app через агентный генератор; требует permission \"apps.create\" или \"apps:*\"; projectId также требует \"projects.write:<project>\" или \"projects.write:*\"\n");
-    p.push_str("  apps.export({app_id, targetPath}) -> {ok, app_id, path}; apps.import({zipPath}) -> {ok, app} — .reflexapp bundles; требует \"apps.manage\" или \"apps:*\". Перед export выбирай путь через dialog.saveFile.\n");
-    p.push_str("  apps.delete({app_id}) -> TrashEntry; apps.trashList() -> TrashEntry[]; apps.restore({trash_id}) -> {ok, app_id}; apps.purge({trash_id}) -> {ok} — lifecycle через корзину; требует \"apps.manage\" или \"apps:*\"; delete не может удалить текущую app\n");
-    p.push_str("  apps.status({app_id}) -> {has_changes, revision, last_commit_message, entry_exists} — revision/dirty state app; требует \"apps.manage\" или \"apps:*\"\n");
-    p.push_str("  apps.diff({app_id}) -> {app_id, diff}; apps.commit({app_id, message?}) -> {ok}; apps.commitPartial({app_id, patch, message?}) -> {ok}; apps.revert({app_id}) -> {ok} — revision controls; требует \"apps.manage\" или \"apps:*\"\n");
-    p.push_str("  apps.server.status({app_id}); apps.server.logs({app_id}); apps.server.start({app_id}); apps.server.stop({app_id}); apps.server.restart({app_id}) — ops для server-runtime apps; требует \"apps.manage\" или \"apps:*\". start идемпотентен, restart возвращает новый port.\n");
-    p.push_str("  apps.open({app_id}) -> {ok}              — попросить Reflex открыть другой app в main UI\n");
+    p.push_str("  events.subscriptions() -> {topics}; events.recent({topic?, limit?}) -> {events}; recent events for this app or subscribed topics\n");
+    p.push_str("  events.clearSubscriptions(); clear all subscriptions for this app\n");
+    p.push_str("  apps.list() -> AppSummary[]; safe installed app catalog without raw manifest/server command/steps\n");
+    p.push_str("  apps.create({description, template?, projectId?}) -> {app_id, thread_id, project_id}; create a new Reflex app through the agent generator. Requires permission \"apps.create\" or \"apps:*\"; projectId also requires \"projects.write:<project>\" or \"projects.write:*\"\n");
+    p.push_str("  apps.export({app_id, targetPath}) -> {ok, app_id, path}; apps.import({zipPath}) -> {ok, app}; .reflexapp bundles. Requires \"apps.manage\" or \"apps:*\". Before export, choose a path through dialog.saveFile.\n");
+    p.push_str("  apps.delete({app_id}) -> TrashEntry; apps.trashList() -> TrashEntry[]; apps.restore({trash_id}) -> {ok, app_id}; apps.purge({trash_id}) -> {ok}; trash lifecycle. Requires \"apps.manage\" or \"apps:*\". delete cannot delete the current app.\n");
+    p.push_str("  apps.status({app_id}) -> {has_changes, revision, last_commit_message, entry_exists}; revision/dirty state. Requires \"apps.manage\" or \"apps:*\"\n");
+    p.push_str("  apps.diff({app_id}) -> {app_id, diff}; apps.commit({app_id, message?}) -> {ok}; apps.commitPartial({app_id, patch, message?}) -> {ok}; apps.revert({app_id}) -> {ok}; revision controls. Requires \"apps.manage\" or \"apps:*\"\n");
+    p.push_str("  apps.server.status({app_id}); apps.server.logs({app_id}); apps.server.start({app_id}); apps.server.stop({app_id}); apps.server.restart({app_id}); server-runtime app operations. Requires \"apps.manage\" or \"apps:*\". start is idempotent, restart returns a new port.\n");
+    p.push_str("  apps.open({app_id}) -> {ok}; ask Reflex to open another app in the main UI\n");
     p.push_str("  apps.invoke({app_id, action_id, params}) -> {ok, run_id, result}\n");
-    p.push_str("  apps.list_actions({app_id?, include_steps?}) — что можно вызвать\n");
-    p.push_str("В iframe runtime overlay уже есть helpers, можно звать напрямую (без postMessage):\n");
-    p.push_str("  window.reflexEventOn(topic, (data, fromApp) => {...})    // подпишется и сохранит handler\n");
+    p.push_str("  apps.list_actions({app_id?, include_steps?}); list callable actions\n");
+    p.push_str("The iframe runtime overlay already provides helpers; call them directly without postMessage:\n");
+    p.push_str("  window.reflexEventOn(topic, (data, fromApp) => {...})    // subscribes and stores handler\n");
     p.push_str("  window.reflexEventOff(topic)\n");
     p.push_str("  window.reflexEventEmit(topic, payload)\n");
     p.push_str("  window.reflexEventRecent(topicOrParams?, limit?)\n");
     p.push_str("  window.reflexEventSubscriptions()\n");
     p.push_str("  window.reflexEventClearSubscriptions()\n");
-    p.push_str("  window.reflexInvoke(method, params)                      // универсальный вызов bridge\n");
+    p.push_str("  window.reflexInvoke(method, params)                      // generic bridge call\n");
     p.push_str("  window.reflexBridgeCatalog()                             // methods/helpers/permission hints/current grants\n");
     p.push_str("  window.reflexSystemContext()\n");
     p.push_str("  window.reflexSystemOpenPanel(panelOrParams, projectId?, threadId?)\n");
@@ -1205,25 +1187,25 @@ fn build_app_creation_prompt(
     p.push_str("  window.reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryStats(params), reflexMemoryReindex(params)\n");
     p.push_str("  window.reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryPathStatusBatch(pathsOrParams), reflexMemoryForgetPath(pathOrParams)\n");
     p.push_str("  window.reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?)\n");
-    p.push_str("Permissions для apps.invoke/apps.create/apps.manage декларируются в manifest.permissions:\n");
-    p.push_str("  [\"apps.create\"]                         — создавать новые Reflex apps через apps.create\n");
-    p.push_str("  [\"apps.manage\"]                         — export/import/delete/restore/purge/list trash, revision controls и server runtime ops для installed apps\n");
-    p.push_str("  [\"apps.invoke:*\"]                       — звать ЛЮБОЕ action ЛЮБОГО app\n");
-    p.push_str("  [\"apps.invoke:health-stats\"]            — только конкретный app\n");
-    p.push_str("  [\"apps.invoke:health-stats::today\"]     — только конкретный action\n");
-    p.push_str("- Если данные уже есть в другом app — НЕ дублируй их сбор. Вызывай его action через apps.invoke, либо слушай его события.\n\n");
+    p.push_str("Permissions for apps.invoke/apps.create/apps.manage are declared in manifest.permissions:\n");
+    p.push_str("  [\"apps.create\"]                         -- create new Reflex apps through apps.create\n");
+    p.push_str("  [\"apps.manage\"]                         -- export/import/delete/restore/purge/list trash, revision controls, and server runtime ops for installed apps\n");
+    p.push_str("  [\"apps.invoke:*\"]                       -- call ANY action in ANY app\n");
+    p.push_str("  [\"apps.invoke:health-stats\"]            -- only a specific app\n");
+    p.push_str("  [\"apps.invoke:health-stats::today\"]     -- only a specific action\n");
+    p.push_str("- If data already exists in another app, do NOT duplicate collection. Call its action through apps.invoke or listen to its events.\n\n");
 
-    p.push_str("ОГРАНИЧЕНИЯ:\n");
-    p.push_str("- iframe sandbox=\"allow-scripts allow-forms\" (для server-runtime добавляется allow-same-origin). Сетевые fetch к произвольным внешним URL могут не работать — для динамических данных используй agent.ask или свой server-runtime.\n");
-    p.push_str("- В schedule.steps нельзя использовать dialog.*, clipboard.*, system.openPanel/openUrl/openPath/revealPath, apps.create/import/commit/commitPartial/delete/restore/revert/purge, apps.open, projects.open и topics.open: эти шаги бегут без UI. apps.diff/status/server.status/server.logs/export допустимы для monitoring/backup-автоматизаций с явным targetPath.\n\n");
+    p.push_str("LIMITATIONS:\n");
+    p.push_str("- iframe sandbox=\"allow-scripts allow-forms\"; server runtime also gets allow-same-origin. Arbitrary external fetch may not work from the iframe, so use agent.ask or your own server runtime for dynamic data.\n");
+    p.push_str("- schedule.steps cannot use dialog.*, clipboard.*, system.openPanel/openUrl/openPath/revealPath, apps.create/import/commit/commitPartial/delete/restore/revert/purge, apps.open, projects.open, or topics.open because these steps run without UI. apps.diff/status/server.status/server.logs/export are allowed for monitoring/backup automations when targetPath is explicit.\n\n");
     if let Some(skeleton) = template_skeleton(template) {
-        p.push_str("ШАБЛОН:\n");
+        p.push_str("TEMPLATE:\n");
         p.push_str(skeleton);
         p.push('\n');
     }
-    p.push_str("ЗАДАЧА: ");
+    p.push_str("TASK: ");
     p.push_str(description);
-    p.push_str("\n\nВ конце: рабочие файлы + обновлённый manifest.json. Не трогай .reflex/.\n");
+    p.push_str("\n\nAt the end, leave working files and an updated manifest.json. Do not touch .reflex/.\n");
     p
 }
 
@@ -1845,16 +1827,16 @@ pub(crate) fn submit_quick_impl(
     }
 
     let prompt_with_browser = if source == "browser" && !browser_tabs.is_empty() {
-        let mut buf = String::from("Контекст из встроенного браузера (открытые вкладки на момент запуска):\n");
+        let mut buf = String::from("Context from the built-in browser, open tabs at launch time:\n");
         for (i, tab) in browser_tabs.iter().enumerate() {
             let title = if tab.title.trim().is_empty() {
-                "(без заголовка)"
+                "(untitled)"
             } else {
                 tab.title.trim()
             };
             buf.push_str(&format!("{}. {} — {}\n", i + 1, title, tab.url));
         }
-        buf.push_str("\nЗАДАЧА:\n");
+        buf.push_str("\nTASK:\n");
         buf.push_str(&prompt);
         buf
     } else {
@@ -2312,7 +2294,7 @@ async fn resume_interrupted_threads(app: AppHandle, server: app_server::AppServe
         }
     };
 
-    const RESUME_PROMPT: &str = "⟲ Reflex was restarted. Продолжай с того места, на котором остановился. Если задача уже выполнена — кратко сообщи об этом.";
+    const RESUME_PROMPT: &str = "Reflex was restarted. Continue from where you stopped. If the task is already complete, briefly say so.";
 
     for p in projects {
         let root = PathBuf::from(&p.root);

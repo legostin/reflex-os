@@ -1922,7 +1922,7 @@ pub fn ensure_sample_app(app: &AppHandle) -> io::Result<()> {
         id: "sample-hello".into(),
         name: "Sample · Ask Reflex".into(),
         icon: Some("👋".into()),
-        description: Some("Минимальный пример: спрашивает у агента и показывает ответ.".into()),
+        description: Some("Minimal sample: asks the agent and shows the answer.".into()),
         entry: "index.html".into(),
         permissions: vec!["agent.ask".into()],
         kind: "panel".into(),
@@ -1954,7 +1954,7 @@ fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
         id: "sample-cron".into(),
         name: "Sample · Heartbeat".into(),
         icon: Some("⏱".into()),
-        description: Some("Демо-расписания: каждую минуту пишет timestamp в storage.".into()),
+        description: Some("Schedule demo: writes a timestamp to storage every minute.".into()),
         entry: "index.html".into(),
         permissions: vec!["storage.set".into(), "storage.get".into()],
         kind: "panel".into(),
@@ -1983,7 +1983,7 @@ fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
             name: "Last heartbeat".into(),
             entry: "widgets/heartbeat.html".into(),
             size: "small".into(),
-            description: Some("Когда расписание сработало в последний раз".into()),
+            description: Some("When the schedule last ran".into()),
         }],
     };
     fs::write(
@@ -2008,7 +2008,7 @@ html,body{margin:0;padding:0;background:transparent;color:#eee;font-family:syste
 <div class="box">
   <div class="label">⏱ Heartbeat</div>
   <div class="value" id="value">—</div>
-  <div class="ago" id="ago">не было</div>
+  <div class="ago" id="ago">never</div>
 </div>
 <script>
 async function rinvoke(method, params){
@@ -2026,11 +2026,11 @@ async function rinvoke(method, params){
 async function refresh(){
   try {
     const r = await rinvoke('storage.get',{key:'last_tick_ms'});
-    if (!r.value){ document.getElementById('value').textContent='—'; document.getElementById('ago').textContent='нет данных'; return; }
+    if (!r.value){ document.getElementById('value').textContent='—'; document.getElementById('ago').textContent='no data'; return; }
     const ts = Number(r.value);
     document.getElementById('value').textContent = new Date(ts).toLocaleTimeString();
     const min = Math.floor((Date.now()-ts)/60000);
-    document.getElementById('ago').textContent = min < 1 ? 'только что' : (min + ' мин назад');
+    document.getElementById('ago').textContent = min < 1 ? 'just now' : (min + ' min ago');
   } catch (e) { document.getElementById('value').textContent='—'; }
 }
 refresh();
@@ -2043,9 +2043,9 @@ const SAMPLE_CRON_HTML: &str = r#"<!doctype html>
 <style>body{font-family:system-ui;background:#15171c;color:#eee;padding:24px}code{background:#222;padding:2px 6px;border-radius:4px}</style>
 </head><body>
 <h2>⏱ Heartbeat sample</h2>
-<p>Это демо-приложение, у которого в манифесте описано расписание <code>0 * * * * *</code> (раз в минуту).</p>
-<p>Reflex запускает шаг <code>storage.set last_tick_ms</code> сам, даже когда это окно скрыто. Открой раздел Automations чтобы видеть запуски.</p>
-<p>Последний tick: <code id="last">—</code></p>
+<p>This demo app has a manifest schedule <code>0 * * * * *</code>, which runs once per minute.</p>
+<p>Reflex runs the <code>storage.set last_tick_ms</code> step automatically, even when this window is hidden. Open Automations to inspect runs.</p>
+<p>Last tick: <code id="last">—</code></p>
 <script>
 async function reflexInvoke(method, params){
   return new Promise((res, rej) => {
@@ -2090,8 +2090,8 @@ const SAMPLE_HTML: &str = r#"<!doctype html>
   .err { color: #ff8080; font-size: 12px; }
 </style></head>
 <body>
-  <h1>Спроси агента</h1>
-  <textarea id="q" placeholder="Например: какая погода в Алматы?"></textarea>
+  <h1>Ask the agent</h1>
+  <textarea id="q" placeholder="Example: what is the weather in Almaty?"></textarea>
   <div class="row">
     <button id="ask">Ask</button>
     <span id="err" class="err"></span>
@@ -2131,7 +2131,7 @@ document.getElementById('ask').addEventListener('click', async () => {
   out.textContent = '…';
   btn.disabled = true;
   try {
-    const prompt = document.getElementById('q').value || 'Привет!';
+    const prompt = document.getElementById('q').value || 'Hello!';
     const res = await reflexInvoke('agent.ask', { prompt });
     out.textContent = res.answer || JSON.stringify(res, null, 2);
   } catch (e) {

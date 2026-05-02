@@ -8,7 +8,7 @@ use tokio::process::Command as TokioCommand;
 pub const MAX_TEXT_BYTES: u64 = 1024 * 1024;
 pub const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
 
-const IMAGE_DESCRIBE_PROMPT: &str = "Опиши содержимое этой картинки кратко и информативно (на языке, на котором написан текст в самой картинке, либо на русском). Если есть текст — приведи его дословно. Если это скриншот UI/кода — перечисли видимые элементы и заметные строки. 3-8 предложений, без вступлений и markdown-обёрток.";
+const IMAGE_DESCRIBE_PROMPT: &str = "Describe this image concisely and informatively. Use the language of text visible in the image when there is clear text; otherwise use English. If text is visible, transcribe it verbatim. If this is a UI or code screenshot, list visible elements and notable strings. Write 3-8 sentences with no preamble and no markdown wrapper.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
