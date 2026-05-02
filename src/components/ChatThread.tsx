@@ -249,9 +249,9 @@ function tabLabel(
 ): string {
   switch (r.kind) {
     case "home":
-      return "Home";
+      return "Домой";
     case "apps":
-      return "Apps";
+      return "Утилиты";
     case "project": {
       const p = projects.find((x) => x.id === r.project_id);
       return p?.name ?? r.project_id;
@@ -265,18 +265,18 @@ function tabLabel(
     case "memory": {
       if (r.thread_id) {
         const t = threads.find((x) => x.id === r.thread_id);
-        return `Memory · ${t?.title ?? t?.prompt?.slice(0, 32) ?? r.thread_id}`;
+        return `Память · ${t?.title ?? t?.prompt?.slice(0, 32) ?? r.thread_id}`;
       }
-      if (!r.project_id) return "Memory";
+      if (!r.project_id) return "Память";
       const p = projects.find((x) => x.id === r.project_id);
-      return `Memory · ${p?.name ?? r.project_id}`;
+      return `Память · ${p?.name ?? r.project_id}`;
     }
     case "automations":
-      return "Automations";
+      return "Автоматизации";
     case "browser":
-      return "Browser";
+      return "Браузер";
     case "settings":
-      return "Settings";
+      return "Настройки";
   }
 }
 
@@ -576,10 +576,10 @@ function AppCapabilityDetails({ manifest }: { manifest: AppManifest | null }) {
   if (permissions.length === 0 && allowedHosts.length === 0) return null;
 
   return (
-    <div className="appviewer-capability-details" aria-label="Manifest grants">
+    <div className="appviewer-capability-details" aria-label="Разрешения manifest">
       {permissions.length > 0 && (
         <section className="appviewer-capability-detail-group">
-          <div className="appviewer-capability-detail-title">Permissions</div>
+          <div className="appviewer-capability-detail-title">Права</div>
           <div className="appviewer-capability-chip-list">
             {permissions.map((permission) => (
               <code key={permission}>{permission}</code>
@@ -589,7 +589,7 @@ function AppCapabilityDetails({ manifest }: { manifest: AppManifest | null }) {
       )}
       {allowedHosts.length > 0 && (
         <section className="appviewer-capability-detail-group">
-          <div className="appviewer-capability-detail-title">Network hosts</div>
+          <div className="appviewer-capability-detail-title">Сетевые хосты</div>
           <div className="appviewer-capability-chip-list">
             {allowedHosts.map((host) => (
               <code key={host}>{host}</code>
@@ -1545,9 +1545,9 @@ function Header({
       crumbs.push({ label: route.thread_id, route: null });
     }
   } else if (route.kind === "apps") {
-    crumbs.push({ label: "Apps", route: null });
+    crumbs.push({ label: "Утилиты", route: null });
   } else if (route.kind === "app") {
-    crumbs.push({ label: "Apps", route: { kind: "apps" } });
+    crumbs.push({ label: "Утилиты", route: { kind: "apps" } });
     crumbs.push({ label: route.app_id, route: null });
   } else if (route.kind === "memory") {
     const thread = route.thread_id
@@ -1567,7 +1567,7 @@ function Header({
         route: { kind: "topic", thread_id: thread.id },
       });
     }
-    crumbs.push({ label: "Memory", route: null });
+    crumbs.push({ label: "Память", route: null });
   }
 
   return (
@@ -1595,20 +1595,20 @@ function Header({
           onClick={onCreateProject}
           title="Новый проект"
         >
-          + Project
+          + Проект
         </button>
         <button
           className="header-tab"
           onClick={onAddPane}
           title="Добавить панель"
         >
-          + Pane
+          + Панель
         </button>
         <button
           className={`header-tab ${route.kind === "apps" || route.kind === "app" ? "active" : ""}`}
           onClick={() => onNavigate({ kind: "apps" })}
         >
-          Apps
+          Утилиты
         </button>
         <button
           className={`header-tab ${route.kind === "memory" ? "active" : ""}`}
@@ -1634,16 +1634,16 @@ function Header({
               thread_id: activeThread?.id,
             });
           }}
-          title="Memory"
+          title="Память"
         >
-          Memory
+          Память
         </button>
         <button
           className={`header-tab ${route.kind === "automations" ? "active" : ""}`}
           onClick={() => onNavigate({ kind: "automations" })}
           title="Расписания и история запусков"
         >
-          Automations
+          Автоматизации
         </button>
         <select
           className="header-tab header-project-select"
@@ -1904,8 +1904,8 @@ const TEMPLATES: {
   {
     id: "blank",
     icon: "📄",
-    name: "Blank",
-    description: "Пустой app, codex решает структуру",
+    name: "Пустая",
+    description: "Пустая утилита, Codex решает структуру",
     placeholder:
       "Например: счётчик с кнопкой сохранения в storage; виджет погоды; …",
     badges: ["static", "custom"],
@@ -1913,7 +1913,7 @@ const TEMPLATES: {
   {
     id: "chat",
     icon: "💬",
-    name: "Chat utility",
+    name: "Чат-утилита",
     description: "Чат с агентом, стриминг ответа",
     placeholder:
       "Например: ассистент по моему календарю; помощник с переводом; …",
@@ -1922,7 +1922,7 @@ const TEMPLATES: {
   {
     id: "dashboard",
     icon: "📊",
-    name: "Dashboard",
+    name: "Дашборд",
     description: "Данные через agent.task в виде таблицы/карточек",
     placeholder:
       "Например: статус всех проектов из ~/projects; список последних коммитов; …",
@@ -1931,7 +1931,7 @@ const TEMPLATES: {
   {
     id: "health-dashboard",
     icon: "🩺",
-    name: "Health dashboard",
+    name: "Дашборд здоровья",
     description: "Операционный обзор scheduler, memory/RAG и linked apps",
     placeholder:
       "Например: мониторинг автоматизаций проекта, индекса памяти и server apps с компактным виджетом; …",
@@ -1940,7 +1940,7 @@ const TEMPLATES: {
   {
     id: "form",
     icon: "📝",
-    name: "Form tool",
+    name: "Форма",
     description: "Поля → Run → результат через agent.task",
     placeholder:
       "Например: переписать текст в нужном стиле; сгенерить regex по описанию; …",
@@ -1949,7 +1949,7 @@ const TEMPLATES: {
   {
     id: "api-client",
     icon: "🌐",
-    name: "API client",
+    name: "API-клиент",
     description: "Запросы к внешнему API через net.fetch",
     placeholder:
       "Например: показать issues из github.com/owner/repo; конвертер валют через open.er-api.com; …",
@@ -1958,7 +1958,7 @@ const TEMPLATES: {
   {
     id: "automation",
     icon: "⏱",
-    name: "Automation",
+    name: "Автоматизация",
     description: "Расписание, action и виджет для фоновой задачи",
     placeholder:
       "Например: раз в час проверять важные письма и сохранять краткую сводку; каждое утро собирать статус проектов; …",
@@ -1967,7 +1967,7 @@ const TEMPLATES: {
   {
     id: "node-server",
     icon: "🚀",
-    name: "Node server",
+    name: "Node-сервер",
     description: "runtime=server: своё backend на Node.js stdlib",
     placeholder:
       "Например: WebSocket-чат комната; sqlite-просмотрщик; превью markdown; …",
@@ -1978,7 +1978,7 @@ const TEMPLATES: {
 const SKILL_PRESETS = [
   {
     id: "build-web-apps:frontend-app-builder",
-    label: "Web apps",
+    label: "Веб-приложения",
   },
   {
     id: "build-web-apps:react-best-practices",
@@ -1986,11 +1986,11 @@ const SKILL_PRESETS = [
   },
   {
     id: "playwright",
-    label: "Browser QA",
+    label: "QA браузера",
   },
   {
     id: "openai-docs",
-    label: "OpenAI docs",
+    label: "Документация OpenAI",
   },
   {
     id: "github:gh-fix-ci",
@@ -1998,15 +1998,15 @@ const SKILL_PRESETS = [
   },
   {
     id: "build-ios-apps:ios-debugger-agent",
-    label: "iOS debug",
+    label: "iOS отладка",
   },
   {
     id: "build-macos-apps:build-run-debug",
-    label: "macOS debug",
+    label: "macOS отладка",
   },
   {
     id: "game-studio:game-playtest",
-    label: "Game QA",
+    label: "QA игр",
   },
 ] as const;
 
@@ -2215,13 +2215,13 @@ function AppsScreen({
     <div className="apps-root">
       <header className="apps-header">
         <div className="apps-header-row">
-          <h1 className="section-title">Apps</h1>
+          <h1 className="section-title">Утилиты</h1>
           <div className="apps-header-buttons">
             <button
               className="apps-create-btn"
               onClick={() => setShowModal(true)}
             >
-              + New App
+              + Новая утилита
             </button>
             <button
               className="apps-trash-btn"
@@ -2289,7 +2289,7 @@ function AppsScreen({
       )}
       {items.length === 0 ? (
         <div className="chat-empty">
-          <p>Apps пока нет.</p>
+          <p>Утилит пока нет.</p>
         </div>
       ) : (
         <div className="apps-grid">
@@ -2323,7 +2323,7 @@ function AppsScreen({
                 <div className="apps-card-name">
                   {a.name}
                   {!isReady && (
-                    <span className="apps-card-badge">creating…</span>
+                    <span className="apps-card-badge">создаётся…</span>
                   )}
                 </div>
                 {a.description && (
@@ -2360,7 +2360,7 @@ function AppsScreen({
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             {step === "template" ? (
               <>
-                <h2 className="modal-title">Новый Reflex app</h2>
+                <h2 className="modal-title">Новая утилита Reflex</h2>
                 <p className="modal-hint">Выбери шаблон под задачу.</p>
                 {targetProject && (
                   <div className="modal-context-chip">
@@ -2398,7 +2398,7 @@ function AppsScreen({
                     disabled={importing}
                     title="Импортировать .reflexapp бандл"
                   >
-                    {importing ? "…" : "📥 Import .reflexapp"}
+                    {importing ? "…" : "📥 Импорт .reflexapp"}
                   </button>
                   <button
                     className="modal-btn modal-btn-primary"
@@ -2415,7 +2415,7 @@ function AppsScreen({
                   {TEMPLATES.find((t) => t.id === template)?.name}
                 </h2>
                 <p className="modal-hint">
-                  Опиши что должен делать app. Codex напишет файлы в фоне.
+                  Опиши, что должна делать утилита. Codex напишет файлы в фоне.
                 </p>
                 {targetProject && (
                   <div className="modal-context-chip">
@@ -3149,7 +3149,7 @@ function AppViewer({
               disabled={busy !== null}
               title="Перезапустить сервер"
             >
-              {busy === "restart" ? "…" : "↻ Restart"}
+              {busy === "restart" ? "…" : "↻ Перезапуск"}
             </button>
           )}
           {isServerRuntime && (
@@ -3158,7 +3158,7 @@ function AppViewer({
               onClick={() => setLogsOpen((v) => !v)}
               title="Показать логи сервера"
             >
-              {logsOpen ? "▾ Logs" : "▸ Logs"}
+              {logsOpen ? "▾ Логи" : "▸ Логи"}
             </button>
           )}
           <button
@@ -3173,18 +3173,18 @@ function AppViewer({
               className={`appviewer-btn ${inspecting ? "appviewer-btn-primary" : ""}`}
               onClick={toggleInspecting}
               disabled={busy !== null || reviseBusy}
-              title="Кликни по элементу в app и опиши что изменить"
+              title="Кликни по элементу в утилите и опиши, что изменить"
             >
-              {inspecting ? "✕ Inspect" : "🎯 Inspect"}
+              {inspecting ? "✕ Инспектор" : "🎯 Инспектор"}
             </button>
           )}
           <button
             className="appviewer-btn"
             onClick={() => void handleEditClick()}
             disabled={busy !== null || openingNested !== null}
-            title="Открыть существующий тред для доработки (привяжется к этому app)"
+            title="Открыть существующий тред для доработки (привяжется к этой утилите)"
           >
-            {openingNested === "edit" ? "…" : "✏️ Edit"}
+            {openingNested === "edit" ? "…" : "✏️ Править"}
           </button>
           <button
             className="appviewer-btn"
@@ -3192,15 +3192,15 @@ function AppViewer({
             disabled={busy !== null || openingNested !== null}
             title="Создать новый тред для изолированных изменений"
           >
-            {openingNested === "new" ? "…" : "🆕 New thread"}
+            {openingNested === "new" ? "…" : "🆕 Новый тред"}
           </button>
           <button
             className="appviewer-btn"
             onClick={() => void exportApp()}
             disabled={busy !== null || exporting}
-            title="Экспортировать app в .reflexapp файл"
+            title="Экспортировать утилиту в .reflexapp файл"
           >
-            {exporting ? "…" : "📤 Export"}
+            {exporting ? "…" : "📤 Экспорт"}
           </button>
         </div>
       </header>
@@ -3312,8 +3312,8 @@ function AppViewer({
       )}
 
       {(manifest?.actions?.length ?? 0) > 0 && (
-        <div className="appviewer-action-strip" aria-label="Manifest actions">
-          <div className="appviewer-action-strip-title">Actions</div>
+        <div className="appviewer-action-strip" aria-label="Actions из manifest">
+          <div className="appviewer-action-strip-title">Действия</div>
           <div className="appviewer-action-buttons">
             {(manifest?.actions ?? []).map((action) => (
               <button
@@ -3343,7 +3343,7 @@ function AppViewer({
       )}
 
       {actionDraft && (
-        <div className="appviewer-action-editor" aria-label="Action params editor">
+        <div className="appviewer-action-editor" aria-label="Редактор параметров action">
           <div className="appviewer-action-editor-head">
             <span>{actionDraft.action.name || actionDraft.action.id}</span>
             <code>{actionDraft.action.id}</code>
@@ -3372,14 +3372,14 @@ function AppViewer({
               onClick={() => setActionDraft(null)}
               disabled={actionBusy !== null}
             >
-              Cancel
+              Отмена
             </button>
             <button
               className="appviewer-btn appviewer-btn-primary"
               onClick={submitActionDraft}
               disabled={actionBusy !== null}
             >
-              Run
+              Запустить
             </button>
           </div>
         </div>
@@ -3405,28 +3405,28 @@ function AppViewer({
               }}
               disabled={busy !== null}
             >
-              {busy === "save" ? "…" : commitOpen ? "Commit" : "Save"}
+              {busy === "save" ? "…" : commitOpen ? "Commit" : "Сохранить"}
             </button>
             <button
               className="appviewer-btn appviewer-btn-danger"
               onClick={() => void revert()}
               disabled={busy !== null}
             >
-              Revert
+              Откатить
             </button>
             <button
               className="appviewer-btn"
               onClick={() => setReloadKey((k) => k + 1)}
               disabled={busy !== null}
             >
-              Reload
+              Перезагрузить
             </button>
           </div>
         </div>
       )}
 
       {status?.has_changes && commitOpen && (
-        <div className="appviewer-commit-editor" aria-label="Commit changes">
+        <div className="appviewer-commit-editor" aria-label="Сохранение ревизии">
           <input
             className="appviewer-commit-input"
             value={commitDraft}
@@ -3449,7 +3449,7 @@ function AppViewer({
               onClick={() => setCommitOpen(false)}
               disabled={busy !== null}
             >
-              Cancel
+              Отмена
             </button>
             <button
               className="appviewer-btn appviewer-btn-primary"
@@ -3558,7 +3558,7 @@ function AppViewer({
           className={`appviewer-banner ${serverState === "failed" || serverState === "crashed" ? "appviewer-banner-warn" : "appviewer-banner-info"}`}
         >
           {serverState === "starting" && (
-            <span>Запускаю локальный сервер app…</span>
+            <span>Запускаю локальный сервер утилиты…</span>
           )}
           {serverState === "failed" && (
             <span>Сервер не стартовал: {serverError}</span>
@@ -3573,7 +3573,7 @@ function AppViewer({
                 onClick={() => void restartServer()}
                 disabled={busy !== null}
               >
-                Restart
+                Перезапустить
               </button>
             </div>
           )}
@@ -3633,7 +3633,7 @@ function AppViewer({
         <div className="server-logs">
           <div className="server-logs-header">
             <span>
-              server logs
+              логи сервера
               {serverPort != null && (
                 <span className="server-logs-port"> · :{serverPort}</span>
               )}
@@ -3643,7 +3643,7 @@ function AppViewer({
               onClick={() => setLogs([])}
               title="Очистить локальный буфер логов"
             >
-              clear
+              очистить
             </button>
           </div>
           <div className="server-logs-body">
@@ -3755,9 +3755,9 @@ function HomeScreen({
       />
       <section>
         <div className="section-head">
-          <h2 className="section-title">Projects</h2>
+          <h2 className="section-title">Проекты</h2>
           <button className="apps-create-btn" onClick={onCreateProject}>
-            + New Project
+            + Новый проект
           </button>
         </div>
         {projects.length === 0 ? (
@@ -3795,7 +3795,7 @@ function HomeScreen({
                     {p.root}
                   </div>
                   <div className="project-card-meta">
-                    {count} topic{count === 1 ? "" : "s"}
+                    {count} топиков
                   </div>
                 </button>
               );
@@ -3805,7 +3805,7 @@ function HomeScreen({
       </section>
       {recent.length > 0 && (
         <section>
-          <h2 className="section-title">Recent</h2>
+          <h2 className="section-title">Недавние</h2>
           <ul className="topic-list">
             {recent.map((t) => (
               <li key={t.id}>
@@ -3901,27 +3901,27 @@ function HomeAppsSection({
     <section>
       <div className="section-head">
         <h2 className="section-title">
-          Apps
+          Утилиты
           {runningCount > 0 && (
             <span className="section-badge running">
-              {runningCount} running
+              {runningCount} запущено
             </span>
           )}
         </h2>
         <button className="apps-create-btn" onClick={onOpenApps}>
-          Manage Apps
+          Управлять утилитами
         </button>
       </div>
       {error && <div className="apps-error">{error}</div>}
       {!loaded ? (
         <div className="home-empty-panel">
-          <p>Загружаю apps…</p>
+          <p>Загружаю утилиты…</p>
         </div>
       ) : items.length === 0 ? (
         <div className="home-empty-panel">
-          <p>Apps пока нет.</p>
+          <p>Утилит пока нет.</p>
           <button className="home-inline-action" onClick={onOpenApps}>
-            Open Apps
+            Открыть утилиты
           </button>
         </div>
       ) : (
@@ -3940,7 +3940,7 @@ function HomeAppsSection({
                 className={`home-app-card ${isReady ? "" : "home-app-card-disabled"}`}
                 disabled={!isReady}
                 onClick={() => isReady && onSelectApp(app.id)}
-                title={isReady ? "Открыть app" : "Codex ещё пишет файлы…"}
+                title={isReady ? "Открыть утилиту" : "Codex ещё пишет файлы…"}
               >
                 <div className="home-app-card-top">
                   <span className="home-app-icon">{app.icon ?? "🧩"}</span>
@@ -3966,7 +3966,7 @@ function HomeAppsSection({
       )}
       {items.length > 0 && (
         <div className="home-apps-summary">
-          {readyCount} ready · {runningCount} running
+          {readyCount} готово · {runningCount} запущено
         </div>
       )}
     </section>
@@ -4305,7 +4305,7 @@ function ProjectScreen({
       parsed !== null &&
       (typeof parsed !== "object" || Array.isArray(parsed))
     ) {
-      setMcpError("MCP config must be a JSON object.");
+      setMcpError("MCP config должен быть JSON-объектом.");
       return;
     }
     setMcpSaving(true);
@@ -4446,7 +4446,7 @@ function ProjectScreen({
       )}
 
       {project && (
-        <section className="project-context-grid" aria-label="Agent context">
+        <section className="project-context-grid" aria-label="Контекст агента">
           <article className="project-context-item">
             <span className="project-context-label">Sandbox</span>
             <strong>{sandbox}</strong>
@@ -4456,8 +4456,8 @@ function ProjectScreen({
             onClick={openAgentProfileEditor}
             type="button"
           >
-            <span className="project-context-label">Agent profile</span>
-            <strong>{hasAgentProfile ? "custom" : "default"}</strong>
+            <span className="project-context-label">Профиль агента</span>
+            <strong>{hasAgentProfile ? "настроен" : "по умолчанию"}</strong>
             {projectSkills.length > 0 && (
               <div className="project-context-chips">
                 {projectSkills.slice(0, 4).map((skill) => (
@@ -4489,31 +4489,31 @@ function ProjectScreen({
           </button>
           <article className="project-context-item">
             <span className="project-context-label">Memory / RAG</span>
-            <strong>{ragDocs} docs</strong>
+            <strong>{ragDocs} док.</strong>
             <div className="project-context-chips">
-              {ragChunks != null && <span>{ragChunks} chunks</span>}
-              {ragSources != null && <span>{ragSources} sources</span>}
-              {ragStale > 0 && <span>{ragStale} stale</span>}
-              {ragMissing > 0 && <span>{ragMissing} missing</span>}
+              {ragChunks != null && <span>{ragChunks} чанков</span>}
+              {ragSources != null && <span>{ragSources} источников</span>}
+              {ragStale > 0 && <span>{ragStale} устар.</span>}
+              {ragMissing > 0 && <span>{ragMissing} нет</span>}
               {!projectMemoryStats && fallbackFileIndexStats.ignored > 0 && (
-                <span>{fallbackFileIndexStats.ignored} ignored</span>
+                <span>{fallbackFileIndexStats.ignored} игнор.</span>
               )}
               {ragDocs === 0 &&
                 ragStale === 0 &&
                 ragMissing === 0 &&
-                !fallbackFileIndexStats.ignored && <span>not indexed</span>}
+                !fallbackFileIndexStats.ignored && <span>нет индекса</span>}
             </div>
           </article>
           <article className="project-context-item">
-            <span className="project-context-label">Apps</span>
+            <span className="project-context-label">Утилиты</span>
             <strong>{linkedAppIds.length}</strong>
           </article>
           <article className="project-context-item">
-            <span className="project-context-label">Topics</span>
+            <span className="project-context-label">Топики</span>
             <strong>{topics.length}</strong>
             {runningCount > 0 && (
               <span className="project-context-note">
-                {runningCount} running
+                {runningCount} выполняется
               </span>
             )}
           </article>
@@ -4631,13 +4631,13 @@ function ProjectScreen({
             )}
           </div>
           <div className="setting-row setting-row-block">
-            <label className="setting-label">Agent profile</label>
+            <label className="setting-label">Профиль агента</label>
             <div className="setting-mcp-summary">
               {hasAgentProfile ? (
                 <>
                   {project?.agent_instructions?.trim() && (
                     <span className="setting-chip setting-chip-muted">
-                      instructions
+                      инструкции
                     </span>
                   )}
                   {projectSkills.map((skill) => (
@@ -4647,19 +4647,19 @@ function ProjectScreen({
                   ))}
                 </>
               ) : (
-                <span className="setting-empty">default Codex behavior</span>
+                <span className="setting-empty">поведение Codex по умолчанию</span>
               )}
               <button
                 className="setting-action"
                 onClick={openAgentProfileEditor}
               >
-                Edit profile
+                Править профиль
               </button>
             </div>
             {profileEditing && (
               <div className="setting-editor">
                 <label className="setting-editor-label">
-                  Project instructions injected into every topic
+                  Инструкции проекта, добавляемые в каждый топик
                 </label>
                 <textarea
                   className="setting-textarea"
@@ -4669,10 +4669,10 @@ function ProjectScreen({
                     setProfileInstructionsDraft(e.currentTarget.value)
                   }
                   rows={6}
-                  placeholder="Example: Always prefer small focused changes. Use browser MCP for visual verification. Keep answers in Russian unless code/API names require English."
+                  placeholder="Например: предпочитай небольшие точечные изменения. Используй browser MCP для визуальной проверки. Отвечай по-русски, кроме имён кода и API."
                 />
                 <label className="setting-editor-label">
-                  Preferred skills, one per line or comma-separated
+                  Preferred skills, по одному в строке или через запятую
                 </label>
                 <textarea
                   className="setting-textarea setting-textarea-compact"
@@ -4715,14 +4715,14 @@ function ProjectScreen({
                     onClick={() => setProfileEditing(false)}
                     disabled={profileSaving}
                   >
-                    Cancel
+                    Отмена
                   </button>
                   <button
                     className="setting-action setting-action-primary"
                     onClick={() => void saveAgentProfile()}
                     disabled={profileSaving}
                   >
-                    {profileSaving ? "Saving…" : "Save"}
+                    {profileSaving ? "Сохранение…" : "Сохранить"}
                   </button>
                 </div>
               </div>
@@ -4749,7 +4749,7 @@ function ProjectScreen({
             <label className="setting-label">MCP servers</label>
             <div className="setting-mcp-summary">
               {mcpServerNames.length === 0 ? (
-                <span className="setting-empty">none</span>
+                <span className="setting-empty">нет</span>
               ) : (
                 mcpServerNames.map((name) => (
                   <span key={name} className="setting-chip">
@@ -4758,7 +4758,7 @@ function ProjectScreen({
                 ))
               )}
               <button className="setting-action" onClick={openMcpEditor}>
-                Edit JSON
+                Править JSON
               </button>
             </div>
             {mcpEditing && (
@@ -4777,14 +4777,14 @@ function ProjectScreen({
                     onClick={() => setMcpEditing(false)}
                     disabled={mcpSaving}
                   >
-                    Cancel
+                    Отмена
                   </button>
                   <button
                     className="setting-action setting-action-primary"
                     onClick={() => void saveMcpServers()}
                     disabled={mcpSaving}
                   >
-                    {mcpSaving ? "Saving…" : "Save"}
+                    {mcpSaving ? "Сохранение…" : "Сохранить"}
                   </button>
                 </div>
               </div>
@@ -4796,10 +4796,10 @@ function ProjectScreen({
       <section>
         <div className="section-head">
           <h2 className="section-title">
-            Topics
+            Топики
             {runningCount > 0 && (
               <span className="section-badge running">
-                {runningCount} running
+                {runningCount} выполняется
               </span>
             )}
           </h2>
@@ -4807,12 +4807,12 @@ function ProjectScreen({
             className="apps-create-btn"
             onClick={() => setShowNewTopic(true)}
           >
-            + New Topic
+            + Новый топик
           </button>
         </div>
         {topics.length === 0 ? (
           <div className="section-empty">
-            Топиков пока нет. Нажми <b>+ New Topic</b> или открой Quick-панель (
+            Топиков пока нет. Нажми <b>+ Новый топик</b> или открой Quick-панель (
             <kbd>⌘⇧Space</kbd>) поверх этой папки.
           </div>
         ) : (
@@ -4834,9 +4834,9 @@ function ProjectScreen({
                     <span className="topic-row-meta">
                       {t.done
                         ? t.exit_code === 0
-                          ? "done"
+                          ? "готово"
                           : `exit ${t.exit_code ?? "?"}`
-                        : "running"}
+                        : "выполняется"}
                       {" · "}
                       {new Date(t.created_at_ms).toLocaleString()}
                     </span>
@@ -4850,7 +4850,7 @@ function ProjectScreen({
 
       <section>
         <div className="section-head">
-          <h2 className="section-title">Files</h2>
+          <h2 className="section-title">Файлы</h2>
           <label className="section-toggle">
             <input
               type="checkbox"
@@ -4964,7 +4964,7 @@ function ProjectScreen({
                         <div className="project-linked-name">
                           {a.name}
                           {a.ready === false && (
-                            <span className="apps-card-badge">creating…</span>
+                            <span className="apps-card-badge">создаётся…</span>
                           )}
                         </div>
                         {a.description && (
@@ -5109,9 +5109,9 @@ function TopicScreen({
           type="button"
           className="header-tab"
           onClick={() => setShowRecall((v) => !v)}
-          title="Toggle memory recall for this topic"
+          title="Показать или скрыть память для этого топика"
         >
-          {showRecall ? "Hide recall" : "Recall"}
+          {showRecall ? "Скрыть память" : "Память"}
         </button>
       </li>
       {showRecall && projectRoot && (
@@ -5193,9 +5193,9 @@ function ThreadCard({
 
   const status = thread.done
     ? thread.exit_code === 0
-      ? "done"
+      ? "готово"
       : `exit ${thread.exit_code ?? "?"}`
-    : "running";
+    : "выполняется";
 
   const running = !thread.done;
   const followupDisabled = submitting;
@@ -5339,7 +5339,7 @@ function ThreadCard({
       {showPlanBanner && (
         <div className="plan-banner">
           <div className="plan-banner-text">
-            📋 <strong>Plan mode.</strong> Codex составил план — проверь и
+            📋 <strong>Режим плана.</strong> Codex составил план — проверь и
             подтверди, или напиши в поле ниже что поправить.
           </div>
           <button
@@ -5382,7 +5382,7 @@ function ThreadCard({
             disabled={stopping || submitting}
             title="Остановить агента без сообщения"
           >
-            {stopping ? "…" : "Stop"}
+            {stopping ? "…" : "Стоп"}
           </button>
         )}
         <button
