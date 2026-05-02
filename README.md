@@ -50,10 +50,16 @@ The injected runtime overlay provides:
 - `window.reflexManifestUpdate(patch)`
 - `window.reflexProjectsList(params)`
 - `window.reflexTopicsList(params)`
+- `window.reflexBrowserInit(params)`
 - `window.reflexBrowserTabs()`
 - `window.reflexBrowserOpen(url)`
 - `window.reflexBrowserNavigate(tabId, url)`
 - `window.reflexBrowserReadText(tabId)`
+- `window.reflexBrowserReadOutline(tabId)`
+- `window.reflexBrowserScreenshot(tabIdOrParams, fullPage?)`
+- `window.reflexBrowserClickText(tabIdOrParams, text?, exact?)`
+- `window.reflexBrowserClickSelector(tabIdOrParams, selector?)`
+- `window.reflexBrowserFill(tabIdOrParams, selector?, value?)`
 - `window.reflexSchedulerList(params)`
 - `window.reflexSchedulerRunNow(scheduleId)`
 - `window.reflexSchedulerSetPaused(scheduleId, paused)`

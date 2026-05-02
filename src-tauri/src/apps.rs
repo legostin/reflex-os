@@ -807,6 +807,9 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexTopicsList = function(params) {
     return reflexInvokeRaw('topics.list', params || {});
   };
+  window.reflexBrowserInit = function(params) {
+    return reflexInvokeRaw('browser.init', params || {});
+  };
   window.reflexBrowserTabs = function() {
     return reflexInvokeRaw('browser.tabs.list', {});
   };
@@ -818,6 +821,25 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   };
   window.reflexBrowserReadText = function(tabId) {
     return reflexInvokeRaw('browser.readText', {tabId: tabId});
+  };
+  window.reflexBrowserReadOutline = function(tabId) {
+    return reflexInvokeRaw('browser.readOutline', {tabId: tabId});
+  };
+  window.reflexBrowserScreenshot = function(tabIdOrParams, fullPage) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams, fullPage: !!fullPage} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.screenshot', params);
+  };
+  window.reflexBrowserClickText = function(tabIdOrParams, text, exact) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams, text: text, exact: !!exact} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.clickText', params);
+  };
+  window.reflexBrowserClickSelector = function(tabIdOrParams, selector) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams, selector: selector} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.clickSelector', params);
+  };
+  window.reflexBrowserFill = function(tabIdOrParams, selector, value) {
+    var params = (typeof tabIdOrParams === 'string') ? {tabId: tabIdOrParams, selector: selector, value: value} : (tabIdOrParams || {});
+    return reflexInvokeRaw('browser.fill', params);
   };
   window.reflexSchedulerList = function(params) {
     return reflexInvokeRaw('scheduler.list', params || {});
