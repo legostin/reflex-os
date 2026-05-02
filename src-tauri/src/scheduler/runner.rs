@@ -281,3 +281,27 @@ pub fn last_step_value(record: &RunRecord) -> Value {
         .map(|p| serde_json::from_str(p).unwrap_or_else(|_| Value::String(p.clone())))
         .unwrap_or(Value::Null)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scheduler_blacklist_blocks_ui_only_methods() {
+        for method in [
+            "apps.open",
+            "dialog.openDirectory",
+            "dialog.openFile",
+            "dialog.saveFile",
+            "scheduler.runNow",
+            "scheduler.run_now",
+            "scheduler.setPaused",
+            "scheduler.set_paused",
+        ] {
+            assert!(
+                SCHEDULE_STEP_METHOD_BLACKLIST.contains(&method),
+                "{method} should be blocked in unattended scheduler workflows"
+            );
+        }
+    }
+}
