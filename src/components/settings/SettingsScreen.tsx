@@ -82,6 +82,7 @@ const PERMISSION_EXAMPLES = [
   "browser.read",
   "browser.control",
   "browser.project:<project>",
+  "apps.create",
   "apps.invoke:*",
   "apps.invoke:<app>",
   "scheduler.read:*",

@@ -142,6 +142,7 @@ The injected runtime overlay provides:
 - `window.reflexMemoryPathStatusBatch(pathsOrParams)`
 - `window.reflexMemoryForgetPath(pathOrParams)`
 - `window.reflexAppsList(params)`
+- `window.reflexAppsCreate(descriptionOrParams, template?)`
 - `window.reflexAppsOpen(appIdOrParams)`
 - `window.reflexAppsInvoke(appId, actionId, params)`
 - `window.reflexAppsListActions(appIdOrParams, includeSteps?)`
@@ -279,6 +280,9 @@ Core methods:
 - `events.emit`, `events.subscribe`, `events.unsubscribe`,
   `events.clearSubscriptions`.
 - `apps.list()`.
+- `apps.create({ description, template?, projectId? })`; requires `apps.create`
+  or `apps:*`. Passing `projectId` also requires `projects.write:<project>` or
+  `projects.write:*`.
 - `apps.open({ app_id })` -> asks Reflex to open that app in the main UI.
 - `apps.invoke({ app_id, action_id, params })`.
 - `apps.list_actions({ app_id?, include_steps? })`.
@@ -351,9 +355,9 @@ Apps can expose:
 
 Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,
-`clipboard.*`, `system.openUrl`, `system.openPath`, `system.revealPath`, and
-`apps.open` are not valid inside schedules. `projects.open`, `topics.open`,
-`scheduler.runNow`, `scheduler.setPaused`, `scheduler.upsert`, and
+`clipboard.*`, `system.openUrl`, `system.openPath`, `system.revealPath`,
+`apps.create`, and `apps.open` are not valid inside schedules. `projects.open`,
+`topics.open`, `scheduler.runNow`, `scheduler.setPaused`, `scheduler.upsert`, and
 `scheduler.delete` are also blocked inside schedule steps to prevent unattended
 recursive runs. Non-UI methods such as `project.files.*` can run in schedules
 when the app has the required manifest permissions.

@@ -9,6 +9,7 @@ use tauri::{AppHandle, Emitter};
 
 const MAX_RECURSION_DEPTH: usize = 8;
 const SCHEDULE_STEP_METHOD_BLACKLIST: &[&str] = &[
+    "apps.create",
     "apps.open",
     "clipboard.readText",
     "clipboard.read_text",
@@ -306,6 +307,7 @@ mod tests {
     #[test]
     fn scheduler_blacklist_blocks_ui_only_methods() {
         for method in [
+            "apps.create",
             "apps.open",
             "clipboard.readText",
             "clipboard.read_text",

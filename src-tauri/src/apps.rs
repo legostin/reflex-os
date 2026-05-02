@@ -937,6 +937,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexAppsList = function(params) {
     return reflexInvokeRaw('apps.list', params || {});
   };
+  window.reflexAppsCreate = function(descriptionOrParams, template) {
+    var params = (typeof descriptionOrParams === 'string') ? {description: descriptionOrParams, template: template || null} : (descriptionOrParams || {});
+    return reflexInvokeRaw('apps.create', params);
+  };
   window.reflexAppsOpen = function(appIdOrParams) {
     var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
     return reflexInvokeRaw('apps.open', params);

@@ -594,6 +594,7 @@ pub async fn dispatch_app_method(
             invoke_app_action(app, app_id, &target_id, &action_id, action_params).await
         }
         "apps.list" => list_app_summaries(app),
+        "apps.create" => apps_create_for_app(app, app_id, params).await,
         "apps.open" => {
             let target_id = params
                 .get("app_id")
@@ -1329,6 +1330,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "events.unsubscribe",
                 "events.clearSubscriptions",
                 "apps.list",
+                "apps.create",
                 "apps.open",
                 "apps.invoke",
                 "apps.list_actions",
@@ -1455,6 +1457,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexSchedulerRuns",
                 "reflexSchedulerRunDetail",
                 "reflexAppsList",
+                "reflexAppsCreate",
                 "reflexAppsOpen",
                 "reflexAppsInvoke",
                 "reflexAppsListActions",
@@ -1487,6 +1490,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "system.openUrl",
                 "system.openPath",
                 "system.revealPath",
+                "apps.create",
                 "apps.open",
                 "projects.open",
                 "topics.open"
@@ -1516,7 +1520,7 @@ fn bridge_permission_hints() -> serde_json::Value {
         { "scope": "memory", "grants": ["memory.global.read", "memory.global.write"] },
         { "scope": "agent", "grants": ["agent.project:<project>", "agent.project:*", "agent.cwd:*"] },
         { "scope": "scheduler", "grants": ["scheduler.read:*", "scheduler.run:<app>", "scheduler.write:<app>::<schedule>", "scheduler.write:*", "scheduler:*"] },
-        { "scope": "apps", "grants": ["apps.invoke:*", "apps.invoke:<app>", "apps.invoke:<app>::<action>"] }
+        { "scope": "apps", "grants": ["apps.create", "apps:*", "apps.invoke:*", "apps.invoke:<app>", "apps.invoke:<app>::<action>"] }
     ])
 }
 
@@ -2760,6 +2764,41 @@ fn list_app_summaries(app: &AppHandle) -> Result<serde_json::Value, String> {
         })
         .collect();
     Ok(serde_json::Value::Array(out))
+}
+
+fn ensure_apps_create_permission(app: &AppHandle, app_id: &str) -> Result<(), String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    if manifest
+        .permissions
+        .iter()
+        .any(|permission| matches!(permission.as_str(), "*" | "apps:*" | "apps.create"))
+    {
+        Ok(())
+    } else {
+        Err(
+            "permission denied: apps.create requires manifest.permissions entry 'apps.create' or 'apps:*'"
+                .into(),
+        )
+    }
+}
+
+async fn apps_create_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_create_permission(app, app_id)?;
+    let description = string_param(&params, "description", "description")
+        .or_else(|| string_param(&params, "prompt", "prompt"))
+        .ok_or_else(|| "missing description".to_string())?;
+    let template = string_param(&params, "template", "template");
+    let project_id = if string_param(&params, "project_id", "projectId").is_some() {
+        let project = resolve_project_write_target(app, app_id, &params, "projects.write")?;
+        Some(project.id)
+    } else {
+        None
+    };
+    crate::create_app(app.clone(), description, template, project_id).await
 }
 
 fn list_actions(

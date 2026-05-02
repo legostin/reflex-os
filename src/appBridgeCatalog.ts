@@ -143,6 +143,7 @@ export const BRIDGE_API_GROUPS = [
       "events.unsubscribe",
       "events.clearSubscriptions",
       "apps.list",
+      "apps.create",
       "apps.open",
       "apps.invoke",
       "apps.list_actions",
@@ -270,6 +271,7 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexSchedulerRuns",
       "reflexSchedulerRunDetail",
       "reflexAppsList",
+      "reflexAppsCreate",
       "reflexAppsOpen",
       "reflexAppsInvoke",
       "reflexAppsListActions",
@@ -302,9 +304,9 @@ export const BRIDGE_RECIPE_CARDS = [
   },
   {
     title: "App как сервис",
-    body: "Публикуй actions/widgets, привязывай app к проекту и вызывай сервисы из schedules.",
-    calls: ["actions.upsert", "project.apps.link", "apps.invoke"],
-    example: "await reflexProjectAppsLink();",
+    body: "Публикуй actions/widgets, создавай нужные app и связывай сервисы через apps.invoke.",
+    calls: ["actions.upsert", "apps.create", "project.apps.link", "apps.invoke"],
+    example: 'await reflexAppsCreate("утилита для ежедневного отчета");',
   },
   {
     title: "Автоматизация",
