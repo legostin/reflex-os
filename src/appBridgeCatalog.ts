@@ -372,10 +372,10 @@ export const BRIDGE_RECIPE_CARDS = [
   },
   {
     title: "Health dashboard",
-    body: "Показывай состояние автоматизаций, RAG индекса и последнюю ошибку без ручного обхода логов.",
+    body: "Показывай состояние автоматизаций, RAG индекса и последнюю ошибку; для общего обзора добавь scheduler.read:*.",
     calls: ["scheduler.stats", "memory.stats", "widgets.upsert"],
     example:
-      "const [jobs, memory] = await Promise.all([reflexSchedulerStats(), reflexMemoryStats({ projectId })]);",
+      "const [jobs, memory] = await Promise.all([reflexSchedulerStats({ includeAll: true }), reflexMemoryStats({ projectId })]);",
   },
   {
     title: "Project file maintenance",

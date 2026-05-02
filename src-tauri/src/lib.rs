@@ -914,7 +914,8 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
         ),
         "health-dashboard" => Some(
             "Шаблон HEALTH-DASHBOARD:\n\
-- Построй operational dashboard без agent.task на первом экране: `window.reflexSystemContext()`, `window.reflexSchedulerStats({recentLimit: 200})`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsList()` и `window.reflexAppsStatus(appId)` для linked apps.\n\
+- Добавь в manifest.permissions минимум `scheduler.read:*` и `apps.manage`; для произвольного projectId вне linked projects добавь `memory.project:*`.\n\
+- Построй operational dashboard без agent.task на первом экране: `window.reflexSystemContext()`, `window.reflexSchedulerStats({includeAll: true, recentLimit: 200})`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsList()` и `window.reflexAppsStatus(appId)` для linked apps.\n\
 - Если app привязан к проекту, бери projectId из `system.context().linked_projects[0]?.id`; если проекта нет — покажи scheduler/app health и мягкое пустое состояние для RAG.\n\
 - Summary cards: active/paused/invalid schedules, next fire, recent run errors, indexed/stale/missing memory docs, linked app health. Ошибка запуска должна открываться через `window.reflexSchedulerRunDetail(runId)`.\n\
 - Добавь Refresh, автосохранение последнего снимка через `window.reflexStorageSet(\"healthSnapshot\", data)` и восстановление через `window.reflexStorageGet`.\n\
