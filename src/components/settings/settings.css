@@ -238,23 +238,38 @@
 }
 
 .settings-method-list code,
-.settings-token-list code {
+.settings-token-list code,
+.settings-copy-token {
   display: inline-flex;
   min-height: 24px;
   align-items: center;
   max-width: 100%;
   padding: 3px 7px;
+  border: 0;
   border-radius: 6px;
   background: rgba(74, 140, 255, 0.12);
   color: rgba(186, 214, 255, 0.96);
+  cursor: pointer;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
+  line-height: 1.35;
   overflow-wrap: anywhere;
+  text-align: left;
 }
 
-.settings-token-list code {
+.settings-token-list code,
+.settings-copy-permission {
   background: rgba(255, 255, 255, 0.045);
   color: rgba(225, 228, 235, 0.9);
+}
+
+.settings-copy-token:hover {
+  background: rgba(74, 140, 255, 0.2);
+}
+
+.settings-copy-token.copied {
+  background: rgba(74, 222, 128, 0.14);
+  color: rgba(190, 255, 210, 0.96);
 }
 
 .settings-recipe-card {
@@ -281,17 +296,21 @@
   line-height: 1.45;
 }
 
-.settings-recipe-example {
+.settings-recipe-example,
+.settings-copy-example {
   display: block;
   max-width: 100%;
   overflow-x: auto;
   padding: 7px 8px;
+  border: 0;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.2);
   color: rgba(235, 238, 245, 0.88);
+  cursor: pointer;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   white-space: nowrap;
+  text-align: left;
 }
 
 .settings-flow {

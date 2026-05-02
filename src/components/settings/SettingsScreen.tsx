@@ -155,6 +155,7 @@ export function SettingsScreen() {
 
 function CapabilitiesPane() {
   const [bridgeQuery, setBridgeQuery] = useState("");
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const normalizedBridgeQuery = bridgeQuery.trim().toLowerCase();
 
   const visibleApiGroups = useMemo(() => {
@@ -202,6 +203,18 @@ function CapabilitiesPane() {
     (sum, group) => sum + group.helpers.length,
     0,
   );
+
+  async function copyToken(value: string) {
+    try {
+      await copyTextToClipboard(value);
+      setCopiedToken(value);
+      window.setTimeout(() => {
+        setCopiedToken((current) => (current === value ? null : current));
+      }, 1200);
+    } catch (e) {
+      console.warn("[reflex] settings copy failed", e);
+    }
+  }
 
   return (
     <div className="settings-pane capabilities-pane">
@@ -260,7 +273,12 @@ function CapabilitiesPane() {
                 <h3>{group.title}</h3>
                 <div className="settings-method-list">
                   {group.methods.map((method) => (
-                    <code key={method}>{method}</code>
+                    <CopyToken
+                      key={method}
+                      copied={copiedToken === method}
+                      value={method}
+                      onCopy={copyToken}
+                    />
                   ))}
                 </div>
               </article>
@@ -286,10 +304,20 @@ function CapabilitiesPane() {
                 <p>{recipe.body}</p>
                 <div className="settings-method-list">
                   {recipe.calls.map((call) => (
-                    <code key={call}>{call}</code>
+                    <CopyToken
+                      key={call}
+                      copied={copiedToken === call}
+                      value={call}
+                      onCopy={copyToken}
+                    />
                   ))}
                 </div>
-                <code className="settings-recipe-example">{recipe.example}</code>
+                <CopyToken
+                  copied={copiedToken === recipe.example}
+                  value={recipe.example}
+                  onCopy={copyToken}
+                  variant="example"
+                />
               </article>
             ))}
           </div>
@@ -312,7 +340,12 @@ function CapabilitiesPane() {
                 <h3>{group.title}</h3>
                 <div className="settings-method-list">
                   {group.helpers.map((helper) => (
-                    <code key={helper}>{helper}</code>
+                    <CopyToken
+                      key={helper}
+                      copied={copiedToken === helper}
+                      value={helper}
+                      onCopy={copyToken}
+                    />
                   ))}
                 </div>
               </article>
@@ -338,7 +371,13 @@ function CapabilitiesPane() {
         ) : (
           <div className="settings-token-list">
             {visiblePermissionExamples.map((permission) => (
-              <code key={permission}>{permission}</code>
+              <CopyToken
+                key={permission}
+                copied={copiedToken === permission}
+                value={permission}
+                onCopy={copyToken}
+                variant="permission"
+              />
             ))}
           </div>
         )}
@@ -360,6 +399,46 @@ function CapabilitiesPane() {
       </section>
     </div>
   );
+}
+
+function CopyToken({
+  value,
+  copied,
+  onCopy,
+  variant = "token",
+}: {
+  value: string;
+  copied: boolean;
+  onCopy: (value: string) => void | Promise<void>;
+  variant?: "token" | "permission" | "example";
+}) {
+  return (
+    <button
+      className={`settings-copy-token settings-copy-${variant} ${copied ? "copied" : ""}`}
+      onClick={() => void onCopy(value)}
+      title={copied ? "Copied" : "Copy"}
+      type="button"
+    >
+      {value}
+    </button>
+  );
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(textarea);
+  if (!ok) throw new Error("copy failed");
 }
 
 function LogsPane() {
