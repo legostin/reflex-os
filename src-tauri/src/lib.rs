@@ -567,7 +567,7 @@ fn app_revise(
   • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
   • notify.show — macOS push\n\
   • net.fetch({{url, method?, headers?, body?}}) — требует manifest.network.allowed_hosts (поддержка \"*.foo.com\")\n\
-- Overlay helpers: reflexAgentAsk/Task/Stream/StreamAbort, reflexStorageGet/Set, reflexFsRead/Write, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsList, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
+- Overlay helpers: reflexInvoke, reflexSystemContext, reflexManifestGet/Update, reflexCapabilities, reflexAgentAsk/StartTopic/Task/Stream/StreamAbort, reflexStorageGet/Set, reflexFsRead/Write, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsList, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
 - iframe sandbox=\"allow-scripts allow-forms\" (для server runtime + allow-same-origin). Никаких внешних CDN — только inline или локальные файлы.\n\
 - Reflex автоматически инжектит overlay-скрипт в HTML: ловит window.onerror/unhandledrejection (юзер увидит ✨Fix), и режим Inspector (юзер кликает → ты получишь selector + outerHTML). Не пиши свой обработчик с теми же типами событий.\n\
 - После твоих правок iframe перезагрузится сам (file watcher), для server runtime — процесс перезапустится. Не требуй ручного reload.\n\
@@ -1044,7 +1044,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("    }]\n");
     p.push_str("  }\n");
     p.push_str("- Каждый widget.entry — отдельный HTML-файл в папке app, обычно `widgets/<id>.html`.\n");
-    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexAgent*/Storage/Fs/Net/Dialog/Notify helpers, reflexSystemContext, reflexManifestGet, reflexCapabilities, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser* helpers, reflexSchedulerList/RunNow/SetPaused/Runs/RunDetail, reflexMemorySave/List/Search/Recall/PathStatus helpers, reflexEventOn/Emit, reflexAppsList, reflexAppsInvoke, reflexAppsListActions).\n");
+    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexSystemContext, reflexManifestGet/Update, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexScheduler*, reflexMemory*, reflexEventOn/Off/Emit, reflexAppsList/Invoke/ListActions).\n");
     p.push_str("- Виджет компактный: тёмная прозрачная подложка (background:transparent), html/body высотой 100%, padding 12-14px, без своих рамок (рамки рисует grid).\n");
     p.push_str("- Если данные обновляются часто — сам ставь setInterval на 5-30 сек.\n");
     p.push_str("- Если виджет читает данные другой утилиты — используй reflexAppsInvoke('<app>','<action>',{...}); НЕ дублируй сбор данных.\n\n");
