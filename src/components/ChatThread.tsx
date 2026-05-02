@@ -4134,21 +4134,28 @@ function ProjectScreen({
     };
   }, [projectId]);
 
-  const visibleEntries = entries.filter(
-    (e) => (showHidden || !e.is_hidden) && e.name !== ".reflex",
+  const visibleEntries = useMemo(
+    () =>
+      entries.filter(
+        (e) => (showHidden || !e.is_hidden) && e.name !== ".reflex",
+      ),
+    [entries, showHidden],
+  );
+  const visibleEntryPaths = useMemo(
+    () => visibleEntries.map((entry) => entry.path),
+    [visibleEntries],
   );
   const runningCount = topics.filter((t) => !t.done).length;
 
   useEffect(() => {
-    if (!project || visibleEntries.length === 0) {
+    if (!project || visibleEntryPaths.length === 0) {
       setStatuses({});
       return;
     }
     let alive = true;
-    const paths = visibleEntries.map((e) => e.path);
     invoke<PathStatus[]>("memory_path_status_batch", {
       projectRoot: project.root,
-      paths,
+      paths: visibleEntryPaths,
     })
       .then((arr) => {
         if (!alive) return;
@@ -4162,7 +4169,7 @@ function ProjectScreen({
     return () => {
       alive = false;
     };
-  }, [project?.root, visibleEntries.length, statusTick]);
+  }, [project?.root, visibleEntryPaths, statusTick]);
 
   function openExternal(path: string) {
     invoke("reveal_in_finder", { path }).catch((e) =>
@@ -4279,6 +4286,34 @@ function ProjectScreen({
   const mcpServerNames = Object.keys(project?.mcp_servers ?? {});
   const projectSkills = project?.skills ?? [];
   const linkedAppIds = project?.apps ?? [];
+  const fileIndexStats = useMemo(() => {
+    let indexed = 0;
+    let stale = 0;
+    let ignored = 0;
+    let indexable = 0;
+    for (const entry of visibleEntries) {
+      if (entry.kind !== "file") continue;
+      const status = statuses[entry.path];
+      if (!status) continue;
+      const ignoredClass =
+        status.class === "binary" ||
+        status.class === "toolarge" ||
+        status.class === "unsupported";
+      if (ignoredClass) {
+        ignored += 1;
+        continue;
+      }
+      indexable += 1;
+      if (status.indexed) indexed += 1;
+      if (status.indexed && status.stale) stale += 1;
+    }
+    return {
+      indexed,
+      stale,
+      ignored,
+      missing: Math.max(indexable - indexed, 0),
+    };
+  }, [statuses, visibleEntries]);
   const hasAgentProfile = !!(
     project?.agent_instructions?.trim() || projectSkills.length > 0
   );
@@ -4369,7 +4404,11 @@ function ProjectScreen({
             <span className="project-context-label">Sandbox</span>
             <strong>{sandbox}</strong>
           </article>
-          <article className="project-context-item">
+          <button
+            className="project-context-item project-context-button"
+            onClick={openAgentProfileEditor}
+            type="button"
+          >
             <span className="project-context-label">Agent profile</span>
             <strong>{hasAgentProfile ? "custom" : "default"}</strong>
             {projectSkills.length > 0 && (
@@ -4382,8 +4421,12 @@ function ProjectScreen({
                 )}
               </div>
             )}
-          </article>
-          <article className="project-context-item">
+          </button>
+          <button
+            className="project-context-item project-context-button"
+            onClick={openMcpEditor}
+            type="button"
+          >
             <span className="project-context-label">MCP servers</span>
             <strong>{mcpServerNames.length}</strong>
             {mcpServerNames.length > 0 && (
@@ -4396,6 +4439,24 @@ function ProjectScreen({
                 )}
               </div>
             )}
+          </button>
+          <article className="project-context-item">
+            <span className="project-context-label">Memory / RAG</span>
+            <strong>{fileIndexStats.indexed} indexed</strong>
+            <div className="project-context-chips">
+              {fileIndexStats.stale > 0 && (
+                <span>{fileIndexStats.stale} stale</span>
+              )}
+              {fileIndexStats.missing > 0 && (
+                <span>{fileIndexStats.missing} ready</span>
+              )}
+              {fileIndexStats.ignored > 0 && (
+                <span>{fileIndexStats.ignored} ignored</span>
+              )}
+              {fileIndexStats.indexed === 0 &&
+                fileIndexStats.missing === 0 &&
+                fileIndexStats.ignored === 0 && <span>no file scan</span>}
+            </div>
           </article>
           <article className="project-context-item">
             <span className="project-context-label">Apps</span>

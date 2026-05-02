@@ -1151,6 +1151,19 @@
   gap: 5px;
 }
 
+.project-context-button {
+  appearance: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.project-context-button:hover {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(80, 140, 255, 0.2);
+}
+
 .project-context-label {
   color: rgba(245, 245, 247, 0.48);
   font-size: 11px;
