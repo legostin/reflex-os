@@ -787,6 +787,20 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexAppsInvoke = function(appId, actionId, params) {
     return reflexInvokeRaw('apps.invoke', {app_id: appId, action_id: actionId, params: params||{}});
   };
+  window.reflexInvoke = reflexInvokeRaw;
+  window.reflexSystemContext = function() {
+    return reflexInvokeRaw('system.context', {});
+  };
+  window.reflexMemorySave = function(params) {
+    return reflexInvokeRaw('memory.save', params || {});
+  };
+  window.reflexMemoryList = function(params) {
+    return reflexInvokeRaw('memory.list', params || {});
+  };
+  window.reflexMemoryRecall = function(queryOrParams) {
+    var params = (typeof queryOrParams === 'string') ? {query: queryOrParams} : (queryOrParams || {});
+    return reflexInvokeRaw('memory.recall', params);
+  };
 
   window.addEventListener('message', function(ev){
     var m = ev.data;

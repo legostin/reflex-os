@@ -1,10 +1,15 @@
 use crate::app_bus::{self, AppBusBridge};
 use crate::app_server;
 use crate::apps;
-use crate::memory;
+use crate::memory::agents::recall::{self, RecallRequest};
+use crate::memory::files;
+use crate::memory::rag;
+use crate::memory::schema::{MemoryKind, MemoryScope, ScopeRoots};
+use crate::memory::store::{self, ListFilter, SaveRequest};
+use crate::{memory, project};
 use crate::scheduler;
 use crate::QuickContext;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub async fn dispatch_app_method(
@@ -15,6 +20,7 @@ pub async fn dispatch_app_method(
 ) -> Result<serde_json::Value, String> {
     eprintln!("[reflex] dispatch app={app_id} method={method}");
     match method {
+        "system.context" => system_context(app, app_id),
         "agent.ask" => {
             let prompt = params
                 .get("prompt")
@@ -503,8 +509,508 @@ pub async fn dispatch_app_method(
                 .unwrap_or(false);
             list_actions(app, target_id.as_deref(), include_steps)
         }
+        "memory.save" => memory_save_for_app(app, app_id, params).await,
+        "memory.list" => memory_list_for_app(app, app_id, params),
+        "memory.delete" => memory_delete_for_app(app, app_id, params),
+        "memory.search" => memory_search_for_app(app, app_id, params).await,
+        "memory.recall" => memory_recall_for_app(app, app_id, params).await,
+        "memory.indexPath" | "memory.index_path" => {
+            memory_index_path_for_app(app, app_id, params).await
+        }
+        "memory.pathStatus" | "memory.path_status" => {
+            memory_path_status_for_app(app, app_id, params)
+        }
+        "memory.forgetPath" | "memory.forget_path" => {
+            memory_forget_path_for_app(app, app_id, params).await
+        }
         other => Err(format!("unknown method: {other}")),
     }
+}
+
+fn system_context(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
+    let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
+    let manifest = apps::read_manifest(app, app_id).ok();
+    let app_project = project::find_project_for(&app_root);
+    let linked_projects = linked_projects_for_app(app, app_id)?;
+    Ok(serde_json::json!({
+        "app_id": app_id,
+        "app_root": app_root.to_string_lossy(),
+        "manifest": manifest,
+        "app_project": app_project,
+        "linked_projects": linked_projects,
+        "memory_defaults": {
+            "project_id": default_memory_project(app, app_id)?.map(|p| p.id),
+            "scope": "project",
+        },
+    }))
+}
+
+fn linked_projects_for_app(
+    app: &AppHandle,
+    app_id: &str,
+) -> Result<Vec<project::Project>, String> {
+    let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
+    let app_root_canon = app_root.canonicalize().ok();
+    let mut out = Vec::new();
+    for p in project::list_registered(app).map_err(|e| e.to_string())? {
+        if !p.apps.iter().any(|id| id == app_id) {
+            continue;
+        }
+        if let Some(root) = &app_root_canon {
+            if PathBuf::from(&p.root)
+                .canonicalize()
+                .map(|candidate| candidate == *root)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+        }
+        out.push(p);
+    }
+    Ok(out)
+}
+
+fn default_memory_project(
+    app: &AppHandle,
+    app_id: &str,
+) -> Result<Option<project::Project>, String> {
+    let linked = linked_projects_for_app(app, app_id)?;
+    if linked.len() == 1 {
+        return Ok(linked.into_iter().next());
+    }
+    let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
+    Ok(project::find_project_for(&app_root))
+}
+
+fn app_has_permission(app: &AppHandle, app_id: &str, permission: &str) -> bool {
+    let manifest = match apps::read_manifest(app, app_id) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    manifest.permissions.iter().any(|p| {
+        p == "*"
+            || p == permission
+            || (permission.starts_with("memory.") && p == "memory:*")
+            || (permission.starts_with("memory.global.") && p == "memory.global")
+            || (permission.starts_with("memory.project.") && p == "memory.project:*")
+    })
+}
+
+fn ensure_global_memory_permission(
+    app: &AppHandle,
+    app_id: &str,
+    write: bool,
+) -> Result<(), String> {
+    let specific = if write {
+        "memory.global.write"
+    } else {
+        "memory.global.read"
+    };
+    if app_has_permission(app, app_id, specific) {
+        Ok(())
+    } else {
+        Err(format!(
+            "permission denied: global memory requires manifest.permissions entry '{specific}'"
+        ))
+    }
+}
+
+#[derive(Clone)]
+struct MemoryTarget {
+    root: PathBuf,
+    thread_id: Option<String>,
+}
+
+fn resolve_memory_target(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<MemoryTarget, String> {
+    let thread_id = params
+        .get("thread_id")
+        .or_else(|| params.get("threadId"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    if let Some(project_id) = params
+        .get("project_id")
+        .or_else(|| params.get("projectId"))
+        .and_then(|v| v.as_str())
+    {
+        let project = project::get_by_id(app, project_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("project not found: {project_id}"))?;
+        ensure_project_memory_access(app, app_id, &project)?;
+        return Ok(MemoryTarget {
+            root: PathBuf::from(&project.root),
+            thread_id,
+        });
+    }
+
+    if let Some(project_root) = params
+        .get("project_root")
+        .or_else(|| params.get("projectRoot"))
+        .and_then(|v| v.as_str())
+    {
+        let root = PathBuf::from(project_root);
+        let matched = project::list_registered(app)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|p| same_path(Path::new(&p.root), &root));
+        if let Some(project) = matched {
+            ensure_project_memory_access(app, app_id, &project)?;
+            return Ok(MemoryTarget {
+                root: PathBuf::from(&project.root),
+                thread_id,
+            });
+        }
+        let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
+        if !same_path(&app_root, &root) && !app_has_permission(app, app_id, "memory.project:*") {
+            return Err(
+                "permission denied: project_root must be this app root, a linked project, or require memory.project:*"
+                    .into(),
+            );
+        }
+        return Ok(MemoryTarget {
+            root,
+            thread_id,
+        });
+    }
+
+    if let Some(project) = default_memory_project(app, app_id)? {
+        return Ok(MemoryTarget {
+            root: PathBuf::from(&project.root),
+            thread_id,
+        });
+    }
+
+    Ok(MemoryTarget {
+        root: apps::app_dir(app, app_id).map_err(|e| e.to_string())?,
+        thread_id,
+    })
+}
+
+fn ensure_project_memory_access(
+    app: &AppHandle,
+    app_id: &str,
+    target: &project::Project,
+) -> Result<(), String> {
+    let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
+    if same_path(&app_root, Path::new(&target.root)) {
+        return Ok(());
+    }
+    if target.apps.iter().any(|id| id == app_id) {
+        return Ok(());
+    }
+    if app_has_permission(app, app_id, "memory.project:*") {
+        return Ok(());
+    }
+    Err(format!(
+        "permission denied: app '{app_id}' is not linked to project '{}'",
+        target.id
+    ))
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+fn scope_roots(target: &MemoryTarget) -> Result<ScopeRoots, String> {
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .map_err(|e| format!("HOME not set: {e}"))?;
+    Ok(ScopeRoots::resolve(
+        &home,
+        Some(&target.root),
+        target.thread_id.as_deref(),
+    ))
+}
+
+fn parse_scope(
+    params: &serde_json::Value,
+    default_scope: MemoryScope,
+) -> Result<MemoryScope, String> {
+    match params.get("scope") {
+        Some(v) => serde_json::from_value(v.clone()).map_err(|e| e.to_string()),
+        None => Ok(default_scope),
+    }
+}
+
+fn parse_kind(
+    params: &serde_json::Value,
+    default_kind: MemoryKind,
+) -> Result<MemoryKind, String> {
+    match params.get("kind").or_else(|| params.get("type")) {
+        Some(v) => serde_json::from_value(v.clone()).map_err(|e| e.to_string()),
+        None => Ok(default_kind),
+    }
+}
+
+fn parse_list_filter(params: &serde_json::Value) -> Result<ListFilter, String> {
+    let Some(value) = params.get("filter") else {
+        return Ok(ListFilter::default());
+    };
+    if value.is_null() {
+        return Ok(ListFilter::default());
+    }
+    #[derive(serde::Deserialize, Default)]
+    struct RawFilter {
+        kind: Option<MemoryKind>,
+        tag: Option<String>,
+        query: Option<String>,
+    }
+    let raw: RawFilter = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+    Ok(ListFilter {
+        kind: raw.kind,
+        tag: raw.tag,
+        query: raw.query,
+    })
+}
+
+async fn memory_save_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let scope = parse_scope(&params, MemoryScope::Project)?;
+    if scope == MemoryScope::Global {
+        ensure_global_memory_permission(app, app_id, true)?;
+    }
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let roots = scope_roots(&target)?;
+    let name = params
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("missing name")?
+        .trim()
+        .to_string();
+    if name.is_empty() {
+        return Err("name must be non-empty".into());
+    }
+    let body = params
+        .get("body")
+        .and_then(|v| v.as_str())
+        .ok_or("missing body")?
+        .to_string();
+    let description = params
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let tags = params
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let source = params
+        .get("source")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| Some(format!("app:{app_id}")));
+    let req = SaveRequest {
+        scope,
+        kind: parse_kind(&params, MemoryKind::Fact)?,
+        name,
+        description,
+        body: body.clone(),
+        rel_path: None,
+        tags,
+        source,
+    };
+    let note = store::save(&roots, req).map_err(|e| e.to_string())?;
+    if scope != MemoryScope::Global {
+        let doc_id = format!("memory:{}", note.rel_path.display());
+        let root = target.root.clone();
+        tokio::spawn(async move {
+            let _ = rag::index_text(&root, &doc_id, "memory", &body).await;
+        });
+    }
+    Ok(serde_json::to_value(note).unwrap_or(serde_json::Value::Null))
+}
+
+fn memory_list_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let scope = parse_scope(&params, MemoryScope::Project)?;
+    if scope == MemoryScope::Global {
+        ensure_global_memory_permission(app, app_id, false)?;
+    }
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let roots = scope_roots(&target)?;
+    let filter = parse_list_filter(&params)?;
+    let notes = store::list(&roots, scope, &filter).map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(notes).unwrap_or(serde_json::Value::Array(vec![])))
+}
+
+fn memory_delete_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let scope = parse_scope(&params, MemoryScope::Project)?;
+    if scope == MemoryScope::Global {
+        ensure_global_memory_permission(app, app_id, true)?;
+    }
+    let rel_path = params
+        .get("rel_path")
+        .or_else(|| params.get("relPath"))
+        .and_then(|v| v.as_str())
+        .ok_or("missing rel_path")?;
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let roots = scope_roots(&target)?;
+    store::delete(&roots, scope, Path::new(rel_path)).map_err(|e| e.to_string())?;
+    if scope != MemoryScope::Global {
+        let doc_id = format!("memory:{rel_path}");
+        let root = target.root.clone();
+        tokio::spawn(async move {
+            let _ = rag::forget(&root, &doc_id).await;
+        });
+    }
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+async fn memory_search_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let query = params
+        .get("query")
+        .and_then(|v| v.as_str())
+        .ok_or("missing query")?;
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(8);
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let hits = rag::search(&target.root, query, limit)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(hits).unwrap_or(serde_json::Value::Array(vec![])))
+}
+
+async fn memory_recall_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let query = params
+        .get("query")
+        .and_then(|v| v.as_str())
+        .ok_or("missing query")?;
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let thread_id = target
+        .thread_id
+        .clone()
+        .unwrap_or_else(|| format!("app:{app_id}"));
+    let req = RecallRequest {
+        project_root: target.root.to_string_lossy().into_owned(),
+        thread_id,
+        query: query.to_string(),
+        max_notes: params
+            .get("max_notes")
+            .or_else(|| params.get("maxNotes"))
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize)
+            .unwrap_or(8),
+        max_rag: params
+            .get("max_rag")
+            .or_else(|| params.get("maxRag"))
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize)
+            .unwrap_or(6),
+    };
+    let result = recall::recall(req).await.map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(result).unwrap_or(serde_json::Value::Null))
+}
+
+fn resolve_project_path(target: &MemoryTarget, raw: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(raw);
+    let candidate = if path.is_absolute() {
+        path
+    } else {
+        target.root.join(path)
+    };
+    let root = target
+        .root
+        .canonicalize()
+        .map_err(|e| format!("canonicalize project root: {e}"))?;
+    let canonical = if candidate.exists() {
+        candidate
+            .canonicalize()
+            .map_err(|e| format!("canonicalize path: {e}"))?
+    } else {
+        let parent = candidate
+            .parent()
+            .ok_or_else(|| "path has no parent".to_string())?
+            .canonicalize()
+            .map_err(|e| format!("canonicalize parent: {e}"))?;
+        parent.join(candidate.file_name().unwrap_or_default())
+    };
+    if !canonical.starts_with(&root) {
+        return Err("path must be inside the selected project root".into());
+    }
+    Ok(canonical)
+}
+
+async fn memory_index_path_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let raw_path = params
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or("missing path")?;
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let path = resolve_project_path(&target, raw_path)?;
+    let outcome = files::index_path(&target.root, &path)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(outcome).unwrap_or(serde_json::Value::Null))
+}
+
+fn memory_path_status_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let raw_path = params
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or("missing path")?;
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let path = resolve_project_path(&target, raw_path)?;
+    let status = files::status(&target.root, &path).map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(status).unwrap_or(serde_json::Value::Null))
+}
+
+async fn memory_forget_path_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let raw_path = params
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or("missing path")?;
+    let target = resolve_memory_target(app, app_id, &params)?;
+    let path = resolve_project_path(&target, raw_path)?;
+    let removed = files::forget_path(&target.root, &path)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "forgotten": removed }))
 }
 
 fn parse_topics(params: &serde_json::Value) -> Result<Vec<String>, String> {
