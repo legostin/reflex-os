@@ -941,6 +941,14 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof descriptionOrParams === 'string') ? {description: descriptionOrParams, template: template || null} : (descriptionOrParams || {});
     return reflexInvokeRaw('apps.create', params);
   };
+  window.reflexAppsExport = function(appIdOrParams, targetPath) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams, target_path: targetPath} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.export', params);
+  };
+  window.reflexAppsImport = function(zipPathOrParams) {
+    var params = (typeof zipPathOrParams === 'string') ? {zip_path: zipPathOrParams} : (zipPathOrParams || {});
+    return reflexInvokeRaw('apps.import', params);
+  };
   window.reflexAppsDelete = function(appIdOrParams) {
     var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
     return reflexInvokeRaw('apps.delete', params);

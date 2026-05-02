@@ -595,6 +595,8 @@ pub async fn dispatch_app_method(
         }
         "apps.list" => list_app_summaries(app),
         "apps.create" => apps_create_for_app(app, app_id, params).await,
+        "apps.export" => apps_export_for_app(app, app_id, params),
+        "apps.import" => apps_import_for_app(app, app_id, params),
         "apps.delete" => apps_delete_for_app(app, app_id, params),
         "apps.trashList" => apps_trash_list_for_app(app, app_id),
         "apps.restore" => apps_restore_for_app(app, app_id, params),
@@ -1335,6 +1337,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "events.clearSubscriptions",
                 "apps.list",
                 "apps.create",
+                "apps.export",
+                "apps.import",
                 "apps.delete",
                 "apps.trashList",
                 "apps.restore",
@@ -1466,6 +1470,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexSchedulerRunDetail",
                 "reflexAppsList",
                 "reflexAppsCreate",
+                "reflexAppsExport",
+                "reflexAppsImport",
                 "reflexAppsDelete",
                 "reflexAppsTrashList",
                 "reflexAppsRestore",
@@ -1503,6 +1509,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "system.openPath",
                 "system.revealPath",
                 "apps.create",
+                "apps.import",
                 "apps.delete",
                 "apps.restore",
                 "apps.purge",
@@ -2740,45 +2747,45 @@ fn list_app_summaries(app: &AppHandle) -> Result<serde_json::Value, String> {
     let listings = apps::list_apps(app).map_err(|e| e.to_string())?;
     let out: Vec<serde_json::Value> = listings
         .into_iter()
-        .map(|listing| {
-            let ready = listing.ready;
-            let manifest = listing.manifest;
-            serde_json::json!({
-                "id": manifest.id,
-                "name": manifest.name,
-                "icon": manifest.icon,
-                "description": manifest.description,
-                "kind": manifest.kind,
-                "runtime": manifest.runtime.unwrap_or_else(|| "static".into()),
-                "ready": ready,
-                "capabilities": {
-                    "permissions": manifest.permissions.len(),
-                    "network_hosts": manifest
-                        .network
-                        .as_ref()
-                        .map(|n| n.allowed_hosts.len())
-                        .unwrap_or(0),
-                    "schedules": manifest.schedules.len(),
-                    "actions": manifest.actions.len(),
-                    "widgets": manifest.widgets.len(),
-                },
-                "actions": manifest.actions.iter().map(|action| serde_json::json!({
-                    "id": action.id,
-                    "name": action.name,
-                    "description": action.description,
-                    "public": action.public,
-                    "has_params": action.params_schema.is_some(),
-                })).collect::<Vec<_>>(),
-                "widgets": manifest.widgets.iter().map(|widget| serde_json::json!({
-                    "id": widget.id,
-                    "name": widget.name,
-                    "size": widget.size,
-                    "description": widget.description,
-                })).collect::<Vec<_>>(),
-            })
-        })
+        .map(|listing| app_summary_from_manifest(listing.manifest, listing.ready))
         .collect();
     Ok(serde_json::Value::Array(out))
+}
+
+fn app_summary_from_manifest(manifest: apps::AppManifest, ready: bool) -> serde_json::Value {
+    serde_json::json!({
+        "id": manifest.id,
+        "name": manifest.name,
+        "icon": manifest.icon,
+        "description": manifest.description,
+        "kind": manifest.kind,
+        "runtime": manifest.runtime.unwrap_or_else(|| "static".into()),
+        "ready": ready,
+        "capabilities": {
+            "permissions": manifest.permissions.len(),
+            "network_hosts": manifest
+                .network
+                .as_ref()
+                .map(|n| n.allowed_hosts.len())
+                .unwrap_or(0),
+            "schedules": manifest.schedules.len(),
+            "actions": manifest.actions.len(),
+            "widgets": manifest.widgets.len(),
+        },
+        "actions": manifest.actions.iter().map(|action| serde_json::json!({
+            "id": action.id,
+            "name": action.name,
+            "description": action.description,
+            "public": action.public,
+            "has_params": action.params_schema.is_some(),
+        })).collect::<Vec<_>>(),
+        "widgets": manifest.widgets.iter().map(|widget| serde_json::json!({
+            "id": widget.id,
+            "name": widget.name,
+            "size": widget.size,
+            "description": widget.description,
+        })).collect::<Vec<_>>(),
+    })
 }
 
 fn ensure_apps_create_permission(app: &AppHandle, app_id: &str) -> Result<(), String> {
@@ -2830,6 +2837,44 @@ async fn apps_create_for_app(
         None
     };
     crate::create_app(app.clone(), description, template, project_id).await
+}
+
+fn apps_export_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    let target_path = required_string_param(&params, "target_path", "targetPath")?;
+    apps::export_app(app, &target_app_id, Path::new(&target_path)).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "app_id": target_app_id,
+        "path": target_path,
+    }))
+}
+
+fn apps_import_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let zip_path = required_string_param(&params, "zip_path", "zipPath")?;
+    let manifest = apps::import_app(app, Path::new(&zip_path)).map_err(|e| e.to_string())?;
+    app.emit(
+        "reflex://apps-changed",
+        &serde_json::json!({ "app_id": manifest.id }),
+    )
+    .map_err(|e| e.to_string())?;
+    let ready = apps::app_dir(app, &manifest.id)
+        .map(|dir| dir.join(&manifest.entry).exists())
+        .unwrap_or(false);
+    Ok(serde_json::json!({
+        "ok": true,
+        "app": app_summary_from_manifest(manifest, ready),
+    }))
 }
 
 fn apps_delete_for_app(

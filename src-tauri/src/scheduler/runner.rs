@@ -11,6 +11,7 @@ const MAX_RECURSION_DEPTH: usize = 8;
 const SCHEDULE_STEP_METHOD_BLACKLIST: &[&str] = &[
     "apps.create",
     "apps.delete",
+    "apps.import",
     "apps.open",
     "apps.purge",
     "apps.restore",
@@ -312,6 +313,7 @@ mod tests {
         for method in [
             "apps.create",
             "apps.delete",
+            "apps.import",
             "apps.open",
             "apps.purge",
             "apps.restore",

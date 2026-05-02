@@ -144,6 +144,8 @@ export const BRIDGE_API_GROUPS = [
       "events.clearSubscriptions",
       "apps.list",
       "apps.create",
+      "apps.export",
+      "apps.import",
       "apps.delete",
       "apps.trashList",
       "apps.restore",
@@ -276,6 +278,8 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexSchedulerRunDetail",
       "reflexAppsList",
       "reflexAppsCreate",
+      "reflexAppsExport",
+      "reflexAppsImport",
       "reflexAppsDelete",
       "reflexAppsTrashList",
       "reflexAppsRestore",
@@ -312,8 +316,8 @@ export const BRIDGE_RECIPE_CARDS = [
   },
   {
     title: "App как сервис",
-    body: "Публикуй actions/widgets, создавай нужные app и управляй lifecycle через корзину.",
-    calls: ["actions.upsert", "apps.create", "apps.delete", "apps.invoke"],
+    body: "Публикуй actions/widgets, создавай нужные app, экспортируй bundles и управляй lifecycle через корзину.",
+    calls: ["actions.upsert", "apps.create", "apps.export", "apps.invoke"],
     example: 'await reflexAppsCreate("утилита для ежедневного отчета");',
   },
   {

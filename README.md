@@ -143,6 +143,8 @@ The injected runtime overlay provides:
 - `window.reflexMemoryForgetPath(pathOrParams)`
 - `window.reflexAppsList(params)`
 - `window.reflexAppsCreate(descriptionOrParams, template?)`
+- `window.reflexAppsExport(appIdOrParams, targetPath?)`
+- `window.reflexAppsImport(zipPathOrParams)`
 - `window.reflexAppsDelete(appIdOrParams)`
 - `window.reflexAppsTrashList()`
 - `window.reflexAppsRestore(trashIdOrParams)`
@@ -287,6 +289,9 @@ Core methods:
 - `apps.create({ description, template?, projectId? })`; requires `apps.create`
   or `apps:*`. Passing `projectId` also requires `projects.write:<project>` or
   `projects.write:*`.
+- `apps.export({ app_id, targetPath })` and `apps.import({ zipPath })`;
+  require `apps.manage` or `apps:*`. Exports omit app storage, project metadata,
+  `.git`, and dependency folders from the `.reflexapp` bundle.
 - `apps.delete({ app_id })`, `apps.trashList()`,
   `apps.restore({ trash_id })`, and `apps.purge({ trash_id })`; require
   `apps.manage` or `apps:*`. Delete moves an app to trash; purge permanently
@@ -364,9 +369,9 @@ Apps can expose:
 Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,
 `clipboard.*`, `system.openUrl`, `system.openPath`, `system.revealPath`,
-`apps.create`, `apps.delete`, `apps.restore`, `apps.purge`, and `apps.open` are
-not valid inside schedules. `projects.open`, `topics.open`, `scheduler.runNow`,
-`scheduler.setPaused`, `scheduler.upsert`, and
+`apps.create`, `apps.import`, `apps.delete`, `apps.restore`, `apps.purge`, and
+`apps.open` are not valid inside schedules. `projects.open`, `topics.open`,
+`scheduler.runNow`, `scheduler.setPaused`, `scheduler.upsert`, and
 `scheduler.delete` are also blocked inside schedule steps to prevent unattended
 recursive runs. Non-UI methods such as `project.files.*` can run in schedules
 when the app has the required manifest permissions.
