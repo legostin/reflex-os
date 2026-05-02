@@ -224,7 +224,7 @@ pub async fn dispatch_app_method(
             let title = params
                 .get("title")
                 .and_then(|v| v.as_str())
-                .unwrap_or("Выбор папки")
+                .unwrap_or("Select folder")
                 .to_string();
             let mut builder = app.dialog().file().set_title(&title);
             if let Some(default_path) = params.get("defaultPath").and_then(|v| v.as_str()) {
@@ -244,7 +244,7 @@ pub async fn dispatch_app_method(
             let title = params
                 .get("title")
                 .and_then(|v| v.as_str())
-                .unwrap_or("Выбор файла")
+                .unwrap_or("Select file")
                 .to_string();
             let multiple = params
                 .get("multiple")
@@ -293,7 +293,7 @@ pub async fn dispatch_app_method(
             let title = params
                 .get("title")
                 .and_then(|v| v.as_str())
-                .unwrap_or("Сохранить как")
+                .unwrap_or("Save as")
                 .to_string();
             let mut builder = app.dialog().file().set_title(&title);
             if let Some(default_path) = params.get("defaultPath").and_then(|v| v.as_str()) {
@@ -1238,7 +1238,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
     let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
     let methods = vec![
         bridge_group(
-            "Система и manifest",
+            "System and Manifest",
             &[
                 "bridge.catalog",
                 "system.context",
@@ -1265,7 +1265,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             ],
         ),
         bridge_group(
-            "Агентный runtime",
+            "Agent Runtime",
             &[
                 "agent.ask",
                 "agent.startTopic",
@@ -1275,7 +1275,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             ],
         ),
         bridge_group(
-            "Данные app и файлы",
+            "App Data and Files",
             &[
                 "storage.get",
                 "storage.set",
@@ -1288,7 +1288,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             ],
         ),
         bridge_group(
-            "Проекты и топики",
+            "Projects and Topics",
             &[
                 "projects.list",
                 "projects.open",
@@ -1339,7 +1339,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             ],
         ),
         bridge_group(
-            "Нативный macOS",
+            "Native macOS",
             &[
                 "clipboard.readText",
                 "clipboard.writeText",
@@ -1349,9 +1349,9 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "notify.show",
             ],
         ),
-        bridge_group("Сеть", &["net.fetch"]),
+        bridge_group("Network", &["net.fetch"]),
         bridge_group(
-            "Память",
+            "Memory",
             &[
                 "memory.save",
                 "memory.read",
@@ -1369,7 +1369,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             ],
         ),
         bridge_group(
-            "Автоматизации",
+            "Automations",
             &[
                 "scheduler.list",
                 "scheduler.upsert",
@@ -1382,7 +1382,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             ],
         ),
         bridge_group(
-            "Сетка apps",
+            "App Grid",
             &[
                 "events.emit",
                 "events.subscribe",

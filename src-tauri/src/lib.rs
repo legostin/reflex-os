@@ -448,7 +448,7 @@ async fn pick_directory(
     title: Option<String>,
 ) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let title = title.unwrap_or_else(|| "Выбор папки".to_string());
+    let title = title.unwrap_or_else(|| "Select folder".to_string());
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog().file().set_title(&title).pick_folder(move |p| {
         let _ = tx.send(p);
@@ -465,7 +465,7 @@ async fn pick_open_file(
     filter_extensions: Option<Vec<String>>,
 ) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let title = title.unwrap_or_else(|| "Открыть файл".to_string());
+    let title = title.unwrap_or_else(|| "Open file".to_string());
     let mut builder = app.dialog().file().set_title(&title);
     if let (Some(name), Some(exts)) = (filter_name, filter_extensions) {
         let exts_ref: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
@@ -488,7 +488,7 @@ async fn pick_save_file(
     filter_extensions: Option<Vec<String>>,
 ) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let title = title.unwrap_or_else(|| "Сохранить как".to_string());
+    let title = title.unwrap_or_else(|| "Save as".to_string());
     let mut builder = app.dialog().file().set_title(&title);
     if let Some(name) = default_name {
         builder = builder.set_file_name(&name);

@@ -1,6 +1,6 @@
 export const BRIDGE_API_GROUPS = [
   {
-    title: "Система и manifest",
+    title: "System and Manifest",
     methods: [
       "bridge.catalog",
       "system.context",
@@ -27,7 +27,7 @@ export const BRIDGE_API_GROUPS = [
     ],
   },
   {
-    title: "Агентный runtime",
+    title: "Agent Runtime",
     methods: [
       "agent.ask",
       "agent.startTopic",
@@ -37,7 +37,7 @@ export const BRIDGE_API_GROUPS = [
     ],
   },
   {
-    title: "Данные app и файлы",
+    title: "App Data and Files",
     methods: [
       "storage.get",
       "storage.set",
@@ -50,7 +50,7 @@ export const BRIDGE_API_GROUPS = [
     ],
   },
   {
-    title: "Проекты и топики",
+    title: "Projects and Topics",
     methods: [
       "projects.list",
       "projects.open",
@@ -77,7 +77,7 @@ export const BRIDGE_API_GROUPS = [
     ],
   },
   {
-    title: "Браузерный sidecar",
+    title: "Browser Sidecar",
     methods: [
       "browser.init",
       "project.browser.setEnabled",
@@ -101,7 +101,7 @@ export const BRIDGE_API_GROUPS = [
     ],
   },
   {
-    title: "Нативный macOS",
+    title: "Native macOS",
     methods: [
       "clipboard.readText",
       "clipboard.writeText",
@@ -112,11 +112,11 @@ export const BRIDGE_API_GROUPS = [
     ],
   },
   {
-    title: "Сеть",
+    title: "Network",
     methods: ["net.fetch"],
   },
   {
-    title: "Память",
+    title: "Memory",
     methods: [
       "memory.save",
       "memory.read",
@@ -134,7 +134,7 @@ export const BRIDGE_API_GROUPS = [
     ],
   },
   {
-    title: "Автоматизации",
+    title: "Automations",
     methods: [
       "scheduler.list",
       "scheduler.upsert",
@@ -147,7 +147,7 @@ export const BRIDGE_API_GROUPS = [
     ],
   },
   {
-    title: "Сетка apps",
+    title: "App Grid",
     methods: [
       "events.emit",
       "events.subscribe",
@@ -182,7 +182,7 @@ export const BRIDGE_API_GROUPS = [
 
 export const BRIDGE_HELPER_GROUPS = [
   {
-    title: "База",
+    title: "Base",
     helpers: [
       "reflexInvoke",
       "reflexBridgeCatalog",
@@ -211,7 +211,7 @@ export const BRIDGE_HELPER_GROUPS = [
     ],
   },
   {
-    title: "Агент",
+    title: "Agent",
     helpers: [
       "reflexAgentAsk",
       "reflexAgentStartTopic",
@@ -221,7 +221,7 @@ export const BRIDGE_HELPER_GROUPS = [
     ],
   },
   {
-    title: "Хранилище / IO",
+    title: "Storage / IO",
     helpers: [
       "reflexStorageGet",
       "reflexStorageSet",
@@ -241,7 +241,7 @@ export const BRIDGE_HELPER_GROUPS = [
     ],
   },
   {
-    title: "Проекты / браузер",
+    title: "Projects / Browser",
     helpers: [
       "reflexProjectsList",
       "reflexProjectsOpen",
@@ -287,7 +287,7 @@ export const BRIDGE_HELPER_GROUPS = [
     ],
   },
   {
-    title: "Память / автоматизации / утилиты",
+    title: "Memory / Automations / Utilities",
     helpers: [
       "reflexMemorySave",
       "reflexMemoryRead",
@@ -343,70 +343,70 @@ export const BRIDGE_HELPER_GROUPS = [
 
 export const BRIDGE_RECIPE_CARDS = [
   {
-    title: "Контекстный sub-agent",
-    body: "Project cwd подключает sandbox, MCP, preferred skills, project profile и memory/RAG.",
+    title: "Contextual sub-agent",
+    body: "Project cwd connects sandbox, MCP, preferred skills, project profile, and memory/RAG.",
     calls: ["agent.task", "project.sandbox.set", "mcp.servers"],
     example: 'await reflexProjectSandboxSet({ projectId, sandbox: "workspace-write" });',
   },
   {
-    title: "Долгая память",
-    body: "Сохраняй новые факты и обновляй известный relPath без дублей.",
+    title: "Long-term memory",
+    body: "Save new facts and update known relPath entries without duplicates.",
     calls: ["memory.save", "memory.update", "reflexMemoryUpdate"],
     example: 'await reflexMemoryUpdate("facts/user.md", { body, tags: ["profile"] });',
   },
   {
-    title: "Возможности",
-    body: "Добавляй permissions и network hosts точечно, без ручного слияния manifest.",
+    title: "Capabilities",
+    body: "Add permissions and network hosts precisely, without manual manifest merging.",
     calls: ["permissions.ensure", "network.allowHost", "reflexCapabilities"],
     example: 'await reflexNetworkAllowHost("api.example.com");',
   },
   {
-    title: "Утилита как сервис",
-    body: "Публикуй actions/widgets, создавай утилиты, экспортируй bundles и управляй server runtime.",
+    title: "Utility as a service",
+    body: "Publish actions/widgets, create utilities, export bundles, and manage server runtime.",
     calls: ["actions.upsert", "apps.create", "apps.export", "apps.server.status"],
     example: 'await reflexAppsCreate("A utility for a daily report");',
   },
   {
-    title: "Автоматизация",
-    body: "Schedule steps используют тот же bridge, кроме UI-only методов.",
+    title: "Automation",
+    body: "Schedule steps use the same bridge, except UI-only methods.",
     calls: ["scheduler.upsert", "scheduler.runs", "agent.task"],
     example: "await reflexSchedulerUpsert({ id, cron, steps });",
   },
   {
-    title: "Дашборд здоровья",
-    body: "Показывай состояние автоматизаций, RAG индекса и последнюю ошибку; для общего обзора добавь scheduler.read:*.",
+    title: "Health dashboard",
+    body: "Show automations, RAG index state, and the latest error; add scheduler.read:* for the full overview.",
     calls: ["scheduler.stats", "memory.stats", "widgets.upsert"],
     example:
       "const [jobs, memory] = await Promise.all([reflexSchedulerStats({ includeAll: true }), reflexMemoryStats({ projectId })]);",
   },
   {
-    title: "Файлы проекта",
-    body: "Ищи, правь и переиндексируй файлы linked project через bridge, не выходя из sandbox утилиты.",
+    title: "Project files",
+    body: "Search, edit, and reindex linked project files through the bridge without leaving the utility sandbox.",
     calls: ["project.files.search", "project.files.write", "memory.indexPath"],
     example:
       "const hits = await reflexProjectFilesSearch({ projectId, query, includeContent: true });",
   },
   {
-    title: "Ревизии утилиты",
-    body: "Показывай diff generated app, сохраняй осмысленные ревизии и откатывай неудачные правки.",
+    title: "Utility revisions",
+    body: "Show the generated app diff, save meaningful revisions, and revert failed changes.",
     calls: ["apps.diff", "apps.commitPartial", "apps.revert"],
     example: "const { diff } = await reflexAppsDiff(appId);",
   },
   {
-    title: "Сетка событий",
-    body: "Связывай утилиты через topics, recent history и подписки без прямых зависимостей между ними.",
+    title: "Event grid",
+    body: "Connect utilities through topics, recent history, and subscriptions without direct dependencies between them.",
     calls: ["events.emit", "events.subscribe", "events.recent"],
     example: 'reflexEventOn("ops.health", (event) => render(event.payload));',
   },
   {
-    title: "Браузерный sidecar",
-    body: "Включай project Browser MCP, открывай страницы, читай outline и заполняй формы.",
+    title: "Browser sidecar",
+    body: "Enable project Browser MCP, open pages, read outlines, and fill forms.",
     calls: ["project.browser.setEnabled", "browser.open", "browser.fill"],
     example: "await reflexProjectBrowserSetEnabled({ projectId, enabled: true });",
   },
   {
-    title: "MCP и skills проекта",
-    body: "Обновляй project profile, закрепляй skills и подключай MCP servers с явными grants.",
+    title: "Project MCP and skills",
+    body: "Update the project profile, pin skills, and connect MCP servers with explicit grants.",
     calls: ["project.profile.update", "project.skills.ensure", "project.mcp.upsert"],
     example:
       'await reflexProjectProfileUpdate({ description: "Agent workspace for growth loops" });',
