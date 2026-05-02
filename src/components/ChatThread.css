@@ -1932,6 +1932,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   padding: 4px 0;
 }
 
@@ -1939,6 +1941,7 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
+  min-width: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   color: rgba(245, 245, 247, 0.7);
@@ -1955,6 +1958,8 @@
 .appviewer-actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .appviewer-btn {
@@ -2010,6 +2015,42 @@
 .appviewer-banner-actions {
   display: flex;
   gap: 6px;
+}
+
+.appviewer-capabilities {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 6px;
+}
+
+.appviewer-capability {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.appviewer-capability-label {
+  flex: 0 0 auto;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  color: rgba(245, 245, 247, 0.45);
+}
+
+.appviewer-capability-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: rgba(245, 245, 247, 0.82);
 }
 
 .apps-header-row {

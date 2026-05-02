@@ -306,6 +306,33 @@ type AppWidget = {
   description?: string | null;
 };
 
+type AppNetworkPolicy = {
+  allowed_hosts?: string[];
+};
+
+type AppStep = {
+  method: string;
+  params?: any;
+  save_as?: string | null;
+};
+
+type AppSchedule = {
+  id: string;
+  name: string;
+  cron: string;
+  enabled?: boolean;
+  catch_up?: string;
+  steps?: AppStep[];
+};
+
+type AppAction = {
+  id: string;
+  name: string;
+  description?: string | null;
+  public?: boolean;
+  steps?: AppStep[];
+};
+
 type AppManifest = {
   id: string;
   name: string;
@@ -318,8 +345,109 @@ type AppManifest = {
   ready?: boolean;
   runtime?: string | null;
   server?: { command: string[]; ready_timeout_ms?: number | null } | null;
+  network?: AppNetworkPolicy | null;
+  schedules?: AppSchedule[];
+  actions?: AppAction[];
   widgets?: AppWidget[];
 };
+
+type AppCapabilityFact = {
+  key: string;
+  label: string;
+  value: string;
+  title: string;
+};
+
+function summarizeManifestValues(
+  values: string[],
+  empty: string,
+  overflowLabel: string,
+): string {
+  if (values.length === 0) return empty;
+  if (values.length <= 2) return values.join(", ");
+  return `${values.length} ${overflowLabel}`;
+}
+
+function buildAppCapabilityFacts(
+  manifest: AppManifest | null,
+  serverPort: number | null,
+): AppCapabilityFact[] {
+  if (!manifest) return [];
+
+  const runtime = manifest.runtime === "server" ? "server" : "static";
+  const permissions = manifest.permissions ?? [];
+  const allowedHosts = manifest.network?.allowed_hosts ?? [];
+  const actions = manifest.actions ?? [];
+  const schedules = manifest.schedules ?? [];
+  const widgets = manifest.widgets ?? [];
+  const enabledSchedules = schedules.filter((s) => s.enabled !== false).length;
+  const serverCommand = manifest.server?.command?.join(" ");
+
+  return [
+    {
+      key: "runtime",
+      label: "runtime",
+      value: runtime === "server" && serverPort ? `server :${serverPort}` : runtime,
+      title:
+        runtime === "server"
+          ? serverCommand
+            ? `server command: ${serverCommand}`
+            : "server runtime"
+          : `entry: ${manifest.entry}`,
+    },
+    {
+      key: "permissions",
+      label: "permissions",
+      value: summarizeManifestValues(permissions, "none", "permissions"),
+      title: permissions.length ? permissions.join(", ") : "no bridge permissions",
+    },
+    {
+      key: "network",
+      label: "network",
+      value: summarizeManifestValues(allowedHosts, "none", "hosts"),
+      title: allowedHosts.length
+        ? `allowed hosts: ${allowedHosts.join(", ")}`
+        : "no allowed network hosts",
+    },
+    {
+      key: "actions",
+      label: "actions",
+      value: summarizeManifestValues(
+        actions.map((a) => a.name || a.id),
+        "none",
+        "actions",
+      ),
+      title: actions.length
+        ? actions.map((a) => `${a.name || a.id}${a.public ? " (public)" : ""}`).join(", ")
+        : "no manifest actions",
+    },
+    {
+      key: "schedules",
+      label: "schedules",
+      value:
+        schedules.length === 0
+          ? "none"
+          : `${enabledSchedules}/${schedules.length} active`,
+      title: schedules.length
+        ? schedules
+            .map((s) => `${s.name || s.id}: ${s.cron}${s.enabled === false ? " (paused)" : ""}`)
+            .join(", ")
+        : "no manifest schedules",
+    },
+    {
+      key: "widgets",
+      label: "widgets",
+      value: summarizeManifestValues(
+        widgets.map((w) => w.name || w.id),
+        "none",
+        "widgets",
+      ),
+      title: widgets.length
+        ? widgets.map((w) => `${w.name || w.id}: ${w.size ?? "small"}`).join(", ")
+        : "no dashboard widgets",
+    },
+  ];
+}
 
 type AppServerStatus = {
   running: boolean;
@@ -2635,6 +2763,10 @@ function AppViewer({
   const sandbox = isServerRuntime
     ? "allow-scripts allow-forms allow-same-origin"
     : "allow-scripts allow-forms";
+  const manifestFacts = useMemo(
+    () => buildAppCapabilityFacts(manifest, serverPort),
+    [manifest, serverPort],
+  );
 
   return (
     <div
@@ -2708,6 +2840,21 @@ function AppViewer({
           </button>
         </div>
       </header>
+
+      {manifestFacts.length > 0 && (
+        <div className="appviewer-capabilities" aria-label="Manifest capabilities">
+          {manifestFacts.map((fact) => (
+            <div
+              key={fact.key}
+              className="appviewer-capability"
+              title={fact.title}
+            >
+              <span className="appviewer-capability-label">{fact.label}</span>
+              <span className="appviewer-capability-value">{fact.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {status?.has_changes && (
         <div className="appviewer-banner appviewer-banner-warn">
