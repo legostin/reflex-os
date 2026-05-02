@@ -333,6 +333,7 @@ pub async fn dispatch_app_method(
                 .to_string();
             let cwd_target =
                 resolve_agent_cwd_for_app(app, app_id, params.get("cwd").and_then(|v| v.as_str()))?;
+            let prompt = build_app_agent_prompt(app_id, &params, prompt, &cwd_target).await;
 
             let handle = app.state::<app_server::AppServerHandle>();
             let server = handle.wait().await;
@@ -404,7 +405,8 @@ pub async fn dispatch_app_method(
             let prompt = params
                 .get("prompt")
                 .and_then(|v| v.as_str())
-                .ok_or("missing prompt")?;
+                .ok_or("missing prompt")?
+                .to_string();
             let sandbox = params
                 .get("sandbox")
                 .and_then(|v| v.as_str())
@@ -412,6 +414,7 @@ pub async fn dispatch_app_method(
                 .to_string();
             let cwd_target =
                 resolve_agent_cwd_for_app(app, app_id, params.get("cwd").and_then(|v| v.as_str()))?;
+            let prompt = build_app_agent_prompt(app_id, &params, prompt, &cwd_target).await;
 
             let handle = app.state::<app_server::AppServerHandle>();
             let server = handle.wait().await;
@@ -419,7 +422,7 @@ pub async fn dispatch_app_method(
                 .thread_start(&cwd_target.cwd, &sandbox, cwd_target.mcp_servers.as_ref())
                 .await
                 .map_err(|e| format!("thread_start: {e}"))?;
-            let _ = server.turn_start(&app_thread_id, prompt).await;
+            let _ = server.turn_start(&app_thread_id, &prompt).await;
             let turn = server.wait_for_turn(&app_thread_id).await;
             let result_text = turn
                 .as_ref()
@@ -951,6 +954,7 @@ fn default_memory_project(
 struct AgentCwdTarget {
     cwd: PathBuf,
     mcp_servers: Option<serde_json::Value>,
+    project: Option<project::Project>,
 }
 
 fn resolve_agent_cwd_for_app(
@@ -965,9 +969,11 @@ fn resolve_agent_cwd_for_app(
 
     if same_path(&cwd_path, &app_root) {
         let project = project::find_project_for(&cwd_path);
+        let mcp_servers = project.as_ref().and_then(|p| p.mcp_servers.clone());
         return Ok(AgentCwdTarget {
             cwd: cwd_path,
-            mcp_servers: project.and_then(|p| p.mcp_servers),
+            mcp_servers,
+            project,
         });
     }
 
@@ -975,9 +981,11 @@ fn resolve_agent_cwd_for_app(
         if project_is_linked_to_app(app, app_id, &project)
             || scoped_permission_allowed(app, app_id, "agent.project", &project.id)
         {
+            let mcp_servers = project.mcp_servers.clone();
             return Ok(AgentCwdTarget {
                 cwd: cwd_path,
-                mcp_servers: project.mcp_servers,
+                mcp_servers,
+                project: Some(project),
             });
         }
 
@@ -991,6 +999,7 @@ fn resolve_agent_cwd_for_app(
         return Ok(AgentCwdTarget {
             cwd: cwd_path,
             mcp_servers: None,
+            project: None,
         });
     }
 
@@ -998,6 +1007,33 @@ fn resolve_agent_cwd_for_app(
         "permission denied: agent cwd must be this app root, a linked project, or require manifest.permissions entry 'agent.cwd:*'"
             .into(),
     )
+}
+
+async fn build_app_agent_prompt(
+    app_id: &str,
+    params: &serde_json::Value,
+    prompt: String,
+    target: &AgentCwdTarget,
+) -> String {
+    if bool_param(params, "include_context", "includeContext") == Some(false) {
+        return prompt;
+    }
+    let Some(project) = target.project.as_ref() else {
+        return prompt;
+    };
+    let project_root = PathBuf::from(&project.root);
+    let thread_id = string_param(params, "memory_thread_id", "memoryThreadId")
+        .or_else(|| string_param(params, "thread_id", "threadId"))
+        .unwrap_or_else(|| format!("app:{app_id}"));
+    let prompt = match memory::injection::build_preface(&project_root, &thread_id, &prompt).await {
+        Ok(r) => memory::injection::wrap_user_prompt(&r.preface, &prompt),
+        Err(e) => {
+            eprintln!("[reflex] app agent memory inject failed: {e}");
+            prompt
+        }
+    };
+    let profile = crate::project_agent_profile_preface(project);
+    crate::wrap_with_project_agent_profile(&profile, &prompt)
 }
 
 fn app_has_permission(app: &AppHandle, app_id: &str, permission: &str) -> bool {
@@ -2713,5 +2749,70 @@ mod tests {
             parse_memory_rel_path(&params).unwrap(),
             PathBuf::from("facts/project.md")
         );
+    }
+
+    #[tokio::test]
+    async fn app_agent_prompt_adds_project_profile_by_default() {
+        let project = project::Project {
+            id: "p1".into(),
+            name: "Project".into(),
+            root: std::env::temp_dir()
+                .join("reflex-app-agent-context-test")
+                .to_string_lossy()
+                .into_owned(),
+            created_at_ms: 42,
+            sandbox: "workspace-write".into(),
+            mcp_servers: Some(serde_json::json!({ "browser": { "command": "browser-mcp" } })),
+            description: Some("desc".into()),
+            agent_instructions: Some("follow project rules".into()),
+            skills: vec!["build-web-apps:react-best-practices".into()],
+            apps: vec!["helper-app".into()],
+        };
+        let target = AgentCwdTarget {
+            cwd: PathBuf::from(&project.root),
+            mcp_servers: project.mcp_servers.clone(),
+            project: Some(project),
+        };
+
+        let out =
+            build_app_agent_prompt("caller", &serde_json::json!({}), "do work".into(), &target)
+                .await;
+
+        assert!(out.contains("## Reflex project profile"));
+        assert!(out.contains("Preferred skills: build-web-apps:react-best-practices"));
+        assert!(out.contains("MCP servers available in this project: browser"));
+        assert!(out.contains("follow project rules"));
+        assert!(out.contains("do work"));
+    }
+
+    #[tokio::test]
+    async fn app_agent_prompt_can_skip_project_context() {
+        let project = project::Project {
+            id: "p1".into(),
+            name: "Project".into(),
+            root: "/tmp/project".into(),
+            created_at_ms: 42,
+            sandbox: "workspace-write".into(),
+            mcp_servers: None,
+            description: Some("desc".into()),
+            agent_instructions: Some("private instructions".into()),
+            skills: vec!["build-web-apps:react-best-practices".into()],
+            apps: Vec::new(),
+        };
+        let target = AgentCwdTarget {
+            cwd: PathBuf::from(&project.root),
+            mcp_servers: None,
+            project: Some(project),
+        };
+
+        let out = build_app_agent_prompt(
+            "caller",
+            &serde_json::json!({ "includeContext": false }),
+            "raw prompt".into(),
+            &target,
+        )
+        .await;
+
+        assert_eq!(out, "raw prompt");
     }
 }

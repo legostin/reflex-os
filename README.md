@@ -132,12 +132,14 @@ Core methods:
   adding `actions`, `widgets`, `schedules`, permissions, or network hosts.
 - `agent.ask({ prompt })` -> one-shot agent answer.
 - `agent.startTopic({ prompt, projectId? })` -> full Reflex topic.
-- `agent.task({ prompt, sandbox?, cwd? })` -> isolated sub-agent result.
-- `agent.stream({ prompt, sandbox?, cwd? })` -> streamed agent response.
+- `agent.task({ prompt, sandbox?, cwd?, memoryThreadId?, includeContext? })` -> isolated sub-agent result.
+- `agent.stream({ prompt, sandbox?, cwd?, memoryThreadId?, includeContext? })` -> streamed agent response.
 - `agent.streamAbort({ threadId })` -> abort a streamed app-agent turn.
   `cwd` may be the app root or a linked project; another project requires
   `agent.project:<project>` or `agent.project:*`, and arbitrary cwd requires
-  `agent.cwd:*`. Project cwd automatically receives that project's MCP config.
+  `agent.cwd:*`. Project cwd automatically receives that project's MCP config,
+  preferred skills, project profile, and memory/RAG context; set
+  `includeContext: false` only for raw prompts. `memoryThreadId` selects topic memory.
 - `storage.get({ key })`, `storage.set({ key, value })`.
 - `storage.list({ prefix? })` -> `{ keys, entries }`.
 - `storage.delete({ key })` or `storage.delete({ keys })` -> `{ ok, deleted, missing }`.

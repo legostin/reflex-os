@@ -558,8 +558,8 @@ fn app_revise(
   • logs.write({{level?, source?, message}}) — диагностическое событие app в Settings → Logs\n\
   • manifest.get() / manifest.update({{patch}}) — безопасно читать/обновлять собственный manifest.json\n\
   • agent.ask({{prompt}}) → {{answer}}\n\
-  • agent.task({{prompt, sandbox?, cwd?}}) → {{threadId, result}} — изолированный sub-агент; cwd может быть app root или linked project, чужой project требует agent.project:<project>|*, произвольный cwd требует agent.cwd:*\n\
-  • agent.stream({{prompt, sandbox?, cwd?}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}; cwd rules как у agent.task\n\
+  • agent.task({{prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}}) → {{threadId, result}} — изолированный sub-агент; project cwd получает MCP, preferred skills, profile и memory/RAG; includeContext=false только для raw prompt\n\
+  • agent.stream({{prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}; cwd rules как у agent.task\n\
   • storage.get/set/list/delete, fs.read/list/write/delete (в app-папке)\n\
   • clipboard.readText/writeText — буфер обмена macOS; требует permission clipboard.read/clipboard.write или clipboard:*\n\
   • projects.list/open / topics.list/open — обзор и открытие проектов/топиков в основном UI; чужие требуют permission projects.read/topics.read\n\
@@ -960,8 +960,8 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  manifest.get() -> AppManifest; manifest.update({patch}) -> {ok, manifest} — безопасно обновить собственный manifest.json (id всегда остаётся текущим app)\n");
     p.push_str("  agent.ask({prompt}) -> {answer}                       — короткий one-shot вопрос агенту\n");
     p.push_str("  agent.startTopic({prompt, projectId?}) -> {threadId}   — создать полноценный тред\n");
-    p.push_str("  agent.task({prompt, sandbox?, cwd?}) -> {threadId, result}  — sub-агент изолированно; sandbox: read-only|workspace-write; ждёт turn.completed и возвращает финальный текст. cwd может быть app root или linked project; чужой project требует permission \"agent.project:<project>\" / \"agent.project:*\", произвольный cwd — \"agent.cwd:*\". Project cwd автоматически получает MCP config проекта.\n");
-    p.push_str("  agent.stream({prompt, sandbox?, cwd?}) -> {streamId, threadId}  — стрим токенов: app слушает window 'message' от parent с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done' с {streamId, result}. По завершении вызывай agent.streamAbort({threadId}) при размонтаже. cwd rules как у agent.task.\n");
+    p.push_str("  agent.task({prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}) -> {threadId, result}  — sub-агент изолированно; sandbox: read-only|workspace-write; ждёт turn.completed и возвращает финальный текст. cwd может быть app root или linked project; чужой project требует permission \"agent.project:<project>\" / \"agent.project:*\", произвольный cwd — \"agent.cwd:*\". Project cwd автоматически получает MCP config, preferred skills, project profile и memory/RAG context. includeContext=false только для raw prompt; memoryThreadId подключает topic memory.\n");
+    p.push_str("  agent.stream({prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}) -> {streamId, threadId}  — стрим токенов: app слушает window 'message' от parent с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done' с {streamId, result}. По завершении вызывай agent.streamAbort({threadId}) при размонтаже. cwd/context rules как у agent.task.\n");
     p.push_str("  storage.get({key}) -> {value}                         — persist в storage.json\n");
     p.push_str("  storage.set({key, value}) -> {ok}\n");
     p.push_str("  storage.list({prefix?}) -> {keys, entries}; storage.delete({key}) или storage.delete({keys}) -> {ok, deleted, missing}\n");
