@@ -3565,6 +3565,7 @@ function ProjectScreen({
 
   const mcpServerNames = Object.keys(project?.mcp_servers ?? {});
   const projectSkills = project?.skills ?? [];
+  const linkedAppIds = project?.apps ?? [];
   const hasAgentProfile = !!(
     project?.agent_instructions?.trim() || projectSkills.length > 0
   );
@@ -3649,10 +3650,59 @@ function ProjectScreen({
         </section>
       )}
 
+      {project && (
+        <section className="project-context-grid" aria-label="Agent context">
+          <article className="project-context-item">
+            <span className="project-context-label">Sandbox</span>
+            <strong>{sandbox}</strong>
+          </article>
+          <article className="project-context-item">
+            <span className="project-context-label">Agent profile</span>
+            <strong>{hasAgentProfile ? "custom" : "default"}</strong>
+            {projectSkills.length > 0 && (
+              <div className="project-context-chips">
+                {projectSkills.slice(0, 4).map((skill) => (
+                  <span key={skill}>{skill}</span>
+                ))}
+                {projectSkills.length > 4 && (
+                  <span>+{projectSkills.length - 4}</span>
+                )}
+              </div>
+            )}
+          </article>
+          <article className="project-context-item">
+            <span className="project-context-label">MCP servers</span>
+            <strong>{mcpServerNames.length}</strong>
+            {mcpServerNames.length > 0 && (
+              <div className="project-context-chips">
+                {mcpServerNames.slice(0, 4).map((name) => (
+                  <span key={name}>{name}</span>
+                ))}
+                {mcpServerNames.length > 4 && (
+                  <span>+{mcpServerNames.length - 4}</span>
+                )}
+              </div>
+            )}
+          </article>
+          <article className="project-context-item">
+            <span className="project-context-label">Apps</span>
+            <strong>{linkedAppIds.length}</strong>
+          </article>
+          <article className="project-context-item">
+            <span className="project-context-label">Topics</span>
+            <strong>{topics.length}</strong>
+            {runningCount > 0 && (
+              <span className="project-context-note">
+                {runningCount} running
+              </span>
+            )}
+          </article>
+        </section>
+      )}
+
       {project && (() => {
-        const linkedIds = project.apps ?? [];
         const sources: WidgetSource[] = [];
-        for (const id of linkedIds) {
+        for (const id of linkedAppIds) {
           const app = installedApps.find((a) => a.id === id);
           if (!app || app.ready === false) continue;
           for (const w of app.widgets ?? []) {
@@ -3664,7 +3714,7 @@ function ProjectScreen({
             });
           }
         }
-        if (sources.length === 0 && linkedIds.length === 0) return null;
+        if (sources.length === 0 && linkedAppIds.length === 0) return null;
         return (
           <section className="project-dashboard">
             <h2 className="section-title">Дашборд</h2>
@@ -3685,8 +3735,7 @@ function ProjectScreen({
             </button>
           </div>
           {(() => {
-            const linkedIds = project.apps ?? [];
-            const linked = linkedIds
+            const linked = linkedAppIds
               .map((id) => installedApps.find((a) => a.id === id))
               .filter((a): a is AppManifest => !!a);
             if (linked.length === 0) {
