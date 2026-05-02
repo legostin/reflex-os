@@ -3207,7 +3207,7 @@ function AppViewer({
 
       {manifestFacts.length > 0 && (
         <>
-          <div className="appviewer-capabilities" aria-label="Manifest capabilities">
+          <div className="appviewer-capabilities" aria-label="Возможности manifest">
             {manifestFacts.map((fact) => (
               <div
                 key={fact.key}
@@ -3224,21 +3224,21 @@ function AppViewer({
       )}
 
       {bridgeOpen && (
-        <div className="appviewer-bridge-panel" aria-label="Runtime bridge catalog">
+        <div className="appviewer-bridge-panel" aria-label="Каталог runtime bridge">
           <div className="appviewer-bridge-head">
             <span>Runtime bridge</span>
             <input
               value={bridgeQuery}
               onChange={(e) => setBridgeQuery(e.currentTarget.value)}
-              placeholder="Search methods, helpers, recipes…"
+              placeholder="Поиск методов, helpers, связок…"
             />
             <div className="appviewer-bridge-counts">
-              <span>{visibleBridgeApiCount}/{BRIDGE_API_COUNT} methods</span>
+              <span>{visibleBridgeApiCount}/{BRIDGE_API_COUNT} методов</span>
               <span>{visibleBridgeHelperCount}/{BRIDGE_HELPER_COUNT} helpers</span>
             </div>
           </div>
           {!hasBridgeMatches ? (
-            <div className="appviewer-bridge-empty">No matching bridge items.</div>
+            <div className="appviewer-bridge-empty">Нет совпадений в bridge.</div>
           ) : (
             <>
               {visibleBridgeRecipes.length > 0 && (
@@ -3250,7 +3250,7 @@ function AppViewer({
                       <button
                         className={`appviewer-bridge-code-button ${copiedBridgeItem === recipe.example ? "copied" : ""}`}
                         onClick={() => void copyBridgeItem(recipe.example)}
-                        title="Copy"
+                        title="Скопировать"
                       >
                         <code>{recipe.example}</code>
                       </button>
@@ -3260,7 +3260,7 @@ function AppViewer({
               )}
               {visibleBridgeApiGroups.length > 0 && (
                 <div className="appviewer-bridge-section">
-                  <div className="appviewer-bridge-section-label">Methods</div>
+                  <div className="appviewer-bridge-section-label">Методы</div>
                   <div className="appviewer-bridge-grid">
                     {visibleBridgeApiGroups.map((group) => (
                       <div className="appviewer-bridge-group" key={group.title}>
@@ -3271,7 +3271,7 @@ function AppViewer({
                               key={method}
                               className={`appviewer-bridge-chip ${copiedBridgeItem === method ? "copied" : ""}`}
                               onClick={() => void copyBridgeItem(method)}
-                              title="Copy"
+                              title="Скопировать"
                             >
                               <code>{method}</code>
                             </button>
@@ -3295,7 +3295,7 @@ function AppViewer({
                               key={helper}
                               className={`appviewer-bridge-chip ${copiedBridgeItem === helper ? "copied" : ""}`}
                               onClick={() => void copyBridgeItem(helper)}
-                              title="Copy"
+                              title="Скопировать"
                             >
                               <code>{helper}</code>
                             </button>

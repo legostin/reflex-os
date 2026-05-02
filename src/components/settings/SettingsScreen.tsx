@@ -31,11 +31,11 @@ type Tab = "capabilities" | "logs";
 const CAPABILITY_GROUPS = [
   {
     title: "Проекты",
-    body: "Папки с sandbox, browser MCP, MCP servers, agent profile, preferred skills, linked apps, widgets и indexed files.",
+    body: "Папки с sandbox, browser MCP, MCP servers, профилем агента, preferred skills, связанными утилитами, widgets и indexed files.",
   },
   {
     title: "Топики",
-    body: "Codex threads с project profile, memory recall и продолжением рабочей сессии.",
+    body: "Codex threads с профилем проекта, memory recall и продолжением рабочей сессии.",
   },
   {
     title: "Генерируемые утилиты",
@@ -43,11 +43,11 @@ const CAPABILITY_GROUPS = [
   },
   {
     title: "Память",
-    body: "Global, project и topic notes, плюс RAG по индексированным файлам и сохранённым фактам.",
+    body: "Глобальные, проектные и topic notes, плюс RAG по индексированным файлам и сохранённым фактам.",
   },
   {
     title: "Автоматизации",
-    body: "Manifest schedules и actions, которые исполняются теми же bridge methods, что доступны apps.",
+    body: "Manifest schedules и actions, которые исполняются теми же bridge methods, что доступны утилитам.",
   },
   {
     title: "MCP и skills",
@@ -106,22 +106,22 @@ const PERMISSION_COUNT = PERMISSION_EXAMPLES.length;
 
 const SYSTEM_STATS = [
   {
-    label: "Bridge methods",
+    label: "Методы bridge",
     value: BRIDGE_API_COUNT,
     detail: "dispatch API",
   },
   {
-    label: "Overlay helpers",
+    label: "Хелперы overlay",
     value: BRIDGE_HELPER_COUNT,
     detail: "window.reflex*",
   },
   {
-    label: "Patterns",
+    label: "Связки",
     value: BRIDGE_RECIPE_CARDS.length,
     detail: "рабочие связки",
   },
   {
-    label: "Permission forms",
+    label: "Формы прав",
     value: PERMISSION_COUNT,
     detail: "manifest grants",
   },
@@ -222,12 +222,12 @@ function CapabilitiesPane() {
         <h2>Слой Reflex OS</h2>
         <p>
           Reflex — локальная macOS-надстройка над Codex CLI: проекты, темы,
-          browser/MCP bridge, generated apps, widgets, memory, RAG и scheduled
-          automations живут в одном workspace.
+          browser/MCP bridge, генерируемые утилиты, widgets, memory, RAG и
+          запланированные автоматизации живут в одном workspace.
         </p>
       </section>
 
-      <div className="settings-stat-grid" aria-label="Reflex OS summary">
+      <div className="settings-stat-grid" aria-label="Сводка Reflex OS">
         {SYSTEM_STATS.map((stat) => (
           <article className="settings-stat-card" key={stat.label}>
             <span>{stat.label}</span>
@@ -251,7 +251,7 @@ function CapabilitiesPane() {
 
       <section className="settings-section settings-section-open">
         <div className="settings-section-title-row">
-          <h2>Bridge generated apps</h2>
+          <h2>Bridge для генерируемых утилит</h2>
           <div className="settings-section-controls">
             <input
               className="settings-bridge-search"
@@ -260,7 +260,7 @@ function CapabilitiesPane() {
               onChange={(e) => setBridgeQuery(e.currentTarget.value)}
             />
             <span className="settings-section-meta">
-              {visibleApiCount}/{BRIDGE_API_COUNT} methods
+              {visibleApiCount}/{BRIDGE_API_COUNT} методов
             </span>
           </div>
         </div>
@@ -291,7 +291,7 @@ function CapabilitiesPane() {
         <div className="settings-section-title-row">
           <h2>Рабочие связки bridge</h2>
           <span className="settings-section-meta">
-            {visibleRecipeCards.length}/{BRIDGE_RECIPE_CARDS.length} patterns
+            {visibleRecipeCards.length}/{BRIDGE_RECIPE_CARDS.length} связок
           </span>
         </div>
         {visibleRecipeCards.length === 0 ? (
@@ -326,7 +326,7 @@ function CapabilitiesPane() {
 
       <section className="settings-section settings-section-open">
         <div className="settings-section-title-row">
-          <h2>Runtime overlay helpers</h2>
+          <h2>Runtime helpers</h2>
           <span className="settings-section-meta">
             {visibleHelperCount}/{BRIDGE_HELPER_COUNT} helpers
           </span>
@@ -353,9 +353,9 @@ function CapabilitiesPane() {
           </div>
         )}
         <p className="settings-hint">
-          Generated apps should prefer these helpers over manual postMessage;
-          permissions and manifest.network rules still apply to the underlying
-          bridge method.
+          Генерируемым утилитам стоит использовать эти helpers вместо ручного
+          postMessage; permissions и правила manifest.network всё равно
+          применяются к базовому bridge method.
         </p>
       </section>
 
@@ -389,12 +389,12 @@ function CapabilitiesPane() {
           <span>manifest.schedules</span>
           <span>scheduler runner</span>
           <span>bridge steps</span>
-          <span>run history</span>
+          <span>история запусков</span>
         </div>
         <p className="settings-hint">
-          Generated apps могут обновлять собственный manifest, добавлять
-          schedules/actions, смотреть runs и отдавать widgets или public
-          actions другим apps.
+          Генерируемые утилиты могут обновлять собственный manifest, добавлять
+          schedules/actions, смотреть runs и отдавать widgets или public actions
+          другим apps.
         </p>
       </section>
     </div>
@@ -416,7 +416,7 @@ function CopyToken({
     <button
       className={`settings-copy-token settings-copy-${variant} ${copied ? "copied" : ""}`}
       onClick={() => void onCopy(value)}
-      title={copied ? "Copied" : "Copy"}
+      title={copied ? "Скопировано" : "Скопировать"}
       type="button"
     >
       {value}
@@ -438,7 +438,7 @@ async function copyTextToClipboard(text: string): Promise<void> {
   textarea.select();
   const ok = document.execCommand("copy");
   document.body.removeChild(textarea);
-  if (!ok) throw new Error("copy failed");
+  if (!ok) throw new Error("не удалось скопировать");
 }
 
 function LogsPane() {

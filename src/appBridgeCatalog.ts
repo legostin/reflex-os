@@ -76,7 +76,7 @@ export const BRIDGE_API_GROUPS = [
     ],
   },
   {
-    title: "Browser sidecar",
+    title: "Браузерный sidecar",
     methods: [
       "browser.init",
       "project.browser.setEnabled",
@@ -181,7 +181,7 @@ export const BRIDGE_API_GROUPS = [
 
 export const BRIDGE_HELPER_GROUPS = [
   {
-    title: "Core",
+    title: "База",
     helpers: [
       "reflexInvoke",
       "reflexBridgeCatalog",
@@ -209,7 +209,7 @@ export const BRIDGE_HELPER_GROUPS = [
     ],
   },
   {
-    title: "Agent",
+    title: "Агент",
     helpers: [
       "reflexAgentAsk",
       "reflexAgentStartTopic",
@@ -219,7 +219,7 @@ export const BRIDGE_HELPER_GROUPS = [
     ],
   },
   {
-    title: "Storage / IO",
+    title: "Хранилище / IO",
     helpers: [
       "reflexStorageGet",
       "reflexStorageSet",
@@ -239,7 +239,7 @@ export const BRIDGE_HELPER_GROUPS = [
     ],
   },
   {
-    title: "Projects / Browser",
+    title: "Проекты / браузер",
     helpers: [
       "reflexProjectsList",
       "reflexProjectsOpen",
@@ -285,7 +285,7 @@ export const BRIDGE_HELPER_GROUPS = [
     ],
   },
   {
-    title: "Memory / Automation / Apps",
+    title: "Память / автоматизации / утилиты",
     helpers: [
       "reflexMemorySave",
       "reflexMemoryRead",
@@ -353,14 +353,14 @@ export const BRIDGE_RECIPE_CARDS = [
     example: 'await reflexMemoryUpdate("facts/user.md", { body, tags: ["profile"] });',
   },
   {
-    title: "Capabilities",
-    body: "Добавляй permissions и network hosts точечно, без ручного manifest merge.",
+    title: "Возможности",
+    body: "Добавляй permissions и network hosts точечно, без ручного слияния manifest.",
     calls: ["permissions.ensure", "network.allowHost", "reflexCapabilities"],
     example: 'await reflexNetworkAllowHost("api.example.com");',
   },
   {
-    title: "App как сервис",
-    body: "Публикуй actions/widgets, создавай app, экспортируй bundles и управляй server runtime.",
+    title: "Утилита как сервис",
+    body: "Публикуй actions/widgets, создавай утилиты, экспортируй bundles и управляй server runtime.",
     calls: ["actions.upsert", "apps.create", "apps.export", "apps.server.status"],
     example: 'await reflexAppsCreate("утилита для ежедневного отчета");',
   },
@@ -371,33 +371,33 @@ export const BRIDGE_RECIPE_CARDS = [
     example: "await reflexSchedulerUpsert({ id, cron, steps });",
   },
   {
-    title: "Health dashboard",
+    title: "Дашборд здоровья",
     body: "Показывай состояние автоматизаций, RAG индекса и последнюю ошибку; для общего обзора добавь scheduler.read:*.",
     calls: ["scheduler.stats", "memory.stats", "widgets.upsert"],
     example:
       "const [jobs, memory] = await Promise.all([reflexSchedulerStats({ includeAll: true }), reflexMemoryStats({ projectId })]);",
   },
   {
-    title: "Project file maintenance",
-    body: "Ищи, правь и переиндексируй файлы linked project через bridge, не выходя из app sandbox.",
+    title: "Файлы проекта",
+    body: "Ищи, правь и переиндексируй файлы linked project через bridge, не выходя из sandbox утилиты.",
     calls: ["project.files.search", "project.files.write", "memory.indexPath"],
     example:
       "const hits = await reflexProjectFilesSearch({ projectId, query, includeContent: true });",
   },
   {
-    title: "Revision workflow",
+    title: "Ревизии утилиты",
     body: "Показывай diff generated app, сохраняй осмысленные ревизии и откатывай неудачные правки.",
     calls: ["apps.diff", "apps.commitPartial", "apps.revert"],
     example: "const { diff } = await reflexAppsDiff(appId);",
   },
   {
-    title: "Event mesh",
-    body: "Связывай apps через topics, recent history и подписки без прямых зависимостей между утилитами.",
+    title: "Сетка событий",
+    body: "Связывай утилиты через topics, recent history и подписки без прямых зависимостей между ними.",
     calls: ["events.emit", "events.subscribe", "events.recent"],
     example: 'reflexEventOn("ops.health", (event) => render(event.payload));',
   },
   {
-    title: "Browser sidecar",
+    title: "Браузерный sidecar",
     body: "Включай project Browser MCP, открывай страницы, читай outline и заполняй формы.",
     calls: ["project.browser.setEnabled", "browser.open", "browser.fill"],
     example: "await reflexProjectBrowserSetEnabled({ projectId, enabled: true });",
