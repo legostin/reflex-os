@@ -2383,6 +2383,8 @@ function AppViewer({
   const [nestedFraction, setNestedFraction] = useState(0.45);
   const [openingNested, setOpeningNested] = useState<"edit" | "new" | null>(null);
   const [showDiff, setShowDiff] = useState(false);
+  const [commitOpen, setCommitOpen] = useState(false);
+  const [commitDraft, setCommitDraft] = useState("revision");
   const [exporting, setExporting] = useState(false);
   const [bridgeOpen, setBridgeOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
@@ -2865,11 +2867,13 @@ function AppViewer({
 
   async function save() {
     if (busy) return;
+    const message = commitDraft.trim() || "revision";
     setBusy("save");
     setError(null);
     try {
-      const msg = window.prompt("Сообщение для commit:", "revision") ?? "revision";
-      await invoke("app_save", { appId, message: msg });
+      await invoke("app_save", { appId, message });
+      setCommitOpen(false);
+      setCommitDraft("revision");
       await refreshStatus();
     } catch (e) {
       setError(String(e));
@@ -2907,6 +2911,10 @@ function AppViewer({
     () => buildAppCapabilityFacts(manifest, serverPort),
     [manifest, serverPort],
   );
+
+  useEffect(() => {
+    if (!status?.has_changes) setCommitOpen(false);
+  }, [status?.has_changes]);
 
   return (
     <div
@@ -3106,10 +3114,13 @@ function AppViewer({
             </button>
             <button
               className="appviewer-btn appviewer-btn-primary"
-              onClick={() => void save()}
+              onClick={() => {
+                if (commitOpen) void save();
+                else setCommitOpen(true);
+              }}
               disabled={busy !== null}
             >
-              Save
+              {busy === "save" ? "…" : commitOpen ? "Commit" : "Save"}
             </button>
             <button
               className="appviewer-btn appviewer-btn-danger"
@@ -3124,6 +3135,43 @@ function AppViewer({
               disabled={busy !== null}
             >
               Reload
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status?.has_changes && commitOpen && (
+        <div className="appviewer-commit-editor" aria-label="Commit changes">
+          <input
+            className="appviewer-commit-input"
+            value={commitDraft}
+            onChange={(e) => setCommitDraft(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void save();
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setCommitOpen(false);
+              }
+            }}
+            autoFocus
+          />
+          <div className="appviewer-commit-actions">
+            <button
+              className="appviewer-btn"
+              onClick={() => setCommitOpen(false)}
+              disabled={busy !== null}
+            >
+              Cancel
+            </button>
+            <button
+              className="appviewer-btn appviewer-btn-primary"
+              onClick={() => void save()}
+              disabled={busy !== null}
+            >
+              {busy === "save" ? "…" : "Commit"}
             </button>
           </div>
         </div>

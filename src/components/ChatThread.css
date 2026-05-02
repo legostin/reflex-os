@@ -2008,6 +2008,40 @@
   color: #ffbcbc;
 }
 
+.appviewer-commit-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(106, 208, 132, 0.24);
+  background: rgba(106, 208, 132, 0.055);
+}
+
+.appviewer-commit-input {
+  min-width: 0;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.18);
+  color: #f5f5f7;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 0 9px;
+  outline: none;
+}
+
+.appviewer-commit-input:focus {
+  border-color: rgba(106, 208, 132, 0.5);
+}
+
+.appviewer-commit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .appviewer-banner {
   display: flex;
   align-items: center;
