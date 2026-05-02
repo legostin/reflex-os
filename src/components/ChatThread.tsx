@@ -21,6 +21,11 @@ import {
   BRIDGE_HELPER_GROUPS,
   BRIDGE_RECIPE_CARDS,
 } from "../appBridgeCatalog";
+import {
+  bridgeCatalogTitle,
+  bridgeRecipeBody,
+  bridgeRecipeTitle,
+} from "../appBridgeCatalogI18n";
 import { useI18n, type Translate } from "../i18n";
 import "./ChatThread.css";
 
@@ -599,15 +604,21 @@ function buildAppCatalogCapabilityFacts(
 }
 
 function AppCapabilityDetails({ manifest }: { manifest: AppManifest | null }) {
+  const { t } = useI18n();
   const permissions = manifest?.permissions ?? [];
   const allowedHosts = manifest?.network?.allowed_hosts ?? [];
   if (permissions.length === 0 && allowedHosts.length === 0) return null;
 
   return (
-    <div className="appviewer-capability-details" aria-label="Разрешения manifest">
+    <div
+      className="appviewer-capability-details"
+      aria-label={t("appViewer.manifestPermissions")}
+    >
       {permissions.length > 0 && (
         <section className="appviewer-capability-detail-group">
-          <div className="appviewer-capability-detail-title">Права</div>
+          <div className="appviewer-capability-detail-title">
+            {t("appViewer.permissions")}
+          </div>
           <div className="appviewer-capability-chip-list">
             {permissions.map((permission) => (
               <code key={permission}>{permission}</code>
@@ -617,7 +628,9 @@ function AppCapabilityDetails({ manifest }: { manifest: AppManifest | null }) {
       )}
       {allowedHosts.length > 0 && (
         <section className="appviewer-capability-detail-group">
-          <div className="appviewer-capability-detail-title">Сетевые хосты</div>
+          <div className="appviewer-capability-detail-title">
+            {t("appViewer.networkHosts")}
+          </div>
           <div className="appviewer-capability-chip-list">
             {allowedHosts.map((host) => (
               <code key={host}>{host}</code>
@@ -1931,81 +1944,73 @@ function NewPaneDropZone({
 const TEMPLATES: {
   id: string;
   icon: string;
-  name: string;
-  description: string;
-  placeholder: string;
+  nameKey: string;
+  descriptionKey: string;
+  placeholderKey: string;
   badges: string[];
 }[] = [
   {
     id: "blank",
     icon: "📄",
-    name: "Пустая",
-    description: "Пустая утилита, Codex решает структуру",
-    placeholder:
-      "Например: счётчик с кнопкой сохранения в storage; виджет погоды; …",
+    nameKey: "template.blank.name",
+    descriptionKey: "template.blank.description",
+    placeholderKey: "template.blank.placeholder",
     badges: ["static", "custom"],
   },
   {
     id: "chat",
     icon: "💬",
-    name: "Чат-утилита",
-    description: "Чат с агентом, стриминг ответа",
-    placeholder:
-      "Например: ассистент по моему календарю; помощник с переводом; …",
+    nameKey: "template.chat.name",
+    descriptionKey: "template.chat.description",
+    placeholderKey: "template.chat.placeholder",
     badges: ["agent.stream", "storage"],
   },
   {
     id: "dashboard",
     icon: "📊",
-    name: "Дашборд",
-    description: "Данные через agent.task в виде таблицы/карточек",
-    placeholder:
-      "Например: статус всех проектов из ~/projects; список последних коммитов; …",
+    nameKey: "template.dashboard.name",
+    descriptionKey: "template.dashboard.description",
+    placeholderKey: "template.dashboard.placeholder",
     badges: ["agent.task", "cards/table"],
   },
   {
     id: "health-dashboard",
     icon: "🩺",
-    name: "Дашборд здоровья",
-    description: "Операционный обзор scheduler, memory/RAG и linked apps",
-    placeholder:
-      "Например: мониторинг автоматизаций проекта, индекса памяти и server apps с компактным виджетом; …",
+    nameKey: "template.healthDashboard.name",
+    descriptionKey: "template.healthDashboard.description",
+    placeholderKey: "template.healthDashboard.placeholder",
     badges: ["scheduler.stats", "memory.stats", "widgets"],
   },
   {
     id: "form",
     icon: "📝",
-    name: "Форма",
-    description: "Поля → Run → результат через agent.task",
-    placeholder:
-      "Например: переписать текст в нужном стиле; сгенерить regex по описанию; …",
+    nameKey: "template.form.name",
+    descriptionKey: "template.form.description",
+    placeholderKey: "template.form.placeholder",
     badges: ["form", "agent.task"],
   },
   {
     id: "api-client",
     icon: "🌐",
-    name: "API-клиент",
-    description: "Запросы к внешнему API через net.fetch",
-    placeholder:
-      "Например: показать issues из github.com/owner/repo; конвертер валют через open.er-api.com; …",
+    nameKey: "template.apiClient.name",
+    descriptionKey: "template.apiClient.description",
+    placeholderKey: "template.apiClient.placeholder",
     badges: ["net.fetch", "network"],
   },
   {
     id: "automation",
     icon: "⏱",
-    name: "Автоматизация",
-    description: "Расписание, action и виджет для фоновой задачи",
-    placeholder:
-      "Например: раз в час проверять важные письма и сохранять краткую сводку; каждое утро собирать статус проектов; …",
+    nameKey: "template.automation.name",
+    descriptionKey: "template.automation.description",
+    placeholderKey: "template.automation.placeholder",
     badges: ["schedules", "actions", "widgets"],
   },
   {
     id: "node-server",
     icon: "🚀",
-    name: "Node-сервер",
-    description: "runtime=server: своё backend на Node.js stdlib",
-    placeholder:
-      "Например: WebSocket-чат комната; sqlite-просмотрщик; превью markdown; …",
+    nameKey: "template.nodeServer.name",
+    descriptionKey: "template.nodeServer.description",
+    placeholderKey: "template.nodeServer.placeholder",
     badges: ["server", "stdlib"],
   },
 ];
@@ -2055,14 +2060,14 @@ type TrashEntry = {
   original_root: string;
 };
 
-function formatAgo(ms: number): string {
-  if (ms < 60_000) return "только что";
+function formatAgo(ms: number, t: Translate): string {
+  if (ms < 60_000) return t("apps.justNow");
   const min = Math.floor(ms / 60_000);
-  if (min < 60) return `${min} мин назад`;
+  if (min < 60) return t("apps.minutesAgo", { count: min });
   const h = Math.floor(min / 60);
-  if (h < 24) return `${h} ч назад`;
+  if (h < 24) return t("apps.hoursAgo", { count: h });
   const d = Math.floor(h / 24);
-  return `${d} дн назад`;
+  return t("apps.daysAgo", { count: d });
 }
 
 function AppsScreen({
@@ -2080,6 +2085,7 @@ function AppsScreen({
   onOpenApp: (id: string) => void;
   onOpenTopic: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [items, setItems] = useState<AppManifest[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -2091,6 +2097,8 @@ function AppsScreen({
   const [trash, setTrash] = useState<TrashEntry[]>([]);
   const [showTrash, setShowTrash] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const selectedTemplate =
+    TEMPLATES.find((item) => item.id === template) ?? TEMPLATES[0];
 
   useEffect(() => {
     if (!openCreate) return;
@@ -2108,7 +2116,7 @@ function AppsScreen({
     setError(null);
     try {
       const path = await invoke<string | null>("pick_open_file", {
-        title: "Импорт .reflexapp",
+        title: t("apps.importTitle"),
         filterName: "Reflex App",
         filterExtensions: ["reflexapp", "zip"],
       });
@@ -2128,12 +2136,12 @@ function AppsScreen({
 
   async function refresh() {
     try {
-      const [list, t] = await Promise.all([
+      const [list, trashed] = await Promise.all([
         invoke<AppManifest[]>("list_apps"),
         invoke<TrashEntry[]>("list_trashed_apps"),
       ]);
       setItems(list);
-      setTrash(t);
+      setTrash(trashed);
     } catch (e) {
       setError(String(e));
     }
@@ -2141,7 +2149,7 @@ function AppsScreen({
 
   async function deleteApp(appId: string, appName: string) {
     if (busyId) return;
-    if (!window.confirm(`Переместить "${appName}" в корзину?`)) return;
+    if (!window.confirm(t("apps.deleteConfirm", { name: appName }))) return;
     setBusyId(appId);
     setError(null);
     try {
@@ -2170,10 +2178,7 @@ function AppsScreen({
 
   async function purgeApp(trashId: string, name: string) {
     if (busyId) return;
-    if (
-      !window.confirm(`Удалить "${name}" окончательно? Это действие необратимо.`)
-    )
-      return;
+    if (!window.confirm(t("apps.purgeConfirm", { name }))) return;
     setBusyId(trashId);
     setError(null);
     try {
@@ -2194,10 +2199,10 @@ function AppsScreen({
         invoke<AppManifest[]>("list_apps"),
         invoke<TrashEntry[]>("list_trashed_apps"),
       ])
-        .then(([list, t]) => {
+        .then(([list, trashed]) => {
           if (!alive) return;
           setItems(list);
-          setTrash(t);
+          setTrash(trashed);
           const stillCreating = list.some((a) => a.ready === false);
           if (!stillCreating && timer) {
             clearInterval(timer);
@@ -2250,69 +2255,71 @@ function AppsScreen({
     <div className="apps-root">
       <header className="apps-header">
         <div className="apps-header-row">
-          <h1 className="section-title">Утилиты</h1>
+          <h1 className="section-title">{t("nav.apps")}</h1>
           <div className="apps-header-buttons">
             <button
               className="apps-create-btn"
               onClick={() => setShowModal(true)}
             >
-              + Новая утилита
+              {t("apps.newUtility")}
             </button>
             <button
               className="apps-trash-btn"
               onClick={() => setShowTrash((v) => !v)}
-              title="Удалённые приложения"
+              title={t("apps.deletedAppsTitle")}
             >
-              🗑 Корзина{trash.length > 0 ? ` (${trash.length})` : ""}
+              🗑 {t("apps.trash")}{trash.length > 0 ? ` (${trash.length})` : ""}
             </button>
           </div>
         </div>
-        <p className="apps-hint">
-          Утилиты, общающиеся с агентом через мост Reflex. Опиши что хочешь —
-          codex напишет.
-        </p>
+        <p className="apps-hint">{t("apps.headerHint")}</p>
       </header>
       {error && <div className="apps-error">{error}</div>}
       {showTrash && (
         <section className="apps-trash">
-          <h3 className="apps-trash-title">Корзина</h3>
+          <h3 className="apps-trash-title">{t("apps.trashTitle")}</h3>
           {trash.length === 0 ? (
-            <div className="apps-trash-empty">Пусто.</div>
+            <div className="apps-trash-empty">{t("apps.trashEmpty")}</div>
           ) : (
             <ul className="apps-trash-list">
-              {trash.map((t) => {
-                const ageMs = Date.now() - t.deleted_at_ms;
-                const ageStr = formatAgo(ageMs);
+              {trash.map((trashEntry) => {
+                const ageMs = Date.now() - trashEntry.deleted_at_ms;
+                const ageStr = formatAgo(ageMs, t);
                 return (
-                  <li key={t.trash_id} className="apps-trash-row">
+                  <li key={trashEntry.trash_id} className="apps-trash-row">
                     <span className="apps-trash-icon">
-                      {t.original_icon ?? "🧩"}
+                      {trashEntry.original_icon ?? "🧩"}
                     </span>
                     <div className="apps-trash-info">
-                      <div className="apps-trash-name">{t.original_name}</div>
+                      <div className="apps-trash-name">
+                        {trashEntry.original_name}
+                      </div>
                       <div className="apps-trash-meta">
-                        удалено {ageStr} ·{" "}
-                        <code>{t.original_id}</code>
+                        {t("apps.deletedAt", { age: ageStr })} ·{" "}
+                        <code>{trashEntry.original_id}</code>
                       </div>
                     </div>
                     <div className="apps-trash-actions">
                       <button
                         className="apps-trash-action"
-                        disabled={busyId === t.trash_id}
-                        onClick={() => void restoreApp(t.trash_id)}
-                        title="Восстановить"
+                        disabled={busyId === trashEntry.trash_id}
+                        onClick={() => void restoreApp(trashEntry.trash_id)}
+                        title={t("apps.restore")}
                       >
-                        ↩ Восстановить
+                        ↩ {t("apps.restore")}
                       </button>
                       <button
                         className="apps-trash-action apps-trash-purge"
-                        disabled={busyId === t.trash_id}
+                        disabled={busyId === trashEntry.trash_id}
                         onClick={() =>
-                          void purgeApp(t.trash_id, t.original_name)
+                          void purgeApp(
+                            trashEntry.trash_id,
+                            trashEntry.original_name,
+                          )
                         }
-                        title="Удалить навсегда"
+                        title={t("apps.deleteForever")}
                       >
-                        ✕ Навсегда
+                        ✕ {t("apps.deleteForever")}
                       </button>
                     </div>
                   </li>
@@ -2324,7 +2331,7 @@ function AppsScreen({
       )}
       {items.length === 0 ? (
         <div className="chat-empty">
-          <p>Утилит пока нет.</p>
+          <p>{t("apps.empty")}</p>
         </div>
       ) : (
         <div className="apps-grid">
@@ -2341,7 +2348,9 @@ function AppsScreen({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") onOpenApp(a.id);
                 }}
-                title={isReady ? "Открыть" : "Codex ещё пишет файлы — клик чтобы посмотреть"}
+                title={
+                  isReady ? t("apps.open") : t("apps.writingFiles")
+                }
               >
                 <button
                   className="apps-card-delete"
@@ -2350,7 +2359,7 @@ function AppsScreen({
                     void deleteApp(a.id, a.name);
                   }}
                   disabled={busyId === a.id}
-                  title="В корзину"
+                  title={t("apps.moveToTrash")}
                 >
                   ✕
                 </button>
@@ -2358,7 +2367,9 @@ function AppsScreen({
                 <div className="apps-card-name">
                   {a.name}
                   {!isReady && (
-                    <span className="apps-card-badge">создаётся…</span>
+                    <span className="apps-card-badge">
+                      {t("apps.creatingBadge")}
+                    </span>
                   )}
                 </div>
                 {a.description && (
@@ -2395,25 +2406,29 @@ function AppsScreen({
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             {step === "template" ? (
               <>
-                <h2 className="modal-title">Новая утилита Reflex</h2>
-                <p className="modal-hint">Выбери шаблон под задачу.</p>
+                <h2 className="modal-title">{t("apps.newUtilityTitle")}</h2>
+                <p className="modal-hint">{t("apps.chooseTemplate")}</p>
                 {targetProject && (
                   <div className="modal-context-chip">
-                    Будет привязана к {targetProject.name}
+                    {t("apps.linkedToProject", { name: targetProject.name })}
                   </div>
                 )}
                 <div className="template-grid">
-                  {TEMPLATES.map((t) => (
+                  {TEMPLATES.map((templateItem) => (
                     <button
-                      key={t.id}
-                      className={`template-card ${template === t.id ? "active" : ""}`}
-                      onClick={() => setTemplate(t.id)}
+                      key={templateItem.id}
+                      className={`template-card ${template === templateItem.id ? "active" : ""}`}
+                      onClick={() => setTemplate(templateItem.id)}
                     >
-                      <div className="template-icon">{t.icon}</div>
-                      <div className="template-name">{t.name}</div>
-                      <div className="template-desc">{t.description}</div>
+                      <div className="template-icon">{templateItem.icon}</div>
+                      <div className="template-name">
+                        {t(templateItem.nameKey)}
+                      </div>
+                      <div className="template-desc">
+                        {t(templateItem.descriptionKey)}
+                      </div>
                       <div className="template-badges">
-                        {t.badges.map((badge) => (
+                        {templateItem.badges.map((badge) => (
                           <span key={badge}>{badge}</span>
                         ))}
                       </div>
@@ -2425,43 +2440,38 @@ function AppsScreen({
                     className="modal-btn"
                     onClick={() => setShowModal(false)}
                   >
-                    Отмена
+                    {t("apps.cancel")}
                   </button>
                   <button
                     className="modal-btn"
                     onClick={() => void importBundle()}
                     disabled={importing}
-                    title="Импортировать .reflexapp бандл"
+                    title={t("apps.importBundleTitle")}
                   >
-                    {importing ? "…" : "📥 Импорт .reflexapp"}
+                    {importing ? "..." : `📥 ${t("apps.importBundle")}`}
                   </button>
                   <button
                     className="modal-btn modal-btn-primary"
                     onClick={() => setStep("describe")}
                   >
-                    Дальше →
+                    {t("apps.next")}
                   </button>
                 </div>
               </>
             ) : (
               <>
                 <h2 className="modal-title">
-                  {TEMPLATES.find((t) => t.id === template)?.icon}{" "}
-                  {TEMPLATES.find((t) => t.id === template)?.name}
+                  {selectedTemplate.icon} {t(selectedTemplate.nameKey)}
                 </h2>
-                <p className="modal-hint">
-                  Опиши, что должна делать утилита. Codex напишет файлы в фоне.
-                </p>
+                <p className="modal-hint">{t("apps.describeHint")}</p>
                 {targetProject && (
                   <div className="modal-context-chip">
-                    Будет привязана к {targetProject.name}
+                    {t("apps.linkedToProject", { name: targetProject.name })}
                   </div>
                 )}
                 <textarea
                   className="modal-input"
-                  placeholder={
-                    TEMPLATES.find((t) => t.id === template)?.placeholder ?? ""
-                  }
+                  placeholder={t(selectedTemplate.placeholderKey)}
                   value={description}
                   onChange={(e) => setDescription(e.currentTarget.value)}
                   autoFocus
@@ -2479,21 +2489,21 @@ function AppsScreen({
                     disabled={creating}
                     onClick={() => setStep("template")}
                   >
-                    ← Назад
+                    {t("apps.back")}
                   </button>
                   <button
                     className="modal-btn"
                     disabled={creating}
                     onClick={() => setShowModal(false)}
                   >
-                    Отмена
+                    {t("apps.cancel")}
                   </button>
                   <button
                     className="modal-btn modal-btn-primary"
                     disabled={creating || !description.trim()}
                     onClick={() => void submitCreate()}
                   >
-                    {creating ? "Создаю…" : "Создать (⌘↵)"}
+                    {creating ? t("apps.creating") : t("apps.createShortcut")}
                   </button>
                 </div>
               </>
@@ -2545,6 +2555,7 @@ function AppViewer({
   onApplyRevise: (instruction: string) => Promise<string | null>;
   onDeleted?: () => void;
 }) {
+  const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<AppStatus | null>(null);
@@ -2617,6 +2628,8 @@ function AppViewer({
       const haystack = [
         recipe.title,
         recipe.body,
+        bridgeRecipeTitle(recipe, t),
+        bridgeRecipeBody(recipe, t),
         recipe.example,
         ...recipe.calls,
       ]
@@ -2624,7 +2637,7 @@ function AppViewer({
         .toLowerCase();
       return haystack.includes(normalizedBridgeQuery);
     });
-  }, [normalizedBridgeQuery]);
+  }, [normalizedBridgeQuery, t]);
   const visibleBridgeApiCount = visibleBridgeApiGroups.reduce(
     (sum, group) => sum + group.methods.length,
     0,
@@ -3242,7 +3255,10 @@ function AppViewer({
 
       {manifestFacts.length > 0 && (
         <>
-          <div className="appviewer-capabilities" aria-label="Возможности manifest">
+          <div
+            className="appviewer-capabilities"
+            aria-label={t("appViewer.manifestCapabilities")}
+          >
             {manifestFacts.map((fact) => (
               <div
                 key={fact.key}
@@ -3259,33 +3275,50 @@ function AppViewer({
       )}
 
       {bridgeOpen && (
-        <div className="appviewer-bridge-panel" aria-label="Каталог runtime bridge">
+        <div
+          className="appviewer-bridge-panel"
+          aria-label={t("appViewer.bridgeCatalog")}
+        >
           <div className="appviewer-bridge-head">
             <span>Runtime bridge</span>
             <input
               value={bridgeQuery}
               onChange={(e) => setBridgeQuery(e.currentTarget.value)}
-              placeholder="Поиск методов, helpers, связок…"
+              placeholder={t("appViewer.bridgeSearch")}
             />
             <div className="appviewer-bridge-counts">
-              <span>{visibleBridgeApiCount}/{BRIDGE_API_COUNT} методов</span>
-              <span>{visibleBridgeHelperCount}/{BRIDGE_HELPER_COUNT} helpers</span>
+              <span>
+                {t("appViewer.methodsCount", {
+                  visible: visibleBridgeApiCount,
+                  total: BRIDGE_API_COUNT,
+                })}
+              </span>
+              <span>
+                {t("appViewer.helpersCount", {
+                  visible: visibleBridgeHelperCount,
+                  total: BRIDGE_HELPER_COUNT,
+                })}
+              </span>
             </div>
           </div>
           {!hasBridgeMatches ? (
-            <div className="appviewer-bridge-empty">Нет совпадений в bridge.</div>
+            <div className="appviewer-bridge-empty">
+              {t("appViewer.noBridgeMatches")}
+            </div>
           ) : (
             <>
               {visibleBridgeRecipes.length > 0 && (
                 <div className="appviewer-bridge-recipes">
                   {visibleBridgeRecipes.map((recipe) => (
                     <div className="appviewer-bridge-recipe" key={recipe.title}>
-                      <div className="appviewer-bridge-title">{recipe.title}</div>
-                      <p>{recipe.body}</p>
+                      <div className="appviewer-bridge-title">
+                        {bridgeRecipeTitle(recipe, t)}
+                      </div>
+                      <p>{bridgeRecipeBody(recipe, t)}</p>
                       <button
                         className={`appviewer-bridge-code-button ${copiedBridgeItem === recipe.example ? "copied" : ""}`}
                         onClick={() => void copyBridgeItem(recipe.example)}
-                        title="Скопировать"
+                        title={t("appViewer.copy")}
                       >
                         <code>{recipe.example}</code>
                       </button>
@@ -3295,18 +3328,22 @@ function AppViewer({
               )}
               {visibleBridgeApiGroups.length > 0 && (
                 <div className="appviewer-bridge-section">
-                  <div className="appviewer-bridge-section-label">Методы</div>
+                  <div className="appviewer-bridge-section-label">
+                    {t("appViewer.methods")}
+                  </div>
                   <div className="appviewer-bridge-grid">
                     {visibleBridgeApiGroups.map((group) => (
                       <div className="appviewer-bridge-group" key={group.title}>
-                        <div className="appviewer-bridge-title">{group.title}</div>
+                        <div className="appviewer-bridge-title">
+                          {bridgeCatalogTitle(group.title, t)}
+                        </div>
                         <div className="appviewer-bridge-list">
                           {group.methods.map((method) => (
                             <button
                               key={method}
                               className={`appviewer-bridge-chip ${copiedBridgeItem === method ? "copied" : ""}`}
                               onClick={() => void copyBridgeItem(method)}
-                              title="Скопировать"
+                              title={t("appViewer.copy")}
                             >
                               <code>{method}</code>
                             </button>
@@ -3319,18 +3356,22 @@ function AppViewer({
               )}
               {visibleBridgeHelperGroups.length > 0 && (
                 <div className="appviewer-bridge-section">
-                  <div className="appviewer-bridge-section-label">Хелперы</div>
+                  <div className="appviewer-bridge-section-label">
+                    {t("appViewer.helpers")}
+                  </div>
                   <div className="appviewer-bridge-grid">
                     {visibleBridgeHelperGroups.map((group) => (
                       <div className="appviewer-bridge-group" key={group.title}>
-                        <div className="appviewer-bridge-title">{group.title}</div>
+                        <div className="appviewer-bridge-title">
+                          {bridgeCatalogTitle(group.title, t)}
+                        </div>
                         <div className="appviewer-bridge-list">
                           {group.helpers.map((helper) => (
                             <button
                               key={helper}
                               className={`appviewer-bridge-chip ${copiedBridgeItem === helper ? "copied" : ""}`}
                               onClick={() => void copyBridgeItem(helper)}
-                              title="Скопировать"
+                              title={t("appViewer.copy")}
                             >
                               <code>{helper}</code>
                             </button>
