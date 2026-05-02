@@ -8,10 +8,14 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
 const MAX_RECURSION_DEPTH: usize = 8;
-const SCHEDULER_DIALOG_BLACKLIST: &[&str] = &[
+const SCHEDULE_STEP_METHOD_BLACKLIST: &[&str] = &[
     "dialog.openDirectory",
     "dialog.openFile",
     "dialog.saveFile",
+    "scheduler.runNow",
+    "scheduler.run_now",
+    "scheduler.setPaused",
+    "scheduler.set_paused",
 ];
 
 tokio::task_local! {
@@ -129,7 +133,7 @@ async fn run_workflow_inner(
         "input": initial_input.unwrap_or(Value::Null),
     });
 
-    let blacklist_dialogs = matches!(caller, WorkflowCaller::Scheduler { .. });
+    let block_unattended_methods = matches!(caller, WorkflowCaller::Scheduler { .. });
     let mut last_output: Value = Value::Null;
     let mut errored = false;
 
@@ -139,7 +143,9 @@ async fn run_workflow_inner(
             .clone()
             .unwrap_or_else(|| format!("step_{idx}"));
 
-        if blacklist_dialogs && SCHEDULER_DIALOG_BLACKLIST.contains(&step.method.as_str()) {
+        if block_unattended_methods
+            && SCHEDULE_STEP_METHOD_BLACKLIST.contains(&step.method.as_str())
+        {
             let now = now_ms();
             record.steps.push(StepTrace {
                 name: step_name.clone(),
@@ -150,12 +156,12 @@ async fn run_workflow_inner(
                 output_preview: None,
                 output_size: 0,
                 error: Some(format!(
-                    "dialog method '{}' not allowed in scheduler workflows",
+                    "method '{}' not allowed in scheduler workflows",
                     step.method
                 )),
             });
             record.status = "error".into();
-            record.error = Some("dialog method blocked".into());
+            record.error = Some("method blocked".into());
             errored = true;
             break;
         }

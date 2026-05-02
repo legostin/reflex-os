@@ -797,6 +797,18 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexManifestUpdate = function(patch) {
     return reflexInvokeRaw('manifest.update', {patch: patch || {}});
   };
+  window.reflexSchedulerList = function(params) {
+    return reflexInvokeRaw('scheduler.list', params || {});
+  };
+  window.reflexSchedulerRunNow = function(scheduleId) {
+    return reflexInvokeRaw('scheduler.runNow', {scheduleId: scheduleId});
+  };
+  window.reflexSchedulerSetPaused = function(scheduleId, paused) {
+    return reflexInvokeRaw('scheduler.setPaused', {scheduleId: scheduleId, paused: !!paused});
+  };
+  window.reflexSchedulerRuns = function(params) {
+    return reflexInvokeRaw('scheduler.runs', params || {});
+  };
   window.reflexMemorySave = function(params) {
     return reflexInvokeRaw('memory.save', params || {});
   };

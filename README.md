@@ -48,6 +48,10 @@ The injected runtime overlay provides:
 - `window.reflexSystemContext()`
 - `window.reflexManifestGet()`
 - `window.reflexManifestUpdate(patch)`
+- `window.reflexSchedulerList(params)`
+- `window.reflexSchedulerRunNow(scheduleId)`
+- `window.reflexSchedulerSetPaused(scheduleId, paused)`
+- `window.reflexSchedulerRuns(params)`
 - `window.reflexMemorySave(params)`
 - `window.reflexMemoryList(params)`
 - `window.reflexMemoryRecall(queryOrParams)`
@@ -79,6 +83,19 @@ Core methods:
 - `apps.invoke({ app_id, action_id, params })`.
 - `apps.list_actions({ app_id?, include_steps? })`.
 
+Scheduler methods:
+
+- `scheduler.list({ appId?, includeAll? })`.
+- `scheduler.runNow({ scheduleId })`; accepts a local schedule id or
+  `<app_id>::<schedule_id>`.
+- `scheduler.setPaused({ scheduleId, paused })`.
+- `scheduler.runs({ limit?, beforeTs?, appId?, includeAll? })`.
+- `scheduler.runDetail({ runId })`.
+
+Apps can inspect and control their own schedules without extra permissions.
+Cross-app scheduler access requires `scheduler.read:*`, `scheduler.run:<app>`,
+`scheduler.write:<app>::<schedule>`, or `scheduler:*`.
+
 Memory methods:
 
 - `memory.save({ scope?, kind?, name, description?, body, tags?, projectId?, threadId? })`.
@@ -106,7 +123,8 @@ Apps can expose:
 
 Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*` are not
-valid inside schedules.
+valid inside schedules. `scheduler.runNow` and `scheduler.setPaused` are also
+blocked inside schedule steps to prevent unattended recursive runs.
 
 ## Development
 

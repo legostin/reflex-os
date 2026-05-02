@@ -559,6 +559,7 @@ fn app_revise(
   • agent.stream({{prompt}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}\n\
   • storage.get/set, fs.read/write (в app-папке)\n\
   • memory.save/list/delete/search/recall/indexPath/pathStatus/forgetPath — память Reflex; project scope по умолчанию, global требует permission memory.global.read/write\n\
+  • scheduler.list/runNow/setPaused/runs/runDetail — читать и управлять своими расписаниями; чужие требуют permission scheduler.read/run/write\n\
   • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
   • notify.show — macOS push\n\
   • net.fetch({{url, method?, headers?, body?}}) — требует manifest.network.allowed_hosts (поддержка \"*.foo.com\")\n\
@@ -938,6 +939,13 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  dialog.openFile({title?, defaultPath?, filters?, multiple?}) -> {path|null} или {paths:[]}  — нативное окно выбора файла. filters: [{name, extensions:[\"txt\",...]}]\n");
     p.push_str("  dialog.saveFile({title?, defaultPath?, filters?, content?}) -> {path|null}            — окно \"сохранить как\". Если передан content (string) — файл сразу записывается на выбранный путь\n");
     p.push_str("  net.fetch({url, method?, headers?, body?, timeoutMs?}) -> {status, headers, body, encoding}  — HTTP-запрос. Хост ОБЯЗАН быть в manifest.network.allowed_hosts (поддержка \"*.example.com\"). Body — string, либо JSON (auto-serialize). encoding=\"utf8\"|\"base64\".\n\n");
+    p.push_str("SCHEDULER API — панель или widget могут показывать и контролировать автоматизации без ручного JSON.\n");
+    p.push_str("  scheduler.list({appId?, includeAll?}) -> ScheduleListItem[] — по умолчанию только расписания текущего app\n");
+    p.push_str("  scheduler.runNow({scheduleId}) -> {ok, schedule_id} — scheduleId может быть local id или \"app::schedule\"\n");
+    p.push_str("  scheduler.setPaused({scheduleId, paused}) -> {ok, schedule_id, paused}\n");
+    p.push_str("  scheduler.runs({limit?, beforeTs?, appId?, includeAll?}) -> RunSummary[]\n");
+    p.push_str("  scheduler.runDetail({runId}) -> RunRecord|null\n");
+    p.push_str("- Чужие app/schedule требуют manifest.permissions: \"scheduler.read:*\", \"scheduler.run:<app>\", \"scheduler.write:<app>::<schedule>\" или \"scheduler:*\".\n\n");
     p.push_str("MEMORY API — используй для долгой памяти, RAG и проектного контекста вместо собственного JSON-хака.\n");
     p.push_str("  memory.save({scope?, kind?, name, description?, body, tags?, projectId?, threadId?}) -> MemoryNote\n");
     p.push_str("  memory.list({scope?, filter?, projectId?, threadId?}) -> MemoryNote[]; filter: {kind?, tag?, query?}\n");
@@ -947,7 +955,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  memory.indexPath({path, projectId?}) -> {indexed, skipped}; memory.pathStatus({path, projectId?}); memory.forgetPath({path, projectId?})\n");
     p.push_str("- scope: \"project\" по умолчанию. Если app привязан ровно к одному проекту, project scope попадёт в память этого проекта; иначе — в память самого app.\n");
     p.push_str("- Для выбора проекта вызови system.context() и передай projectId из linked_projects. Для global scope добавь permission \"memory.global.read\" или \"memory.global.write\".\n");
-    p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexManifestGet(), reflexManifestUpdate(patch), reflexMemorySave(params), reflexMemoryList(params), reflexMemoryRecall(queryOrParams), reflexAppsInvoke(appId, actionId, params), reflexEventOn/Off/Emit.\n\n");
+    p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexManifestGet(), reflexManifestUpdate(patch), reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexMemorySave(params), reflexMemoryList(params), reflexMemoryRecall(queryOrParams), reflexAppsInvoke(appId, actionId, params), reflexEventOn/Off/Emit.\n\n");
     p.push_str("MANIFEST.network (для net.fetch):\n");
     p.push_str("  { \"network\": { \"allowed_hosts\": [\"api.example.com\", \"*.foo.com\"] } }\n\n");
     p.push_str("MANIFEST.schedules — повторяемые задачи. Reflex запускает их сам, даже когда окно app закрыто (Reflex живёт в трее).\n");
@@ -967,7 +975,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  }\n");
     p.push_str("- Шаги исполняются по очереди. Шаблоны {{steps.X.field}} подставляют результаты предыдущих шагов. Если плейсхолдер занимает всю строку — тип значения сохраняется (объект остаётся объектом).\n");
     p.push_str("- В steps НЕЛЬЗЯ использовать dialog.openDirectory/openFile/saveFile — у автоматизаций нет UI.\n");
-    p.push_str("- Все остальные методы (agent.*, storage.*, fs.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*) работают как обычно.\n");
+    p.push_str("- Все остальные методы (agent.*, storage.*, fs.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/runDetail) работают как обычно. scheduler.runNow/setPaused в schedule.steps заблокированы, чтобы не запускать рекурсивные unattended-циклы.\n");
     p.push_str("- Если задача звучит как «раз в N минут/часов делать X» — это schedule, не кнопка в UI.\n\n");
 
     p.push_str("MANIFEST.actions — публичные операции, которые могут вызывать ДРУГИЕ apps через apps.invoke.\n");
@@ -995,7 +1003,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("    }]\n");
     p.push_str("  }\n");
     p.push_str("- Каждый widget.entry — отдельный HTML-файл в папке app, обычно `widgets/<id>.html`.\n");
-    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexSystemContext, reflexManifestGet, reflexMemoryRecall, reflexEventOn/Emit, reflexAppsInvoke).\n");
+    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexSystemContext, reflexManifestGet, reflexSchedulerList/RunNow/SetPaused/Runs, reflexMemoryRecall, reflexEventOn/Emit, reflexAppsInvoke).\n");
     p.push_str("- Виджет компактный: тёмная прозрачная подложка (background:transparent), html/body высотой 100%, padding 12-14px, без своих рамок (рамки рисует grid).\n");
     p.push_str("- Если данные обновляются часто — сам ставь setInterval на 5-30 сек.\n");
     p.push_str("- Если виджет читает данные другой утилиты — используй reflexAppsInvoke('<app>','<action>',{...}); НЕ дублируй сбор данных.\n\n");
@@ -1013,6 +1021,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  window.reflexInvoke(method, params)                      // универсальный вызов bridge\n");
     p.push_str("  window.reflexSystemContext()\n");
     p.push_str("  window.reflexManifestGet(), reflexManifestUpdate(patch)\n");
+    p.push_str("  window.reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params)\n");
     p.push_str("  window.reflexMemorySave(params), reflexMemoryList(params), reflexMemoryRecall(queryOrParams)\n");
     p.push_str("  window.reflexAppsInvoke(appId, actionId, params)         // returns Promise\n");
     p.push_str("Permissions для apps.invoke декларируется в manifest.permissions:\n");

@@ -511,6 +511,17 @@ pub async fn dispatch_app_method(
                 .unwrap_or(false);
             list_actions(app, target_id.as_deref(), include_steps)
         }
+        "scheduler.list" => scheduler_list_for_app(app, app_id, params),
+        "scheduler.runNow" | "scheduler.run_now" => {
+            scheduler_run_now_for_app(app, app_id, params).await
+        }
+        "scheduler.setPaused" | "scheduler.set_paused" => {
+            scheduler_set_paused_for_app(app, app_id, params).await
+        }
+        "scheduler.runs" => scheduler_runs_for_app(app, app_id, params),
+        "scheduler.runDetail" | "scheduler.run_detail" => {
+            scheduler_run_detail_for_app(app, app_id, params)
+        }
         "memory.save" => memory_save_for_app(app, app_id, params).await,
         "memory.list" => memory_list_for_app(app, app_id, params),
         "memory.delete" => memory_delete_for_app(app, app_id, params),
@@ -1190,4 +1201,234 @@ fn list_actions(
         }));
     }
     Ok(serde_json::Value::Array(out))
+}
+
+fn scheduler_list_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let include_all = bool_param(&params, "include_all", "includeAll").unwrap_or(false);
+    let target_app = string_param(&params, "app_id", "appId");
+    let filter_app = if include_all {
+        None
+    } else {
+        Some(target_app.as_deref().unwrap_or(app_id))
+    };
+
+    if include_all {
+        ensure_scheduler_app_access(app, app_id, "read", "*", None)?;
+    } else if let Some(target) = filter_app {
+        ensure_scheduler_app_access(app, app_id, "read", target, None)?;
+    }
+
+    let mut items = scheduler::commands::scheduler_list(app.clone())?;
+    if let Some(target) = filter_app {
+        items.retain(|item| item.app_id == target);
+    }
+    serde_json::to_value(items).map_err(|e| e.to_string())
+}
+
+async fn scheduler_run_now_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let raw = required_string_param(&params, "schedule_id", "scheduleId")?;
+    let (full_id, target_app, local_id) = resolve_schedule_target(app_id, &raw)?;
+    ensure_scheduler_schedule_exists(app, &target_app, &local_id)?;
+    ensure_scheduler_app_access(app, app_id, "run", &target_app, Some(&local_id))?;
+    scheduler::commands::scheduler_run_now(app.clone(), full_id.clone()).await?;
+    Ok(serde_json::json!({ "ok": true, "schedule_id": full_id }))
+}
+
+async fn scheduler_set_paused_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let raw = required_string_param(&params, "schedule_id", "scheduleId")?;
+    let paused = params
+        .get("paused")
+        .and_then(|v| v.as_bool())
+        .ok_or("missing paused")?;
+    let (full_id, target_app, local_id) = resolve_schedule_target(app_id, &raw)?;
+    ensure_scheduler_schedule_exists(app, &target_app, &local_id)?;
+    ensure_scheduler_app_access(app, app_id, "write", &target_app, Some(&local_id))?;
+    scheduler::commands::scheduler_set_paused(app.clone(), full_id.clone(), paused).await?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "schedule_id": full_id,
+        "paused": paused,
+    }))
+}
+
+fn scheduler_runs_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let include_all = bool_param(&params, "include_all", "includeAll").unwrap_or(false);
+    let target_app = string_param(&params, "app_id", "appId");
+    let filter_app = if include_all {
+        None
+    } else {
+        Some(target_app.as_deref().unwrap_or(app_id))
+    };
+
+    if include_all {
+        ensure_scheduler_app_access(app, app_id, "read", "*", None)?;
+    } else if let Some(target) = filter_app {
+        ensure_scheduler_app_access(app, app_id, "read", target, None)?;
+    }
+
+    let requested_limit = params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .unwrap_or(50)
+        .min(500);
+    let before_ts = params
+        .get("before_ts")
+        .or_else(|| params.get("beforeTs"))
+        .and_then(|v| v.as_u64());
+    let fetch_limit = if filter_app.is_some() {
+        500
+    } else {
+        requested_limit
+    };
+    let mut runs = scheduler::commands::scheduler_runs(app.clone(), Some(fetch_limit), before_ts)?;
+    if let Some(target) = filter_app {
+        runs.retain(|run| run.app_id == target);
+    }
+    runs.truncate(requested_limit);
+    serde_json::to_value(runs).map_err(|e| e.to_string())
+}
+
+fn scheduler_run_detail_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let run_id = required_string_param(&params, "run_id", "runId")?;
+    let record = scheduler::commands::scheduler_run_detail(app.clone(), run_id)?;
+    if let Some(record) = &record {
+        let local_schedule = record
+            .schedule_id
+            .as_deref()
+            .and_then(scheduler::split_full_id)
+            .map(|(_, local)| local);
+        ensure_scheduler_app_access(app, app_id, "read", &record.app_id, local_schedule)?;
+    }
+    serde_json::to_value(record).map_err(|e| e.to_string())
+}
+
+fn bool_param(params: &serde_json::Value, snake: &str, camel: &str) -> Option<bool> {
+    params
+        .get(snake)
+        .or_else(|| params.get(camel))
+        .and_then(|v| v.as_bool())
+}
+
+fn string_param(params: &serde_json::Value, snake: &str, camel: &str) -> Option<String> {
+    params
+        .get(snake)
+        .or_else(|| params.get(camel))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn required_string_param(
+    params: &serde_json::Value,
+    snake: &str,
+    camel: &str,
+) -> Result<String, String> {
+    string_param(params, snake, camel).ok_or_else(|| format!("missing {snake}"))
+}
+
+fn resolve_schedule_target(
+    caller_app_id: &str,
+    raw_id: &str,
+) -> Result<(String, String, String), String> {
+    if let Some((target_app, local_id)) = scheduler::split_full_id(raw_id) {
+        if target_app.trim().is_empty() || local_id.trim().is_empty() {
+            return Err("scheduleId must be <app>::<schedule> or a local schedule id".into());
+        }
+        return Ok((
+            scheduler::make_full_id(target_app.trim(), local_id.trim()),
+            target_app.trim().to_string(),
+            local_id.trim().to_string(),
+        ));
+    }
+    if raw_id.trim().is_empty() {
+        return Err("scheduleId must be non-empty".into());
+    }
+    let local_id = raw_id.trim().to_string();
+    Ok((
+        scheduler::make_full_id(caller_app_id, &local_id),
+        caller_app_id.to_string(),
+        local_id,
+    ))
+}
+
+fn ensure_scheduler_schedule_exists(
+    app: &AppHandle,
+    target_app: &str,
+    local_id: &str,
+) -> Result<(), String> {
+    scheduler::manifest::find_schedule(app, target_app, local_id)
+        .map(|_| ())
+        .ok_or_else(|| format!("schedule not found: {target_app}::{local_id}"))
+}
+
+fn ensure_scheduler_app_access(
+    app: &AppHandle,
+    caller_app_id: &str,
+    operation: &str,
+    target_app: &str,
+    local_schedule_id: Option<&str>,
+) -> Result<(), String> {
+    if target_app == caller_app_id {
+        return Ok(());
+    }
+    if scheduler_permission_allowed(app, caller_app_id, operation, target_app, local_schedule_id) {
+        return Ok(());
+    }
+    let target = match local_schedule_id {
+        Some(local) => format!("{target_app}::{local}"),
+        None => target_app.to_string(),
+    };
+    Err(format!(
+        "permission denied: scheduler.{operation} requires manifest.permissions entry 'scheduler.{operation}:{target}' or 'scheduler.{operation}:*'"
+    ))
+}
+
+fn scheduler_permission_allowed(
+    app: &AppHandle,
+    caller_app_id: &str,
+    operation: &str,
+    target_app: &str,
+    local_schedule_id: Option<&str>,
+) -> bool {
+    let manifest = match apps::read_manifest(app, caller_app_id) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    let operation_permission = format!("scheduler.{operation}");
+    let wildcard = format!("scheduler.{operation}:*");
+    let target_permission = format!("scheduler.{operation}:{target_app}");
+    let schedule_permission =
+        local_schedule_id.map(|local| format!("scheduler.{operation}:{target_app}::{local}"));
+    manifest.permissions.iter().any(|permission| {
+        permission == "*"
+            || permission == "scheduler:*"
+            || permission == &operation_permission
+            || permission == &wildcard
+            || permission == &target_permission
+            || schedule_permission
+                .as_ref()
+                .map(|exact| permission == exact)
+                .unwrap_or(false)
+    })
 }
