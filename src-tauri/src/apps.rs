@@ -801,6 +801,55 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexManifestUpdate = function(patch) {
     return reflexInvokeRaw('manifest.update', {patch: patch || {}});
   };
+  window.reflexAgentAsk = function(promptOrParams) {
+    var params = (typeof promptOrParams === 'string') ? {prompt: promptOrParams} : (promptOrParams || {});
+    return reflexInvokeRaw('agent.ask', params);
+  };
+  window.reflexAgentTask = function(promptOrParams) {
+    var params = (typeof promptOrParams === 'string') ? {prompt: promptOrParams} : (promptOrParams || {});
+    return reflexInvokeRaw('agent.task', params);
+  };
+  window.reflexAgentStream = function(promptOrParams) {
+    var params = (typeof promptOrParams === 'string') ? {prompt: promptOrParams} : (promptOrParams || {});
+    return reflexInvokeRaw('agent.stream', params);
+  };
+  window.reflexAgentStreamAbort = function(threadIdOrParams) {
+    var params = (typeof threadIdOrParams === 'string') ? {threadId: threadIdOrParams} : (threadIdOrParams || {});
+    return reflexInvokeRaw('agent.streamAbort', params);
+  };
+  window.reflexStorageGet = function(keyOrParams) {
+    var params = (typeof keyOrParams === 'string') ? {key: keyOrParams} : (keyOrParams || {});
+    return reflexInvokeRaw('storage.get', params);
+  };
+  window.reflexStorageSet = function(keyOrParams, value) {
+    var params = (typeof keyOrParams === 'string') ? {key: keyOrParams, value: value} : (keyOrParams || {});
+    return reflexInvokeRaw('storage.set', params);
+  };
+  window.reflexFsRead = function(pathOrParams) {
+    var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
+    return reflexInvokeRaw('fs.read', params);
+  };
+  window.reflexFsWrite = function(pathOrParams, content) {
+    var params = (typeof pathOrParams === 'string') ? {path: pathOrParams, content: content} : (pathOrParams || {});
+    return reflexInvokeRaw('fs.write', params);
+  };
+  window.reflexNetFetch = function(urlOrParams, options) {
+    var params = (typeof urlOrParams === 'string') ? Object.assign({url: urlOrParams}, options || {}) : (urlOrParams || {});
+    return reflexInvokeRaw('net.fetch', params);
+  };
+  window.reflexDialogOpenDirectory = function(params) {
+    return reflexInvokeRaw('dialog.openDirectory', params || {});
+  };
+  window.reflexDialogOpenFile = function(params) {
+    return reflexInvokeRaw('dialog.openFile', params || {});
+  };
+  window.reflexDialogSaveFile = function(params) {
+    return reflexInvokeRaw('dialog.saveFile', params || {});
+  };
+  window.reflexNotifyShow = function(titleOrParams, body) {
+    var params = (typeof titleOrParams === 'string') ? {title: titleOrParams, body: body || ''} : (titleOrParams || {});
+    return reflexInvokeRaw('notify.show', params);
+  };
   window.reflexProjectsList = function(params) {
     return reflexInvokeRaw('projects.list', params || {});
   };

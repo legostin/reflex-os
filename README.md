@@ -48,6 +48,19 @@ The injected runtime overlay provides:
 - `window.reflexSystemContext()`
 - `window.reflexManifestGet()`
 - `window.reflexManifestUpdate(patch)`
+- `window.reflexAgentAsk(promptOrParams)`
+- `window.reflexAgentTask(promptOrParams)`
+- `window.reflexAgentStream(promptOrParams)`
+- `window.reflexAgentStreamAbort(threadIdOrParams)`
+- `window.reflexStorageGet(keyOrParams)`
+- `window.reflexStorageSet(keyOrParams, value?)`
+- `window.reflexFsRead(pathOrParams)`
+- `window.reflexFsWrite(pathOrParams, content?)`
+- `window.reflexNetFetch(urlOrParams, options?)`
+- `window.reflexDialogOpenDirectory(params)`
+- `window.reflexDialogOpenFile(params)`
+- `window.reflexDialogSaveFile(params)`
+- `window.reflexNotifyShow(titleOrParams, body?)`
 - `window.reflexProjectsList(params)`
 - `window.reflexTopicsList(params)`
 - `window.reflexBrowserInit(params)`
