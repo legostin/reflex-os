@@ -50,6 +50,10 @@ The injected runtime overlay provides:
 - `window.reflexManifestUpdate(patch)`
 - `window.reflexProjectsList(params)`
 - `window.reflexTopicsList(params)`
+- `window.reflexBrowserTabs()`
+- `window.reflexBrowserOpen(url)`
+- `window.reflexBrowserNavigate(tabId, url)`
+- `window.reflexBrowserReadText(tabId)`
 - `window.reflexSchedulerList(params)`
 - `window.reflexSchedulerRunNow(scheduleId)`
 - `window.reflexSchedulerSetPaused(scheduleId, paused)`
@@ -83,6 +87,9 @@ Core methods:
   `manifest.network.allowed_hosts`.
 - `projects.list({ includeAll? })`.
 - `topics.list({ projectId?, limit?, includeAll? })`.
+- `browser.init`, `browser.tabs.list`, `browser.open`, `browser.navigate`.
+- `browser.readText`, `browser.readOutline`, `browser.screenshot`.
+- `browser.clickText`, `browser.clickSelector`, `browser.fill`.
 - `events.emit`, `events.subscribe`, `events.unsubscribe`.
 - `apps.invoke({ app_id, action_id, params })`.
 - `apps.list_actions({ app_id?, include_steps? })`.
@@ -90,6 +97,9 @@ Core methods:
 Project/topic methods return sanitized summaries for linked projects by
 default. Cross-project overview requires `projects.read:*`,
 `topics.read:<project>`, or `topics.read:*` in `manifest.permissions`.
+Browser methods require `browser.read` for read-only inspection or
+`browser.control` for init/open/navigate/click/fill. Project browser state
+requires a linked project or `browser.project:<project>`.
 
 Scheduler methods:
 

@@ -6,7 +6,7 @@ use crate::memory::files;
 use crate::memory::rag;
 use crate::memory::schema::{MemoryKind, MemoryScope, ScopeRoots};
 use crate::memory::store::{self, ListFilter, SaveRequest};
-use crate::{memory, project, storage};
+use crate::{browser, memory, project, storage};
 use crate::scheduler;
 use crate::QuickContext;
 use std::path::{Path, PathBuf};
@@ -513,6 +513,27 @@ pub async fn dispatch_app_method(
         }
         "projects.list" => projects_list_for_app(app, app_id, params),
         "topics.list" | "threads.list" => topics_list_for_app(app, app_id, params),
+        "browser.init" => browser_init_for_app(app, app_id, params).await,
+        "browser.tabs.list" | "browser.tabsList" => {
+            ensure_browser_permission(app, app_id, "read")?;
+            browser::browser_tabs_list(app.clone()).await
+        }
+        "browser.tab.open" | "browser.open" => browser_open_for_app(app, app_id, params).await,
+        "browser.navigate" => browser_navigate_for_app(app, app_id, params).await,
+        "browser.readText" | "browser.read_text" => {
+            browser_read_text_for_app(app, app_id, params).await
+        }
+        "browser.readOutline" | "browser.read_outline" => {
+            browser_read_outline_for_app(app, app_id, params).await
+        }
+        "browser.screenshot" => browser_screenshot_for_app(app, app_id, params).await,
+        "browser.clickText" | "browser.click_text" => {
+            browser_click_text_for_app(app, app_id, params).await
+        }
+        "browser.clickSelector" | "browser.click_selector" => {
+            browser_click_selector_for_app(app, app_id, params).await
+        }
+        "browser.fill" => browser_fill_for_app(app, app_id, params).await,
         "scheduler.list" => scheduler_list_for_app(app, app_id, params),
         "scheduler.runNow" | "scheduler.run_now" => {
             scheduler_run_now_for_app(app, app_id, params).await
@@ -1424,6 +1445,156 @@ fn scoped_permission_allowed(
             || permission == &family_wildcard
             || permission == &scope_wildcard
             || permission == &exact
+    })
+}
+
+async fn browser_init_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let project_id = string_param(&params, "project_id", "projectId");
+    ensure_browser_project_access(app, app_id, project_id.as_deref())?;
+    let headless = bool_param(&params, "headless", "headless");
+    browser::browser_init(app.clone(), headless, project_id).await
+}
+
+async fn browser_open_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let url = string_param(&params, "url", "url");
+    browser::browser_tab_open(app.clone(), url).await
+}
+
+async fn browser_navigate_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    let url = required_string_param(&params, "url", "url")?;
+    browser::browser_navigate(app.clone(), tab_id, url).await
+}
+
+async fn browser_read_text_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "read")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    browser::browser_read_text(app.clone(), tab_id).await
+}
+
+async fn browser_read_outline_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "read")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    browser::browser_read_outline(app.clone(), tab_id).await
+}
+
+async fn browser_screenshot_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "read")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    let full_page = bool_param(&params, "full_page", "fullPage");
+    browser::browser_screenshot(app.clone(), tab_id, full_page).await
+}
+
+async fn browser_click_text_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    let text = required_string_param(&params, "text", "text")?;
+    let exact = bool_param(&params, "exact", "exact");
+    browser::browser_click_text(app.clone(), tab_id, text, exact).await
+}
+
+async fn browser_click_selector_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    let selector = required_string_param(&params, "selector", "selector")?;
+    browser::browser_click_selector(app.clone(), tab_id, selector).await
+}
+
+async fn browser_fill_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_browser_permission(app, app_id, "control")?;
+    let tab_id = required_string_param(&params, "tab_id", "tabId")?;
+    let selector = required_string_param(&params, "selector", "selector")?;
+    let value = required_string_param(&params, "value", "value")?;
+    browser::browser_fill(app.clone(), tab_id, selector, value).await
+}
+
+fn ensure_browser_project_access(
+    app: &AppHandle,
+    app_id: &str,
+    project_id: Option<&str>,
+) -> Result<(), String> {
+    let Some(project_id) = project_id else {
+        return Ok(());
+    };
+    let target = project::get_by_id(app, project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    if project_is_linked_to_app(app, app_id, &target)
+        || scoped_permission_allowed(app, app_id, "browser.project", &target.id)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "permission denied: browser project state requires linked project or manifest.permissions entry 'browser.project:{}'",
+            target.id
+        ))
+    }
+}
+
+fn ensure_browser_permission(
+    app: &AppHandle,
+    app_id: &str,
+    operation: &str,
+) -> Result<(), String> {
+    if browser_permission_allowed(app, app_id, operation) {
+        Ok(())
+    } else {
+        Err(format!(
+            "permission denied: browser.{operation} requires manifest.permissions entry 'browser.{operation}' or 'browser:*'"
+        ))
+    }
+}
+
+fn browser_permission_allowed(app: &AppHandle, app_id: &str, operation: &str) -> bool {
+    let manifest = match apps::read_manifest(app, app_id) {
+        Ok(manifest) => manifest,
+        Err(_) => return false,
+    };
+    let exact = format!("browser.{operation}");
+    manifest.permissions.iter().any(|permission| {
+        permission == "*"
+            || permission == "browser:*"
+            || permission == &exact
+            || (operation == "read" && permission == "browser.control")
     })
 }
 

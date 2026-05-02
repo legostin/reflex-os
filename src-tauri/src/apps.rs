@@ -803,6 +803,18 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexTopicsList = function(params) {
     return reflexInvokeRaw('topics.list', params || {});
   };
+  window.reflexBrowserTabs = function() {
+    return reflexInvokeRaw('browser.tabs.list', {});
+  };
+  window.reflexBrowserOpen = function(url) {
+    return reflexInvokeRaw('browser.open', {url: url || null});
+  };
+  window.reflexBrowserNavigate = function(tabId, url) {
+    return reflexInvokeRaw('browser.navigate', {tabId: tabId, url: url});
+  };
+  window.reflexBrowserReadText = function(tabId) {
+    return reflexInvokeRaw('browser.readText', {tabId: tabId});
+  };
   window.reflexSchedulerList = function(params) {
     return reflexInvokeRaw('scheduler.list', params || {});
   };

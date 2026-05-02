@@ -86,6 +86,18 @@ const API_GROUPS = [
     ],
   },
   {
+    title: "Browser sidecar",
+    methods: [
+      "browser.init",
+      "browser.tabs.list",
+      "browser.open",
+      "browser.navigate",
+      "browser.readText",
+      "browser.screenshot",
+      "browser.fill",
+    ],
+  },
+  {
     title: "Нативный macOS",
     methods: [
       "dialog.openDirectory",
@@ -140,6 +152,9 @@ const PERMISSION_EXAMPLES = [
   "projects.read:*",
   "topics.read:<project>",
   "topics.read:*",
+  "browser.read",
+  "browser.control",
+  "browser.project:<project>",
   "apps.invoke:*",
   "apps.invoke:<app>",
   "scheduler.read:*",
