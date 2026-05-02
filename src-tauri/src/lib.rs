@@ -908,7 +908,8 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
         "dashboard" => Some(
             "Шаблон DASHBOARD:\n\
 - Кнопка \"Refresh\" вызывает `window.reflexAgentTask({prompt: \"...запрос за данными...\"})` и парсит JSON-ответ.\n\
-- Показывать данные в таблице или как summary-карточки.\n\
+- Для health/ops dashboard сначала проверь готовые APIs: `window.reflexSchedulerStats()`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsStatus(appId)`.\n\
+- Показывать данные в таблице или как summary-карточки; ошибки должны вести к деталям запуска/сервиса, если есть id.\n\
 - Кэшировать последний результат через `window.reflexStorageSet(\"lastResult\", data)`.\n",
         ),
         "form" => Some(

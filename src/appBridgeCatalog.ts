@@ -371,6 +371,13 @@ export const BRIDGE_RECIPE_CARDS = [
     example: "await reflexSchedulerUpsert({ id, cron, steps });",
   },
   {
+    title: "Health dashboard",
+    body: "Показывай состояние автоматизаций, RAG индекса и последнюю ошибку без ручного обхода логов.",
+    calls: ["scheduler.stats", "memory.stats", "widgets.upsert"],
+    example:
+      "const [jobs, memory] = await Promise.all([reflexSchedulerStats(), reflexMemoryStats({ projectId })]);",
+  },
+  {
     title: "Browser sidecar",
     body: "Включай project Browser MCP, открывай страницы, читай outline и заполняй формы.",
     calls: ["project.browser.setEnabled", "browser.open", "browser.fill"],
