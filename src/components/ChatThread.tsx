@@ -358,6 +358,66 @@ type AppCapabilityFact = {
   title: string;
 };
 
+const APP_BRIDGE_HELPER_GROUPS = [
+  {
+    title: "Core",
+    helpers: [
+      "reflexInvoke",
+      "reflexSystemContext",
+      "reflexManifestGet",
+      "reflexManifestUpdate",
+      "reflexCapabilities",
+    ],
+  },
+  {
+    title: "Agent",
+    helpers: [
+      "reflexAgentAsk",
+      "reflexAgentStartTopic",
+      "reflexAgentTask",
+      "reflexAgentStream",
+      "reflexAgentStreamAbort",
+    ],
+  },
+  {
+    title: "Data / IO",
+    helpers: [
+      "reflexStorageGet",
+      "reflexStorageSet",
+      "reflexFsRead",
+      "reflexFsWrite",
+      "reflexNetFetch",
+      "reflexDialogOpenFile",
+      "reflexDialogSaveFile",
+      "reflexNotifyShow",
+    ],
+  },
+  {
+    title: "Projects",
+    helpers: [
+      "reflexProjectsList",
+      "reflexTopicsList",
+      "reflexSkillsList",
+      "reflexMcpServers",
+      "reflexBrowserReadOutline",
+      "reflexBrowserScreenshot",
+    ],
+  },
+  {
+    title: "Automation",
+    helpers: [
+      "reflexSchedulerList",
+      "reflexSchedulerRunNow",
+      "reflexSchedulerRuns",
+      "reflexMemoryRecall",
+      "reflexAppsInvoke",
+      "reflexAppsListActions",
+      "reflexEventOn",
+      "reflexEventEmit",
+    ],
+  },
+] as const;
+
 function summarizeManifestValues(
   values: string[],
   empty: string,
@@ -2328,6 +2388,7 @@ function AppViewer({
   const [openingNested, setOpeningNested] = useState<"edit" | "new" | null>(null);
   const [showDiff, setShowDiff] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [bridgeOpen, setBridgeOpen] = useState(false);
   const [inspecting, setInspecting] = useState(false);
   const [pick, setPick] = useState<InspectorPick | null>(null);
   const [pickInstruction, setPickInstruction] = useState("");
@@ -2822,6 +2883,13 @@ function AppViewer({
               {logsOpen ? "▾ Logs" : "▸ Logs"}
             </button>
           )}
+          <button
+            className={`appviewer-btn ${bridgeOpen ? "appviewer-btn-primary" : ""}`}
+            onClick={() => setBridgeOpen((v) => !v)}
+            title="Показать runtime overlay helpers"
+          >
+            {bridgeOpen ? "▾ Bridge" : "▸ Bridge"}
+          </button>
           {!isServerRuntime && (
             <button
               className={`appviewer-btn ${inspecting ? "appviewer-btn-primary" : ""}`}
@@ -2869,6 +2937,21 @@ function AppViewer({
             >
               <span className="appviewer-capability-label">{fact.label}</span>
               <span className="appviewer-capability-value">{fact.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {bridgeOpen && (
+        <div className="appviewer-bridge-panel" aria-label="Runtime bridge helpers">
+          {APP_BRIDGE_HELPER_GROUPS.map((group) => (
+            <div className="appviewer-bridge-group" key={group.title}>
+              <div className="appviewer-bridge-title">{group.title}</div>
+              <div className="appviewer-bridge-list">
+                {group.helpers.map((helper) => (
+                  <code key={helper}>{helper}</code>
+                ))}
+              </div>
             </div>
           ))}
         </div>
