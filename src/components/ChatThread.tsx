@@ -2616,7 +2616,7 @@ function AppViewer({
   const entry = manifest?.entry ?? "index.html";
   const src = isServerRuntime
     ? serverPort
-      ? `http://localhost:${serverPort}/`
+      ? `reflexserver://${encodeURIComponent(appId)}/`
       : null
     : `reflexapp://localhost/${encodeURIComponent(appId)}/${entry}`;
   const sandbox = isServerRuntime

@@ -341,6 +341,21 @@ pub async fn status(runtimes: &AppRuntimes, app_id: &str) -> ServerStatus {
     }
 }
 
+pub async fn running_port(runtimes: &AppRuntimes, app_id: &str) -> Option<u16> {
+    let mut map = runtimes.servers.lock().await;
+    match map.get_mut(app_id) {
+        Some(entry) => match entry.child.try_wait() {
+            Ok(None) => Some(entry.port),
+            Ok(Some(code)) => {
+                entry.exit_code = code.code();
+                None
+            }
+            Err(_) => None,
+        },
+        None => None,
+    }
+}
+
 pub async fn logs(runtimes: &AppRuntimes, app_id: &str) -> LogsSnapshot {
     let map = runtimes.servers.lock().await;
     LogsSnapshot {

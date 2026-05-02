@@ -40,7 +40,8 @@ Every generated app has a `manifest.json` and one of two runtimes:
 
 - `static`: Reflex serves app files through `reflexapp://`.
 - `server`: Reflex starts `manifest.server.command`, passes `PORT` and
-  `REFLEX_PORT`, and embeds `http://localhost:PORT/`.
+  `REFLEX_PORT`, then embeds it through `reflexserver://<app-id>/` so HTML
+  still receives the runtime overlay.
 
 The injected runtime overlay provides:
 

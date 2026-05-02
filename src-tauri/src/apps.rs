@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io;
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
@@ -21,7 +21,7 @@ pub struct AppManifest {
     #[serde(default)]
     pub created_at_ms: u128,
     /// "static" (default) — отдаём файлы через reflexapp:// URI scheme.
-    /// "server" — запускаем процесс из manifest.server.command, iframe смотрит на http://localhost:PORT/
+    /// "server" — запускаем manifest.server.command, iframe смотрит на reflexserver://<app-id>/
     #[serde(default)]
     pub runtime: Option<String>,
     #[serde(default)]
@@ -988,6 +988,199 @@ pub fn inject_overlay_into_html(html: &[u8]) -> Vec<u8> {
     out.push_str(s);
     out.push_str(RUNTIME_OVERLAY_JS);
     out.into_bytes()
+}
+
+pub struct ProxiedResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+pub fn proxy_server_runtime_request(
+    port: u16,
+    request: &tauri::http::Request<Vec<u8>>,
+) -> Result<ProxiedResponse, String> {
+    let path = request
+        .uri()
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or("/");
+    let body = request.body();
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))
+        .map_err(|e| format!("connect server runtime: {e}"))?;
+
+    write!(
+        stream,
+        "{} {} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nAccept-Encoding: identity\r\n",
+        request.method().as_str(),
+        path,
+    )
+    .map_err(|e| e.to_string())?;
+
+    for (name, value) in request.headers() {
+        let key = name.as_str();
+        let lower = key.to_ascii_lowercase();
+        if matches!(
+            lower.as_str(),
+            "host" | "connection" | "content-length" | "transfer-encoding" | "accept-encoding"
+        ) {
+            continue;
+        }
+        let Ok(value) = value.to_str() else {
+            continue;
+        };
+        if value.contains('\r') || value.contains('\n') {
+            continue;
+        }
+        write!(stream, "{key}: {value}\r\n").map_err(|e| e.to_string())?;
+    }
+
+    if !body.is_empty() {
+        write!(stream, "Content-Length: {}\r\n", body.len()).map_err(|e| e.to_string())?;
+    }
+    write!(stream, "\r\n").map_err(|e| e.to_string())?;
+    if !body.is_empty() {
+        stream.write_all(body).map_err(|e| e.to_string())?;
+    }
+
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).map_err(|e| e.to_string())?;
+    parse_http_response(raw)
+}
+
+fn parse_http_response(raw: Vec<u8>) -> Result<ProxiedResponse, String> {
+    let header_end = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .ok_or_else(|| "server response missing headers".to_string())?;
+    let header_bytes = &raw[..header_end];
+    let mut body = raw[header_end + 4..].to_vec();
+    let header_text = String::from_utf8_lossy(header_bytes);
+    let mut lines = header_text.split("\r\n");
+    let status = lines
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .unwrap_or(502);
+    let mut headers = Vec::new();
+    let mut is_chunked = false;
+    let mut content_type = String::new();
+    let mut encoded = false;
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let name = name.trim().to_string();
+        let value = value.trim().to_string();
+        if name.eq_ignore_ascii_case("transfer-encoding")
+            && value.to_ascii_lowercase().contains("chunked")
+        {
+            is_chunked = true;
+            continue;
+        }
+    if name.eq_ignore_ascii_case("content-length")
+        || name.eq_ignore_ascii_case("connection")
+    {
+            continue;
+        }
+        if name.eq_ignore_ascii_case("content-type") {
+            content_type = value.to_ascii_lowercase();
+        }
+        if name.eq_ignore_ascii_case("content-encoding") {
+            encoded = true;
+        }
+        headers.push((name, value));
+    }
+
+    if is_chunked {
+        body = decode_chunked_body(&body)?;
+    }
+
+    if !encoded && content_type.contains("text/html") {
+        body = inject_overlay_into_html(&body);
+    }
+
+    Ok(ProxiedResponse {
+        status,
+        headers,
+        body,
+    })
+}
+
+fn decode_chunked_body(raw: &[u8]) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    loop {
+        let line_end = raw[pos..]
+            .windows(2)
+            .position(|w| w == b"\r\n")
+            .ok_or_else(|| "invalid chunked response".to_string())?
+            + pos;
+        let line = std::str::from_utf8(&raw[pos..line_end]).map_err(|e| e.to_string())?;
+        let size_hex = line.split(';').next().unwrap_or("").trim();
+        let size =
+            usize::from_str_radix(size_hex, 16).map_err(|e| format!("invalid chunk size: {e}"))?;
+        pos = line_end + 2;
+        if size == 0 {
+            break;
+        }
+        if raw.len() < pos + size {
+            return Err("truncated chunked response".into());
+        }
+        out.extend_from_slice(&raw[pos..pos + size]);
+        pos += size;
+        if raw.get(pos..pos + 2) == Some(b"\r\n") {
+            pos += 2;
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod proxy_tests {
+    use super::*;
+
+    #[test]
+    fn parse_http_response_injects_overlay_into_html() {
+        let raw = concat!(
+            "HTTP/1.1 200 OK\r\n",
+            "content-type: text/html; charset=utf-8\r\n",
+            "content-length: 28\r\n",
+            "\r\n",
+            "<html><body>ok</body></html>",
+        )
+        .as_bytes()
+        .to_vec();
+        let parsed = parse_http_response(raw).expect("parse");
+        let body = String::from_utf8(parsed.body).expect("utf8");
+        assert_eq!(parsed.status, 200);
+        assert!(body.contains("__reflexOverlay"));
+        assert!(body.contains("<body>ok"));
+    }
+
+    #[test]
+    fn parse_http_response_decodes_chunked_body() {
+        let raw = concat!(
+            "HTTP/1.1 200 OK\r\n",
+            "content-type: text/plain\r\n",
+            "transfer-encoding: chunked\r\n",
+            "\r\n",
+            "5\r\nhello\r\n",
+            "6\r\n world\r\n",
+            "0\r\n\r\n",
+        )
+        .as_bytes()
+        .to_vec();
+        let parsed = parse_http_response(raw).expect("parse");
+        assert_eq!(parsed.status, 200);
+        assert_eq!(parsed.body, b"hello world");
+        assert!(
+            parsed
+                .headers
+                .iter()
+                .all(|(name, _)| !name.eq_ignore_ascii_case("transfer-encoding"))
+        );
+    }
 }
 
 pub fn guess_mime(name: &str) -> &'static str {

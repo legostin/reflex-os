@@ -938,7 +938,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("1) static (по умолчанию): чистый front-end. iframe смотрит на reflexapp://localhost/<id>/<entry>. Нет своего бэкенда.\n");
     p.push_str("   - manifest: { runtime: \"static\", entry: \"index.html\" }  (либо просто опусти runtime).\n");
     p.push_str("   - Не подключай внешние CDN — только локальные файлы или inline.\n");
-    p.push_str("2) server: при открытии Reflex поднимает локальный веб-сервер из manifest.server.command, передавая порт через env REFLEX_PORT и PORT. iframe смотрит на http://localhost:PORT/.\n");
+    p.push_str("2) server: при открытии Reflex поднимает локальный веб-сервер из manifest.server.command, передавая порт через env REFLEX_PORT и PORT. iframe смотрит на reflexserver://<app-id>/, который проксирует локальный сервер и инжектит overlay.\n");
     p.push_str("   - manifest: { runtime: \"server\", server: { command: [\"node\", \"server.js\"], ready_timeout_ms: 15000 } }\n");
     p.push_str("   - cwd процесса = папка app. Сервер ОБЯЗАН слушать на process.env.PORT (или REFLEX_PORT).\n");
     p.push_str("   - Все зависимости (npm/pip и т.д.) должны быть либо vendored в app-папке, либо stdlib. Не предполагай глобальные npm install — пиши на чистом Node.js stdlib (http/fs/path) или Python stdlib (http.server/socketserver).\n");
@@ -2370,6 +2370,44 @@ pub fn run() {
                         .body(std::borrow::Cow::Owned(Vec::new()))
                         .unwrap()
                 }
+            }
+        })
+        .register_uri_scheme_protocol("reflexserver", |ctx, request| -> tauri::http::Response<std::borrow::Cow<'static, [u8]>> {
+            let app = ctx.app_handle();
+            let uri = request.uri();
+            let id = uri.host().unwrap_or("");
+            if id.is_empty() {
+                return tauri::http::Response::builder()
+                    .status(400)
+                    .body(std::borrow::Cow::Owned(Vec::new()))
+                    .unwrap();
+            }
+            let port = tauri::async_runtime::block_on(async {
+                let runtimes = app.state::<app_runtime::AppRuntimes>();
+                app_runtime::running_port(runtimes.inner(), id).await
+            });
+            let Some(port) = port else {
+                return tauri::http::Response::builder()
+                    .status(503)
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(std::borrow::Cow::Owned(b"server runtime is not running".to_vec()))
+                    .unwrap();
+            };
+            match apps::proxy_server_runtime_request(port, &request) {
+                Ok(proxied) => {
+                    let mut builder = tauri::http::Response::builder().status(proxied.status);
+                    for (name, value) in proxied.headers {
+                        builder = builder.header(name, value);
+                    }
+                    builder
+                        .body(std::borrow::Cow::Owned(proxied.body))
+                        .unwrap()
+                }
+                Err(e) => tauri::http::Response::builder()
+                    .status(502)
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(std::borrow::Cow::Owned(e.into_bytes()))
+                    .unwrap(),
             }
         })
         .plugin(tauri_plugin_notification::init())
