@@ -48,6 +48,8 @@ The injected runtime overlay provides:
 - `window.reflexSystemContext()`
 - `window.reflexManifestGet()`
 - `window.reflexManifestUpdate(patch)`
+- `window.reflexProjectsList(params)`
+- `window.reflexTopicsList(params)`
 - `window.reflexSchedulerList(params)`
 - `window.reflexSchedulerRunNow(scheduleId)`
 - `window.reflexSchedulerSetPaused(scheduleId, paused)`
@@ -79,9 +81,15 @@ Core methods:
 - `notify.show({ title, body })`.
 - `net.fetch({ url, method?, headers?, body?, timeoutMs? })`; requires
   `manifest.network.allowed_hosts`.
+- `projects.list({ includeAll? })`.
+- `topics.list({ projectId?, limit?, includeAll? })`.
 - `events.emit`, `events.subscribe`, `events.unsubscribe`.
 - `apps.invoke({ app_id, action_id, params })`.
 - `apps.list_actions({ app_id?, include_steps? })`.
+
+Project/topic methods return sanitized summaries for linked projects by
+default. Cross-project overview requires `projects.read:*`,
+`topics.read:<project>`, or `topics.read:*` in `manifest.permissions`.
 
 Scheduler methods:
 

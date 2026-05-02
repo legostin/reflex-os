@@ -6,7 +6,7 @@ use crate::memory::files;
 use crate::memory::rag;
 use crate::memory::schema::{MemoryKind, MemoryScope, ScopeRoots};
 use crate::memory::store::{self, ListFilter, SaveRequest};
-use crate::{memory, project};
+use crate::{memory, project, storage};
 use crate::scheduler;
 use crate::QuickContext;
 use std::path::{Path, PathBuf};
@@ -511,6 +511,8 @@ pub async fn dispatch_app_method(
                 .unwrap_or(false);
             list_actions(app, target_id.as_deref(), include_steps)
         }
+        "projects.list" => projects_list_for_app(app, app_id, params),
+        "topics.list" | "threads.list" => topics_list_for_app(app, app_id, params),
         "scheduler.list" => scheduler_list_for_app(app, app_id, params),
         "scheduler.runNow" | "scheduler.run_now" => {
             scheduler_run_now_for_app(app, app_id, params).await
@@ -1201,6 +1203,228 @@ fn list_actions(
         }));
     }
     Ok(serde_json::Value::Array(out))
+}
+
+fn projects_list_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let include_all = bool_param(&params, "include_all", "includeAll").unwrap_or(false);
+    if include_all {
+        ensure_scoped_permission(app, app_id, "projects.read", "*")?;
+    }
+
+    let projects = list_user_projects(app)?;
+    let out: Vec<serde_json::Value> = projects
+        .into_iter()
+        .filter(|project| include_all || can_read_project(app, app_id, project))
+        .map(|project| project_summary(&project))
+        .collect();
+    Ok(serde_json::Value::Array(out))
+}
+
+fn topics_list_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let include_all = bool_param(&params, "include_all", "includeAll").unwrap_or(false);
+    let target_project_id = string_param(&params, "project_id", "projectId");
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .unwrap_or(100)
+        .min(500);
+
+    let projects = list_user_projects(app)?;
+    let targets: Vec<project::Project> = if let Some(project_id) = target_project_id {
+        let project = projects
+            .into_iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| format!("project not found: {project_id}"))?;
+        ensure_topic_read_access(app, app_id, &project)?;
+        vec![project]
+    } else if include_all {
+        ensure_scoped_permission(app, app_id, "topics.read", "*")?;
+        projects
+    } else {
+        projects
+            .into_iter()
+            .filter(|project| can_read_topics(app, app_id, project))
+            .collect()
+    };
+
+    let mut out = Vec::new();
+    for project in targets {
+        let root = PathBuf::from(&project.root);
+        let threads = match storage::read_all_threads(&root) {
+            Ok(threads) => threads,
+            Err(e) => {
+                eprintln!("[reflex] app topics.list read_all_threads({}): {e}", project.root);
+                continue;
+            }
+        };
+        for thread in threads {
+            out.push(topic_summary(&project, &thread));
+        }
+    }
+    out.sort_by(|a, b| {
+        let a_ms = a
+            .get("created_at_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let b_ms = b
+            .get("created_at_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        b_ms.cmp(&a_ms)
+    });
+    out.truncate(limit);
+    Ok(serde_json::Value::Array(out))
+}
+
+fn list_user_projects(app: &AppHandle) -> Result<Vec<project::Project>, String> {
+    let apps_root = apps::apps_dir(app)
+        .ok()
+        .and_then(|path| path.canonicalize().ok());
+    let projects = project::list_registered(app).map_err(|e| e.to_string())?;
+    Ok(projects
+        .into_iter()
+        .filter(|project| {
+            if let Some(apps_root) = &apps_root {
+                if let Ok(root) = PathBuf::from(&project.root).canonicalize() {
+                    return !root.starts_with(apps_root);
+                }
+            }
+            true
+        })
+        .collect())
+}
+
+fn project_summary(project: &project::Project) -> serde_json::Value {
+    let mcp_server_names: Vec<String> = project
+        .mcp_servers
+        .as_ref()
+        .and_then(|value| value.as_object())
+        .map(|object| object.keys().cloned().collect())
+        .unwrap_or_default();
+    serde_json::json!({
+        "id": project.id,
+        "name": project.name,
+        "root": project.root,
+        "created_at_ms": project.created_at_ms,
+        "sandbox": project.sandbox,
+        "description": project.description,
+        "skills": project.skills,
+        "apps": project.apps,
+        "mcp_server_names": mcp_server_names,
+        "has_agent_instructions": project
+            .agent_instructions
+            .as_deref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false),
+    })
+}
+
+fn topic_summary(
+    project: &project::Project,
+    thread: &storage::StoredThread,
+) -> serde_json::Value {
+    let meta = &thread.meta;
+    serde_json::json!({
+        "project_id": project.id,
+        "project_name": project.name,
+        "project_root": project.root,
+        "thread_id": meta.id,
+        "title": meta.title,
+        "prompt": meta.prompt,
+        "goal": meta.goal,
+        "cwd": meta.cwd,
+        "created_at_ms": meta.created_at_ms,
+        "exit_code": meta.exit_code,
+        "done": meta.done,
+        "plan_mode": meta.plan_mode,
+        "plan_confirmed": meta.plan_confirmed,
+        "source": meta.source,
+        "event_count": thread.events.len(),
+        "browser_tabs_count": meta.browser_tabs.len(),
+    })
+}
+
+fn can_read_project(app: &AppHandle, app_id: &str, target: &project::Project) -> bool {
+    project_is_linked_to_app(app, app_id, target)
+        || scoped_permission_allowed(app, app_id, "projects.read", &target.id)
+}
+
+fn can_read_topics(app: &AppHandle, app_id: &str, target: &project::Project) -> bool {
+    project_is_linked_to_app(app, app_id, target)
+        || scoped_permission_allowed(app, app_id, "topics.read", &target.id)
+}
+
+fn ensure_topic_read_access(
+    app: &AppHandle,
+    app_id: &str,
+    target: &project::Project,
+) -> Result<(), String> {
+    if can_read_topics(app, app_id, target) {
+        Ok(())
+    } else {
+        Err(format!(
+            "permission denied: topics.read requires linked project or manifest.permissions entry 'topics.read:{}' / 'topics.read:*'",
+            target.id
+        ))
+    }
+}
+
+fn project_is_linked_to_app(app: &AppHandle, app_id: &str, target: &project::Project) -> bool {
+    if target.apps.iter().any(|id| id == app_id) {
+        return true;
+    }
+    let app_root = match apps::app_dir(app, app_id) {
+        Ok(root) => root,
+        Err(_) => return false,
+    };
+    same_path(&app_root, Path::new(&target.root))
+}
+
+fn ensure_scoped_permission(
+    app: &AppHandle,
+    app_id: &str,
+    scope: &str,
+    target: &str,
+) -> Result<(), String> {
+    if scoped_permission_allowed(app, app_id, scope, target) {
+        Ok(())
+    } else {
+        Err(format!(
+            "permission denied: {scope} requires manifest.permissions entry '{scope}:{target}' or '{scope}:*'"
+        ))
+    }
+}
+
+fn scoped_permission_allowed(
+    app: &AppHandle,
+    app_id: &str,
+    scope: &str,
+    target: &str,
+) -> bool {
+    let manifest = match apps::read_manifest(app, app_id) {
+        Ok(manifest) => manifest,
+        Err(_) => return false,
+    };
+    let family = scope.split('.').next().unwrap_or(scope);
+    let family_wildcard = format!("{family}:*");
+    let scope_wildcard = format!("{scope}:*");
+    let exact = format!("{scope}:{target}");
+    manifest.permissions.iter().any(|permission| {
+        permission == "*"
+            || permission == scope
+            || permission == &family_wildcard
+            || permission == &scope_wildcard
+            || permission == &exact
+    })
 }
 
 fn scheduler_list_for_app(

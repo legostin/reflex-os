@@ -558,6 +558,7 @@ fn app_revise(
   • agent.task({{prompt, sandbox?, cwd?}}) → {{threadId, result}} — изолированный sub-агент\n\
   • agent.stream({{prompt}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}\n\
   • storage.get/set, fs.read/write (в app-папке)\n\
+  • projects.list / topics.list — read-only обзор доступных проектов и топиков; чужие требуют permission projects.read/topics.read\n\
   • memory.save/list/delete/search/recall/indexPath/pathStatus/forgetPath — память Reflex; project scope по умолчанию, global требует permission memory.global.read/write\n\
   • scheduler.list/runNow/setPaused/runs/runDetail — читать и управлять своими расписаниями; чужие требуют permission scheduler.read/run/write\n\
   • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
@@ -948,6 +949,9 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  dialog.openFile({title?, defaultPath?, filters?, multiple?}) -> {path|null} или {paths:[]}  — нативное окно выбора файла. filters: [{name, extensions:[\"txt\",...]}]\n");
     p.push_str("  dialog.saveFile({title?, defaultPath?, filters?, content?}) -> {path|null}            — окно \"сохранить как\". Если передан content (string) — файл сразу записывается на выбранный путь\n");
     p.push_str("  net.fetch({url, method?, headers?, body?, timeoutMs?}) -> {status, headers, body, encoding}  — HTTP-запрос. Хост ОБЯЗАН быть в manifest.network.allowed_hosts (поддержка \"*.example.com\"). Body — string, либо JSON (auto-serialize). encoding=\"utf8\"|\"base64\".\n\n");
+    p.push_str("PROJECT/TOPIC API — используй для OS-dashboard, навигации и обзора работы агента.\n");
+    p.push_str("  projects.list({includeAll?}) -> ProjectSummary[] — по умолчанию только linked projects; includeAll требует permission \"projects.read:*\"\n");
+    p.push_str("  topics.list({projectId?, limit?, includeAll?}) -> TopicSummary[] — метаданные топиков без raw events; чужие проекты требуют permission \"topics.read:<project>\" или \"topics.read:*\"\n\n");
     p.push_str("SCHEDULER API — панель или widget могут показывать и контролировать автоматизации без ручного JSON.\n");
     p.push_str("  scheduler.list({appId?, includeAll?}) -> ScheduleListItem[] — по умолчанию только расписания текущего app\n");
     p.push_str("  scheduler.runNow({scheduleId}) -> {ok, schedule_id} — scheduleId может быть local id или \"app::schedule\"\n");
@@ -964,7 +968,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  memory.indexPath({path, projectId?}) -> {indexed, skipped}; memory.pathStatus({path, projectId?}); memory.forgetPath({path, projectId?})\n");
     p.push_str("- scope: \"project\" по умолчанию. Если app привязан ровно к одному проекту, project scope попадёт в память этого проекта; иначе — в память самого app.\n");
     p.push_str("- Для выбора проекта вызови system.context() и передай projectId из linked_projects. Для global scope добавь permission \"memory.global.read\" или \"memory.global.write\".\n");
-    p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexManifestGet(), reflexManifestUpdate(patch), reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexMemorySave(params), reflexMemoryList(params), reflexMemoryRecall(queryOrParams), reflexAppsInvoke(appId, actionId, params), reflexEventOn/Off/Emit.\n\n");
+    p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexManifestGet(), reflexManifestUpdate(patch), reflexProjectsList(params), reflexTopicsList(params), reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexMemorySave(params), reflexMemoryList(params), reflexMemoryRecall(queryOrParams), reflexAppsInvoke(appId, actionId, params), reflexEventOn/Off/Emit.\n\n");
     p.push_str("MANIFEST.network (для net.fetch):\n");
     p.push_str("  { \"network\": { \"allowed_hosts\": [\"api.example.com\", \"*.foo.com\"] } }\n\n");
     p.push_str("MANIFEST.schedules — повторяемые задачи. Reflex запускает их сам, даже когда окно app закрыто (Reflex живёт в трее).\n");
@@ -1012,7 +1016,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("    }]\n");
     p.push_str("  }\n");
     p.push_str("- Каждый widget.entry — отдельный HTML-файл в папке app, обычно `widgets/<id>.html`.\n");
-    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexSystemContext, reflexManifestGet, reflexSchedulerList/RunNow/SetPaused/Runs, reflexMemoryRecall, reflexEventOn/Emit, reflexAppsInvoke).\n");
+    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexSystemContext, reflexManifestGet, reflexProjectsList, reflexTopicsList, reflexSchedulerList/RunNow/SetPaused/Runs, reflexMemoryRecall, reflexEventOn/Emit, reflexAppsInvoke).\n");
     p.push_str("- Виджет компактный: тёмная прозрачная подложка (background:transparent), html/body высотой 100%, padding 12-14px, без своих рамок (рамки рисует grid).\n");
     p.push_str("- Если данные обновляются часто — сам ставь setInterval на 5-30 сек.\n");
     p.push_str("- Если виджет читает данные другой утилиты — используй reflexAppsInvoke('<app>','<action>',{...}); НЕ дублируй сбор данных.\n\n");
@@ -1030,6 +1034,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  window.reflexInvoke(method, params)                      // универсальный вызов bridge\n");
     p.push_str("  window.reflexSystemContext()\n");
     p.push_str("  window.reflexManifestGet(), reflexManifestUpdate(patch)\n");
+    p.push_str("  window.reflexProjectsList(params), reflexTopicsList(params)\n");
     p.push_str("  window.reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params)\n");
     p.push_str("  window.reflexMemorySave(params), reflexMemoryList(params), reflexMemoryRecall(queryOrParams)\n");
     p.push_str("  window.reflexAppsInvoke(appId, actionId, params)         // returns Promise\n");

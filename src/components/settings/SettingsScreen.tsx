@@ -79,6 +79,13 @@ const API_GROUPS = [
     ],
   },
   {
+    title: "Проекты и топики",
+    methods: [
+      "projects.list",
+      "topics.list",
+    ],
+  },
+  {
     title: "Нативный macOS",
     methods: [
       "dialog.openDirectory",
@@ -130,6 +137,9 @@ const PERMISSION_EXAMPLES = [
   "memory.global.read",
   "memory.global.write",
   "memory.project:*",
+  "projects.read:*",
+  "topics.read:<project>",
+  "topics.read:*",
   "apps.invoke:*",
   "apps.invoke:<app>",
   "scheduler.read:*",

@@ -797,6 +797,12 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexManifestUpdate = function(patch) {
     return reflexInvokeRaw('manifest.update', {patch: patch || {}});
   };
+  window.reflexProjectsList = function(params) {
+    return reflexInvokeRaw('projects.list', params || {});
+  };
+  window.reflexTopicsList = function(params) {
+    return reflexInvokeRaw('topics.list', params || {});
+  };
   window.reflexSchedulerList = function(params) {
     return reflexInvokeRaw('scheduler.list', params || {});
   };
