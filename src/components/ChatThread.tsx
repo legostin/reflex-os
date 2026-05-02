@@ -1331,17 +1331,11 @@ export default function ChatThread() {
             projects={projects}
             threads={threads}
             openAppIds={openAppIds}
-            activeProjectId={activeProjectId}
             onSelectProject={openProjectRoute}
             onSelectTopic={(id) => navigate({ kind: "topic", thread_id: id })}
             onSelectApp={(id) => navigate({ kind: "app", app_id: id })}
             onOpenApps={() => navigate({ kind: "apps" })}
-            onOpenMemory={() =>
-              navigate({
-                kind: "memory",
-                project_id: activeProjectId ?? undefined,
-              })
-            }
+            onOpenMemory={() => navigate({ kind: "memory" })}
             onCreateProject={() => void createNewProject()}
           />
         );
@@ -3850,7 +3844,6 @@ function HomeScreen({
   projects,
   threads,
   openAppIds,
-  activeProjectId,
   onSelectProject,
   onSelectTopic,
   onSelectApp,
@@ -3861,7 +3854,6 @@ function HomeScreen({
   projects: Project[];
   threads: Thread[];
   openAppIds: Set<string>;
-  activeProjectId: string | null;
   onSelectProject: (id: string) => void;
   onSelectTopic: (id: string) => void;
   onSelectApp: (id: string) => void;
@@ -3870,9 +3862,15 @@ function HomeScreen({
   onCreateProject: () => void;
 }) {
   const { t } = useI18n();
-  const activeProject = activeProjectId
-    ? projects.find((p) => p.id === activeProjectId) ?? projects[0] ?? null
-    : projects[0] ?? null;
+  const projectsRef = useRef<HTMLElement>(null);
+  const hasProjects = projects.length > 0;
+  const chooseProject = () => {
+    if (!hasProjects) {
+      onCreateProject();
+      return;
+    }
+    projectsRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
   const recent = threads
     .slice()
     .sort((a, b) => b.created_at_ms - a.created_at_ms)
@@ -3889,14 +3887,10 @@ function HomeScreen({
         <div className="home-start-actions">
           <button
             className="home-primary-action"
-            onClick={() =>
-              activeProject
-                ? onSelectProject(activeProject.id)
-                : onCreateProject()
-            }
+            onClick={chooseProject}
           >
-            {activeProject
-              ? t("home.openActiveProject", { name: activeProject.name })
+            {hasProjects
+              ? t("home.chooseProject")
               : t("home.createFirstProject")}
           </button>
           <button className="home-secondary-action" onClick={onOpenApps}>
@@ -3906,11 +3900,7 @@ function HomeScreen({
         <div className="home-guide-grid">
           <button
             className="home-guide-card"
-            onClick={() =>
-              activeProject
-                ? onSelectProject(activeProject.id)
-                : onCreateProject()
-            }
+            onClick={chooseProject}
           >
             <span className="home-guide-icon">💬</span>
             <span className="home-guide-title">{t("home.askInProject")}</span>
@@ -3939,7 +3929,7 @@ function HomeScreen({
         onSelectApp={onSelectApp}
         onOpenApps={onOpenApps}
       />
-      <section>
+      <section ref={projectsRef}>
         <div className="section-head">
           <h2 className="section-title">{t("home.projects")}</h2>
           <button className="apps-create-btn" onClick={onCreateProject}>

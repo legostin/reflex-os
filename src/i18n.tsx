@@ -202,7 +202,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "home.startTitle": "Start from the work, not the system",
     "home.startBody":
       "Choose a project for one-off tasks, open a utility for repeated work, or review memory when context needs cleanup.",
-    "home.openActiveProject": "Open {name}",
+    "home.chooseProject": "Choose a project",
     "home.createFirstProject": "Create first project",
     "home.askInProject": "Ask in a project",
     "home.askInProjectHint":
@@ -898,7 +898,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "home.startTitle": "Начинай с задачи, а не с устройства системы",
     "home.startBody":
       "Выбери проект для разовой работы, открой утилиту для повторяющегося процесса или проверь память, если контекст надо привести в порядок.",
-    "home.openActiveProject": "Открыть {name}",
+    "home.chooseProject": "Выбрать проект",
     "home.createFirstProject": "Создать первый проект",
     "home.askInProject": "Спросить в проекте",
     "home.askInProjectHint":
