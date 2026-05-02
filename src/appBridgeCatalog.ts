@@ -55,6 +55,8 @@ export const BRIDGE_API_GROUPS = [
   {
     title: "Нативный macOS",
     methods: [
+      "clipboard.readText",
+      "clipboard.writeText",
       "dialog.openDirectory",
       "dialog.openFile",
       "dialog.saveFile",
@@ -137,6 +139,8 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexFsList",
       "reflexFsWrite",
       "reflexFsDelete",
+      "reflexClipboardReadText",
+      "reflexClipboardWriteText",
       "reflexNetFetch",
       "reflexNotifyShow",
       "reflexDialogOpenDirectory",

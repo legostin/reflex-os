@@ -66,6 +66,8 @@ The injected runtime overlay provides:
 - `window.reflexFsList(pathOrParams, recursive?)`
 - `window.reflexFsWrite(pathOrParams, content?)`
 - `window.reflexFsDelete(pathOrParams, recursive?)`
+- `window.reflexClipboardReadText()`
+- `window.reflexClipboardWriteText(textOrParams)`
 - `window.reflexNetFetch(urlOrParams, options?)`
 - `window.reflexDialogOpenDirectory(params)`
 - `window.reflexDialogOpenFile(params)`
@@ -136,6 +138,10 @@ Core methods:
 - `fs.list({ path?, recursive?, includeHidden? })` -> `{ entries }`.
 - `fs.delete({ path, recursive? })` -> `{ ok, path, kind }`; deleting the app
   root is blocked.
+- `clipboard.readText()` -> `{ text }`; requires `clipboard.read` or
+  `clipboard:*` in `manifest.permissions`.
+- `clipboard.writeText({ text })` -> `{ ok }`; requires `clipboard.write` or
+  `clipboard:*` in `manifest.permissions`.
 - `dialog.openDirectory`, `dialog.openFile`, `dialog.saveFile`.
 - `notify.show({ title, body })`.
 - `net.fetch({ url, method?, headers?, body?, timeoutMs? })`; requires
@@ -205,9 +211,10 @@ Apps can expose:
 
 Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,
-`system.openUrl`, `system.openPath`, `system.revealPath`, and `apps.open` are
-not valid inside schedules. `scheduler.runNow` and `scheduler.setPaused` are
-also blocked inside schedule steps to prevent unattended recursive runs.
+`clipboard.*`, `system.openUrl`, `system.openPath`, `system.revealPath`, and
+`apps.open` are not valid inside schedules. `scheduler.runNow` and
+`scheduler.setPaused` are also blocked inside schedule steps to prevent
+unattended recursive runs.
 
 ## Development
 

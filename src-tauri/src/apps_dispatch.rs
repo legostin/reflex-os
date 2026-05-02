@@ -24,6 +24,10 @@ pub async fn dispatch_app_method(
         "system.openUrl" | "system.open_url" => system_open_url(app, &params),
         "system.openPath" | "system.open_path" => system_open_path(app, app_id, &params),
         "system.revealPath" | "system.reveal_path" => system_reveal_path(app, app_id, &params),
+        "clipboard.readText" | "clipboard.read_text" => clipboard_read_text(app, app_id),
+        "clipboard.writeText" | "clipboard.write_text" => {
+            clipboard_write_text(app, app_id, &params)
+        }
         "manifest.get" => manifest_get(app, app_id),
         "manifest.update" => manifest_update(app, app_id, params),
         "agent.ask" => {
@@ -802,6 +806,64 @@ fn resolve_system_path(
     Ok(path)
 }
 
+fn clipboard_read_text(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
+    ensure_clipboard_permission(app, app_id, "read")?;
+    let output = std::process::Command::new("pbpaste")
+        .output()
+        .map_err(|e| format!("pbpaste failed: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("pbpaste exited with status {}", output.status));
+    }
+    let text = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "text": text }))
+}
+
+fn clipboard_write_text(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_clipboard_permission(app, app_id, "write")?;
+    let text = params
+        .get("text")
+        .and_then(|v| v.as_str())
+        .ok_or("missing text")?;
+    let mut child = std::process::Command::new("pbcopy")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("pbcopy failed: {e}"))?;
+
+    {
+        use std::io::Write;
+        let stdin = child.stdin.as_mut().ok_or("pbcopy stdin unavailable")?;
+        stdin
+            .write_all(text.as_bytes())
+            .map_err(|e| format!("pbcopy write failed: {e}"))?;
+    }
+
+    let status = child.wait().map_err(|e| format!("pbcopy wait failed: {e}"))?;
+    if !status.success() {
+        return Err(format!("pbcopy exited with status {status}"));
+    }
+
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+fn ensure_clipboard_permission(
+    app: &AppHandle,
+    app_id: &str,
+    operation: &str,
+) -> Result<(), String> {
+    let permission = format!("clipboard.{operation}");
+    if app_has_permission(app, app_id, &permission) {
+        Ok(())
+    } else {
+        Err(format!(
+            "permission denied: clipboard.{operation} requires manifest.permissions entry '{permission}' or 'clipboard:*'"
+        ))
+    }
+}
+
 fn linked_projects_for_app(
     app: &AppHandle,
     app_id: &str,
@@ -902,6 +964,7 @@ fn app_has_permission(app: &AppHandle, app_id: &str, permission: &str) -> bool {
             || (permission.starts_with("memory.") && p == "memory:*")
             || (permission.starts_with("memory.global.") && p == "memory.global")
             || (permission.starts_with("memory.project.") && p == "memory.project:*")
+            || (permission.starts_with("clipboard.") && p == "clipboard:*")
     })
 }
 

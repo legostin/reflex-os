@@ -1076,6 +1076,13 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams, recursive: !!recursive} : (pathOrParams || {});
     return reflexInvokeRaw('fs.delete', params);
   };
+  window.reflexClipboardReadText = function() {
+    return reflexInvokeRaw('clipboard.readText', {});
+  };
+  window.reflexClipboardWriteText = function(textOrParams) {
+    var params = (typeof textOrParams === 'string') ? {text: textOrParams} : (textOrParams || {});
+    return reflexInvokeRaw('clipboard.writeText', params);
+  };
   window.reflexNetFetch = function(urlOrParams, options) {
     var params = (typeof urlOrParams === 'string') ? Object.assign({url: urlOrParams}, options || {}) : (urlOrParams || {});
     return reflexInvokeRaw('net.fetch', params);

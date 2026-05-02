@@ -560,6 +560,7 @@ fn app_revise(
   • agent.task({{prompt, sandbox?, cwd?}}) → {{threadId, result}} — изолированный sub-агент; cwd может быть app root или linked project, чужой project требует agent.project:<project>|*, произвольный cwd требует agent.cwd:*\n\
   • agent.stream({{prompt, sandbox?, cwd?}}) → {{streamId}} — стриминг токенов; слушай parent message {{source:'reflex', type:'stream.token'|'stream.done'}}; cwd rules как у agent.task\n\
   • storage.get/set/list/delete, fs.read/list/write/delete (в app-папке)\n\
+  • clipboard.readText/writeText — буфер обмена macOS; требует permission clipboard.read/clipboard.write или clipboard:*\n\
   • projects.list / topics.list — read-only обзор доступных проектов и топиков; чужие требуют permission projects.read/topics.read\n\
   • skills.list / mcp.servers — preferred skills и MCP server names; raw MCP config требует permission mcp.read:<project>|*\n\
   • browser.init/tabs.list/open/navigate/readText/readOutline/screenshot/clickText/clickSelector/fill — встроенный browser sidecar; требует browser.read/control\n\
@@ -568,7 +569,7 @@ fn app_revise(
   • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
   • notify.show — macOS push\n\
   • net.fetch({{url, method?, headers?, body?}}) — требует manifest.network.allowed_hosts (поддержка \"*.foo.com\")\n\
-- Overlay helpers: reflexInvoke, reflexSystemContext, reflexSystemOpenUrl/OpenPath/RevealPath, reflexManifestGet/Update, reflexCapabilities, reflexAgentAsk/StartTopic/Task/Stream/StreamAbort, reflexStorageGet/Set/List/Delete, reflexFsRead/List/Write/Delete, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsList, reflexAppsOpen, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
+- Overlay helpers: reflexInvoke, reflexSystemContext, reflexSystemOpenUrl/OpenPath/RevealPath, reflexManifestGet/Update, reflexCapabilities, reflexAgentAsk/StartTopic/Task/Stream/StreamAbort, reflexStorageGet/Set/List/Delete, reflexFsRead/List/Write/Delete, reflexClipboardReadText/WriteText, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsList, reflexAppsOpen, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
 - iframe sandbox=\"allow-scripts allow-forms\" (для server runtime + allow-same-origin). Никаких внешних CDN — только inline или локальные файлы.\n\
 - Reflex автоматически инжектит overlay-скрипт в HTML: ловит window.onerror/unhandledrejection (юзер увидит ✨Fix), и режим Inspector (юзер кликает → ты получишь selector + outerHTML). Не пиши свой обработчик с теми же типами событий.\n\
 - После твоих правок iframe перезагрузится сам (file watcher), для server runtime — процесс перезапустится. Не требуй ручного reload.\n\
@@ -906,7 +907,7 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
             "Шаблон AUTOMATION:\n\
 - Обязательно добавь в manifest.schedules хотя бы одно расписание с 6-польным cron (sec min hour dom month dow, UTC).\n\
 - В schedule.steps используй bridge methods без UI: agent.task, storage.*, fs.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/runDetail.\n\
-- Не используй dialog.*, system.openUrl/openPath/revealPath, apps.open и scheduler.runNow/setPaused внутри schedule.steps.\n\
+- Не используй dialog.*, clipboard.*, system.openUrl/openPath/revealPath, apps.open и scheduler.runNow/setPaused внутри schedule.steps.\n\
 - Добавь обычный UI, где видно состояние: `window.reflexSchedulerList()`, `window.reflexSchedulerRuns({limit: 20})`, детали запуска через `window.reflexSchedulerRunDetail(runId)`, кнопка ручного запуска через `window.reflexSchedulerRunNow(scheduleId)`.\n\
 - Если автоматизация производит полезные данные, сохраняй их через `window.reflexStorageSet` или `window.reflexMemorySave` и добавь manifest.actions для других apps.\n\
 - Если результат нужен на проектном дашборде, добавь manifest.widgets с компактной страницей widgets/<id>.html.\n",
@@ -966,6 +967,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  fs.list({path?, recursive?, includeHidden?}) -> {entries} — список файлов app-папки\n");
     p.push_str("  fs.write({path, content}) -> {ok}                     — писать файл в app-папке\n");
     p.push_str("  fs.delete({path, recursive?}) -> {ok, path, kind}     — удалить файл/папку app; корень app удалить нельзя\n");
+    p.push_str("  clipboard.readText() -> {text}; clipboard.writeText({text}) -> {ok} — буфер обмена macOS; требует permission \"clipboard.read\"/\"clipboard.write\" или \"clipboard:*\"\n");
     p.push_str("  notify.show({title, body}) -> {ok}                    — macOS push\n");
     p.push_str("  dialog.openDirectory({title?, defaultPath?}) -> {path|null}                          — нативное окно выбора папки (path = null если отмена)\n");
     p.push_str("  dialog.openFile({title?, defaultPath?, filters?, multiple?}) -> {path|null} или {paths:[]}  — нативное окно выбора файла. filters: [{name, extensions:[\"txt\",...]}]\n");
@@ -999,7 +1001,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("- scope: \"project\" по умолчанию. Если app привязан ровно к одному проекту, project scope попадёт в память этого проекта; иначе — в память самого app.\n");
     p.push_str("- Для выбора проекта вызови system.context() и передай projectId из linked_projects. Для global scope добавь permission \"memory.global.read\" или \"memory.global.write\".\n");
     p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexManifestGet(), reflexManifestUpdate(patch), reflexCapabilities(), reflexProjectsList(params), reflexTopicsList(params), reflexSkillsList(params), reflexMcpServers(params), reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit.\n");
-    p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set/List/Delete(...), reflexFsRead/List/Write/Delete(...), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
+    p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set/List/Delete(...), reflexFsRead/List/Write/Delete(...), reflexClipboardReadText(), reflexClipboardWriteText(textOrParams), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
     p.push_str("  Browser helpers: reflexBrowserInit(params), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserNavigate(tabId, url), reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?), reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?).\n");
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
     p.push_str("MANIFEST.network (для net.fetch):\n");
@@ -1020,7 +1022,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("    }]\n");
     p.push_str("  }\n");
     p.push_str("- Шаги исполняются по очереди. Шаблоны {{steps.X.field}} подставляют результаты предыдущих шагов. Если плейсхолдер занимает всю строку — тип значения сохраняется (объект остаётся объектом).\n");
-    p.push_str("- В steps НЕЛЬЗЯ использовать dialog.openDirectory/openFile/saveFile, system.openUrl/openPath/revealPath и apps.open — у автоматизаций нет UI.\n");
+    p.push_str("- В steps НЕЛЬЗЯ использовать dialog.openDirectory/openFile/saveFile, clipboard.readText/writeText, system.openUrl/openPath/revealPath и apps.open — у автоматизаций нет UI.\n");
     p.push_str("- Все остальные методы (agent.*, storage.*, fs.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/runDetail) работают как обычно. scheduler.runNow/setPaused в schedule.steps заблокированы, чтобы не запускать рекурсивные unattended-циклы.\n");
     p.push_str("- Если задача звучит как «раз в N минут/часов делать X» — это schedule, не кнопка в UI.\n\n");
 
@@ -1050,7 +1052,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("    }]\n");
     p.push_str("  }\n");
     p.push_str("- Каждый widget.entry — отдельный HTML-файл в папке app, обычно `widgets/<id>.html`.\n");
-    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexSystemContext, reflexSystemOpenUrl/OpenPath/RevealPath, reflexManifestGet/Update, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexScheduler*, reflexMemory*, reflexEventOn/Off/Emit, reflexAppsList/Open/Invoke/ListActions).\n");
+    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexSystemContext, reflexSystemOpenUrl/OpenPath/RevealPath, reflexManifestGet/Update, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser*, reflexScheduler*, reflexMemory*, reflexEventOn/Off/Emit, reflexAppsList/Open/Invoke/ListActions).\n");
     p.push_str("- Виджет компактный: тёмная прозрачная подложка (background:transparent), html/body высотой 100%, padding 12-14px, без своих рамок (рамки рисует grid).\n");
     p.push_str("- Если данные обновляются часто — сам ставь setInterval на 5-30 сек.\n");
     p.push_str("- Если виджет читает данные другой утилиты — используй reflexAppsInvoke('<app>','<action>',{...}); НЕ дублируй сбор данных.\n\n");
@@ -1074,6 +1076,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  window.reflexAgentAsk(promptOrParams), reflexAgentStartTopic(promptOrParams, projectId?), reflexAgentTask(promptOrParams), reflexAgentStream(promptOrParams), reflexAgentStreamAbort(threadIdOrParams)\n");
     p.push_str("  window.reflexStorageGet(keyOrParams), reflexStorageSet(keyOrParams, value?), reflexStorageList(params), reflexStorageDelete(keyOrParams)\n");
     p.push_str("  window.reflexFsRead(pathOrParams), reflexFsList(pathOrParams, recursive?), reflexFsWrite(pathOrParams, content?), reflexFsDelete(pathOrParams, recursive?)\n");
+    p.push_str("  window.reflexClipboardReadText(), reflexClipboardWriteText(textOrParams)\n");
     p.push_str("  window.reflexNetFetch(urlOrParams, options?), reflexNotifyShow(titleOrParams, body?)\n");
     p.push_str("  window.reflexDialogOpenDirectory(params), reflexDialogOpenFile(params), reflexDialogSaveFile(params)\n");
     p.push_str("  window.reflexProjectsList(params), reflexTopicsList(params), reflexSkillsList(params), reflexMcpServers(params)\n");
@@ -1093,7 +1096,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
 
     p.push_str("ОГРАНИЧЕНИЯ:\n");
     p.push_str("- iframe sandbox=\"allow-scripts allow-forms\" (для server-runtime добавляется allow-same-origin). Сетевые fetch к произвольным внешним URL могут не работать — для динамических данных используй agent.ask или свой server-runtime.\n");
-    p.push_str("- В schedule.steps нельзя использовать dialog.*, system.openUrl/openPath/revealPath и apps.open: эти шаги бегут без UI.\n\n");
+    p.push_str("- В schedule.steps нельзя использовать dialog.*, clipboard.*, system.openUrl/openPath/revealPath и apps.open: эти шаги бегут без UI.\n\n");
     if let Some(skeleton) = template_skeleton(template) {
         p.push_str("ШАБЛОН:\n");
         p.push_str(skeleton);
