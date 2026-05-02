@@ -25,6 +25,7 @@ pub async fn dispatch_app_method(
         "system.openPath" | "system.open_path" => system_open_path(app, app_id, &params),
         "system.revealPath" | "system.reveal_path" => system_reveal_path(app, app_id, &params),
         "logs.write" => logs_write_for_app(app, app_id, &params),
+        "logs.list" => logs_list_for_app(app, app_id, &params),
         "clipboard.readText" | "clipboard.read_text" => clipboard_read_text(app, app_id),
         "clipboard.writeText" | "clipboard.write_text" => {
             clipboard_write_text(app, app_id, &params)
@@ -819,17 +820,9 @@ fn logs_write_for_app(
     app_id: &str,
     params: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let level = match string_param(params, "level", "level")
-        .unwrap_or_else(|| "info".to_string())
-        .to_lowercase()
-        .as_str()
-    {
-        "trace" => logs::LogLevel::Trace,
-        "debug" => logs::LogLevel::Debug,
-        "warn" | "warning" => logs::LogLevel::Warn,
-        "error" | "err" => logs::LogLevel::Error,
-        _ => logs::LogLevel::Info,
-    };
+    let level = parse_log_level(
+        &string_param(params, "level", "level").unwrap_or_else(|| "info".to_string()),
+    );
     let message = params
         .get("message")
         .or_else(|| params.get("body"))
@@ -840,20 +833,84 @@ fn logs_write_for_app(
         message = "(empty app log message)".into();
     }
 
-    let source_suffix = string_param(params, "source", "source")
-        .map(|s| {
-            s.chars()
-                .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':'))
-                .take(48)
-                .collect::<String>()
-        })
-        .filter(|s| !s.is_empty());
+    let source_suffix = string_param(params, "source", "source").and_then(sanitize_log_source);
     let source = source_suffix
         .map(|suffix| format!("app:{app_id}:{suffix}"))
         .unwrap_or_else(|| format!("app:{app_id}"));
 
     logs::log_with(app, level, &source, message);
     Ok(serde_json::json!({ "ok": true }))
+}
+
+fn logs_list_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(100)
+        .clamp(1, 500) as usize;
+    let since_seq = params
+        .get("since_seq")
+        .or_else(|| params.get("sinceSeq"))
+        .and_then(|v| v.as_u64());
+    let source = string_param(params, "source", "source").and_then(sanitize_log_source);
+    let level = string_param(params, "level", "level").map(|raw| parse_log_level(&raw));
+    let source_base = format!("app:{app_id}");
+    let source_exact = source.map(|suffix| format!("{source_base}:{suffix}"));
+
+    let store = app.state::<logs::LogStore>();
+    let mut entries = store.snapshot(usize::MAX, since_seq);
+    entries.retain(|entry| is_app_log_source(&entry.source, app_id));
+    if let Some(source_exact) = source_exact {
+        entries.retain(|entry| entry.source == source_exact);
+    }
+    if let Some(level) = level {
+        entries.retain(|entry| entry.level == level);
+    }
+    if entries.len() > limit {
+        let drop = entries.len() - limit;
+        entries.drain(0..drop);
+    }
+    let latest_seq = entries
+        .last()
+        .map(|entry| entry.seq)
+        .unwrap_or_else(|| since_seq.unwrap_or(0));
+    Ok(serde_json::json!({
+        "entries": entries,
+        "latestSeq": latest_seq,
+    }))
+}
+
+fn parse_log_level(raw: &str) -> logs::LogLevel {
+    match raw.to_lowercase().as_str() {
+        "trace" => logs::LogLevel::Trace,
+        "debug" => logs::LogLevel::Debug,
+        "warn" | "warning" => logs::LogLevel::Warn,
+        "error" | "err" => logs::LogLevel::Error,
+        _ => logs::LogLevel::Info,
+    }
+}
+
+fn sanitize_log_source(raw: String) -> Option<String> {
+    let source = raw
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':'))
+        .take(48)
+        .collect::<String>();
+    if source.is_empty() {
+        None
+    } else {
+        Some(source)
+    }
+}
+
+fn is_app_log_source(source: &str, app_id: &str) -> bool {
+    let source_base = format!("app:{app_id}");
+    let source_prefix = format!("{source_base}:");
+    source == source_base || source.starts_with(&source_prefix)
 }
 
 fn clipboard_read_text(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
@@ -2814,5 +2871,13 @@ mod tests {
         .await;
 
         assert_eq!(out, "raw prompt");
+    }
+
+    #[test]
+    fn app_log_source_requires_namespace_boundary() {
+        assert!(is_app_log_source("app:foo", "foo"));
+        assert!(is_app_log_source("app:foo:widget", "foo"));
+        assert!(!is_app_log_source("app:foo2", "foo"));
+        assert!(!is_app_log_source("browser", "foo"));
     }
 }
