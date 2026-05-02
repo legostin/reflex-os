@@ -552,6 +552,8 @@ fn app_revise(
 - Можно использовать любую структуру: index.html + style.css + app.js + assets/. Reflex отдаёт всё через reflexapp:// scheme c правильным mime.\n\
 - Два runtime: static (default) или server (manifest.runtime=\"server\" + manifest.server.command — node/python stdlib, listen на process.env.PORT).\n\
 - В HTML уже инжектится runtime overlay. Предпочитай helpers window.reflex*; raw postMessage нужен только для нестандартного bridge-вызова.\n\
+- Сохраняй UI на русском, если пользователь явно не попросил другой язык. Не оставляй видимые Send/Run/Refresh/Save/Cancel/Loading/Error; используй «Отправить», «Запустить», «Обновить», «Сохранить», «Отмена», «Загрузка», «Ошибка». Имена API, permissions, ids и manifest keys оставляй техническими токенами.\n\
+- После доработки проверь empty/loading/error/success states и доступность основных controls. Первый экран должен оставаться рабочей утилитой, а не описанием возможностей.\n\
 - Доступные методы bridge:\n\
   • bridge.catalog() → {{methods, helpers, permissions, app, notes}}; runtime self-discovery bridge API и текущих grants app\n\
   • system.context() → {{app_id, app_root, manifest, app_project, linked_projects, memory_defaults}}; app_project/linked_projects are summaries with skills and mcp_server_names, not raw MCP config\n\
@@ -900,14 +902,14 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
     match template {
         "chat" => Some(
             "Шаблон CHAT-UTILITY:\n\
-- Layout: список сообщений сверху + textarea + кнопка Send снизу.\n\
+- Layout: список сообщений сверху + textarea + кнопка «Отправить» снизу.\n\
 - Использовать `window.reflexAgentStream({prompt})` для стриминга ответа. Ловить window 'message' с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done'.\n\
 - Хранить историю сообщений через `window.reflexStorageGet/Set(\"messages\", value)`.\n\
 - Сообщения user/agent визуально разные. Streaming-сообщение растёт по токенам.\n",
         ),
         "dashboard" => Some(
             "Шаблон DASHBOARD:\n\
-- Кнопка \"Refresh\" вызывает `window.reflexAgentTask({prompt: \"...запрос за данными...\"})` и парсит JSON-ответ.\n\
+- Кнопка «Обновить» вызывает `window.reflexAgentTask({prompt: \"...запрос за данными...\"})` и парсит JSON-ответ.\n\
 - Для health/ops dashboard сначала проверь готовые APIs: `window.reflexSchedulerStats()`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsStatus(appId)`.\n\
 - Показывать данные в таблице или как summary-карточки; ошибки должны вести к деталям запуска/сервиса, если есть id.\n\
 - Кэшировать последний результат через `window.reflexStorageSet(\"lastResult\", data)`.\n",
@@ -918,19 +920,19 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
 - Построй operational dashboard без agent.task на первом экране: `window.reflexSystemContext()`, `window.reflexSchedulerStats({includeAll: true, recentLimit: 200})`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsList()` и `window.reflexAppsStatus(appId)` для linked apps.\n\
 - Если app привязан к проекту, бери projectId из `system.context().linked_projects[0]?.id`; если проекта нет — покажи scheduler/app health и мягкое пустое состояние для RAG.\n\
 - Summary cards: active/paused/invalid schedules, next fire, recent run errors, indexed/stale/missing memory docs, linked app health. Ошибка запуска должна открываться через `window.reflexSchedulerRunDetail(runId)`.\n\
-- Добавь Refresh, автосохранение последнего снимка через `window.reflexStorageSet(\"healthSnapshot\", data)` и восстановление через `window.reflexStorageGet`.\n\
+- Добавь кнопку «Обновить», автосохранение последнего снимка через `window.reflexStorageSet(\"healthSnapshot\", data)` и восстановление через `window.reflexStorageGet`.\n\
 - Добавь manifest.widgets с компактным `widgets/health.html`, который показывает те же ключевые counters и открывает основную app.\n",
         ),
         "form" => Some(
             "Шаблон FORM-TOOL:\n\
-- Несколько input-полей сверху, кнопка \"Run\" снизу.\n\
+- Несколько input-полей сверху, кнопка «Запустить» снизу.\n\
 - На submit собрать значения, дёрнуть `window.reflexAgentTask({prompt: \"...на основе значений...\"})`, показать результат.\n\
 - Сохранять последний submit через `window.reflexStorageSet(\"lastSubmit\", values)` для preset'а.\n",
         ),
         "api-client" => Some(
             "Шаблон API-CLIENT:\n\
 - Используй `window.reflexNetFetch(...)` к указанному API. Перед первым запросом вызови `await window.reflexNetworkAllowHost(\"<host>\")`, чтобы host попал в manifest.network.allowed_hosts без ручного merge.\n\
-- Кнопка для запроса, отображение результата (JSON pretty-print).\n\
+- Кнопка «Запросить», отображение результата (JSON pretty-print).\n\
 - Если нужны секреты — спроси у пользователя через input-field, храни через `window.reflexStorageSet`.\n",
         ),
         "automation" => Some(
@@ -971,6 +973,11 @@ fn build_app_creation_prompt(
     p.push_str("- manifest.json уже есть с заглушкой. Обнови поля: name, icon (один emoji), description (1 предложение), permissions (массив API-методов).\n");
     p.push_str("- Можно использовать любую файловую структуру: index.html + style.css + app.js + assets/, modules, и т.д. Reflex отдаёт все файлы из папки app по mime-type автоматически.\n");
     p.push_str("- Тёмная тема: color #f5f5f7 на transparent background. Чистый минимальный UI.\n\n");
+    p.push_str("UI/UX:\n");
+    p.push_str("- Интерфейс и все пользовательские labels/empty/loading/error/success states по умолчанию на русском, в тоне основного Reflex UI. Имена API, permissions, paths, ids и manifest keys оставляй как технические токены.\n");
+    p.push_str("- Первый экран должен быть рабочей утилитой, а не landing page: сразу показывай данные, форму, dashboard или action controls.\n");
+    p.push_str("- Добавляй понятные controls и состояния: disabled, loading, empty, error, retry/refresh, последняя синхронизация, если это применимо.\n");
+    p.push_str("- Кнопки называй глаголами действия: «Обновить», «Запустить», «Сохранить», «Отправить», «Открыть». Не оставляй Send/Run/Refresh/Save, если это видит пользователь.\n\n");
     p.push_str("ДВА RUNTIME:\n");
     p.push_str("1) static (по умолчанию): чистый front-end. iframe смотрит на reflexapp://localhost/<id>/<entry>. Нет своего бэкенда.\n");
     p.push_str("   - manifest: { runtime: \"static\", entry: \"index.html\" }  (либо просто опусти runtime).\n");
