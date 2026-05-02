@@ -69,6 +69,8 @@ const PERMISSION_EXAMPLES = [
   "skills.read:*",
   "mcp.read:<project>",
   "mcp.read:*",
+  "project.files.read:<project>",
+  "project.files.read:*",
   "browser.read",
   "browser.control",
   "browser.project:<project>",

@@ -630,6 +630,8 @@ pub async fn dispatch_app_method(
         "topics.open" | "threads.open" => topics_open_for_app(app, app_id, params),
         "skills.list" => skills_list_for_app(app, app_id, params),
         "mcp.servers" | "mcp.list" => mcp_servers_for_app(app, app_id, params),
+        "project.files.list" => project_files_list_for_app(app, app_id, params),
+        "project.files.read" => project_files_read_for_app(app, app_id, params),
         "browser.init" => browser_init_for_app(app, app_id, params).await,
         "browser.tabs.list" | "browser.tabsList" => {
             ensure_browser_permission(app, app_id, "read")?;
@@ -1225,6 +1227,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "topics.open",
                 "skills.list",
                 "mcp.servers",
+                "project.files.list",
+                "project.files.read",
             ],
         ),
         bridge_group(
@@ -1362,6 +1366,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexTopicsOpen",
                 "reflexSkillsList",
                 "reflexMcpServers",
+                "reflexProjectFilesList",
+                "reflexProjectFilesRead",
                 "reflexBrowserInit",
                 "reflexBrowserTabs",
                 "reflexBrowserOpen",
@@ -3007,6 +3013,205 @@ fn mcp_servers_for_app(
     Ok(serde_json::Value::Array(out))
 }
 
+fn project_files_list_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let project = resolve_project_file_target(app, app_id, &params)?;
+    let rel_path = string_param(&params, "path", "path").unwrap_or_else(|| ".".into());
+    let recursive = bool_param(&params, "recursive", "recursive").unwrap_or(false);
+    let include_hidden = bool_param(&params, "include_hidden", "includeHidden").unwrap_or(false);
+    let root = canonical_project_root(&project.root)?;
+    let target = resolve_project_file_path(&root, &rel_path)?;
+    let meta = std::fs::symlink_metadata(&target).map_err(|e| e.to_string())?;
+    let mut entries = Vec::new();
+    if meta.is_file() || meta.file_type().is_symlink() {
+        if include_hidden || !project_path_is_hidden(&root, &target) {
+            entries.push(project_file_entry(&root, &target, &meta)?);
+        }
+    } else {
+        collect_project_file_entries(&root, &target, recursive, include_hidden, &mut entries)?;
+    }
+    Ok(serde_json::json!({
+        "project_id": project.id,
+        "project_name": project.name,
+        "entries": entries,
+    }))
+}
+
+fn project_files_read_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    const MAX_PROJECT_FILE_READ_BYTES: u64 = 1_048_576;
+    let project = resolve_project_file_target(app, app_id, &params)?;
+    let rel_path = required_string_param(&params, "path", "path")?;
+    let root = canonical_project_root(&project.root)?;
+    let target = resolve_project_file_path(&root, &rel_path)?;
+    let meta = std::fs::metadata(&target).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("path is not a file".into());
+    }
+    if meta.len() > MAX_PROJECT_FILE_READ_BYTES {
+        return Err("file is too large for project.files.read".into());
+    }
+    let bytes = std::fs::read(&target).map_err(|e| e.to_string())?;
+    let content = String::from_utf8(bytes).map_err(|_| "file is not valid utf-8".to_string())?;
+    let rel = project_rel_path(&root, &target)?;
+    Ok(serde_json::json!({
+        "project_id": project.id,
+        "project_name": project.name,
+        "path": rel,
+        "size": meta.len(),
+        "content": content,
+    }))
+}
+
+fn resolve_project_file_target(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<project::Project, String> {
+    if let Some(project_id) = string_param(params, "project_id", "projectId") {
+        let project = list_user_projects(app)?
+            .into_iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| format!("project not found: {project_id}"))?;
+        ensure_project_scope_access(app, app_id, "project.files.read", &project)?;
+        return Ok(project);
+    }
+    let linked = linked_projects_for_app(app, app_id)?;
+    if linked.len() == 1 {
+        return Ok(linked.into_iter().next().expect("one linked project"));
+    }
+    Err("missing project_id; pass one from system.context().linked_projects".into())
+}
+
+fn canonical_project_root(root: &str) -> Result<PathBuf, String> {
+    Path::new(root)
+        .canonicalize()
+        .map_err(|e| format!("canonicalize project root: {e}"))
+}
+
+fn resolve_project_file_path(root: &Path, raw: &str) -> Result<PathBuf, String> {
+    let root = root
+        .canonicalize()
+        .map_err(|e| format!("canonicalize project root: {e}"))?;
+    let raw = raw.trim();
+    let candidate = if raw.is_empty() || raw == "." {
+        root.clone()
+    } else {
+        let path = PathBuf::from(raw);
+        if path.is_absolute() {
+            path
+        } else {
+            root.join(path)
+        }
+    };
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|e| format!("canonicalize project file path: {e}"))?;
+    if !canonical.starts_with(&root) {
+        return Err("path must stay inside the selected project root".into());
+    }
+    let rel = canonical.strip_prefix(&root).unwrap_or(&canonical);
+    if rel
+        .components()
+        .any(|component| matches!(component, Component::Normal(name) if name == ".reflex"))
+    {
+        return Err("project.files cannot read .reflex internals".into());
+    }
+    Ok(canonical)
+}
+
+fn collect_project_file_entries(
+    root: &Path,
+    dir: &Path,
+    recursive: bool,
+    include_hidden: bool,
+    out: &mut Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let mut entries = std::fs::read_dir(dir)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        if project_path_is_blocked(root, &path) {
+            continue;
+        }
+        if !include_hidden && project_path_is_hidden(root, &path) {
+            continue;
+        }
+        let meta = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+        out.push(project_file_entry(root, &path, &meta)?);
+        if recursive && meta.is_dir() && !meta.file_type().is_symlink() {
+            collect_project_file_entries(root, &path, recursive, include_hidden, out)?;
+        }
+    }
+    Ok(())
+}
+
+fn project_file_entry(
+    root: &Path,
+    path: &Path,
+    meta: &std::fs::Metadata,
+) -> Result<serde_json::Value, String> {
+    let rel = project_rel_path(root, path)?;
+    let kind = if meta.file_type().is_symlink() {
+        "symlink"
+    } else if meta.is_dir() {
+        "directory"
+    } else {
+        "file"
+    };
+    let modified_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis());
+    Ok(serde_json::json!({
+        "path": rel,
+        "name": path.file_name().and_then(|name| name.to_str()).unwrap_or(""),
+        "kind": kind,
+        "size": meta.is_file().then_some(meta.len()),
+        "modified_ms": modified_ms,
+        "is_hidden": project_path_is_hidden(root, path),
+    }))
+}
+
+fn project_rel_path(root: &Path, path: &Path) -> Result<String, String> {
+    Ok(path
+        .strip_prefix(root)
+        .map_err(|e| e.to_string())?
+        .to_string_lossy()
+        .replace('\\', "/"))
+}
+
+fn project_path_is_blocked(root: &Path, path: &Path) -> bool {
+    path.strip_prefix(root)
+        .ok()
+        .map(|rel| {
+            rel.components()
+                .any(|component| matches!(component, Component::Normal(name) if name == ".reflex"))
+        })
+        .unwrap_or(true)
+}
+
+fn project_path_is_hidden(root: &Path, path: &Path) -> bool {
+    path.strip_prefix(root)
+        .ok()
+        .map(|rel| {
+            rel.components().any(|component| {
+                matches!(component, Component::Normal(name) if name.to_string_lossy().starts_with('.'))
+            })
+        })
+        .unwrap_or(false)
+}
+
 fn project_targets_for_app(
     app: &AppHandle,
     app_id: &str,
@@ -3834,6 +4039,40 @@ mod tests {
             parse_memory_rel_path(&params).unwrap(),
             PathBuf::from("facts/project.md")
         );
+    }
+
+    #[test]
+    fn project_file_path_stays_inside_project_and_blocks_reflex() {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("reflex-project-files-{suffix}"));
+        let outside = std::env::temp_dir().join(format!("reflex-project-files-outside-{suffix}.md"));
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join(".reflex")).unwrap();
+        std::fs::write(root.join("src/readme.md"), "ok").unwrap();
+        std::fs::write(root.join(".reflex/project.json"), "{}").unwrap();
+        std::fs::write(&outside, "secret").unwrap();
+
+        let canonical_root = root.canonicalize().unwrap();
+        let resolved = resolve_project_file_path(&canonical_root, "src/readme.md").unwrap();
+        assert_eq!(
+            project_rel_path(&canonical_root, &resolved).unwrap(),
+            "src/readme.md"
+        );
+        assert!(resolve_project_file_path(&canonical_root, ".reflex/project.json")
+            .unwrap_err()
+            .contains(".reflex"));
+        assert!(resolve_project_file_path(
+            &canonical_root,
+            &format!("../{}", outside.file_name().unwrap().to_string_lossy())
+        )
+        .unwrap_err()
+        .contains("selected project root"));
+
+        let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

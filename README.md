@@ -95,6 +95,8 @@ The injected runtime overlay provides:
 - `window.reflexTopicsOpen(threadIdOrParams, projectId?)`
 - `window.reflexSkillsList(params)`
 - `window.reflexMcpServers(params)`
+- `window.reflexProjectFilesList(pathOrParams, recursive?)`
+- `window.reflexProjectFilesRead(pathOrParams)`
 - `window.reflexBrowserInit(params)`
 - `window.reflexBrowserTabs()`
 - `window.reflexBrowserOpen(url)`
@@ -200,6 +202,13 @@ Core methods:
   the main UI.
 - `skills.list({ projectId?, includeAll? })`.
 - `mcp.servers({ projectId?, includeAll?, includeConfig? })`.
+- `project.files.list({ projectId?, path?, recursive?, includeHidden? })` ->
+  `{ project_id, project_name, entries }`; linked projects are available by
+  default, other projects require `project.files.read:<project>` or
+  `project.files.read:*`.
+- `project.files.read({ projectId?, path })` ->
+  `{ project_id, project_name, path, size, content }`; reads UTF-8 text up to
+  1 MiB. `.reflex` internals are always blocked.
 - `browser.init`, `browser.tabs.list`, `browser.open`, `browser.navigate`.
 - `browser.readText`, `browser.readOutline`, `browser.screenshot`.
 - `browser.clickText`, `browser.clickSelector`, `browser.fill`.

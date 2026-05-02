@@ -57,6 +57,8 @@ export const BRIDGE_API_GROUPS = [
       "topics.open",
       "skills.list",
       "mcp.servers",
+      "project.files.list",
+      "project.files.read",
     ],
   },
   {
@@ -198,6 +200,8 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexTopicsOpen",
       "reflexSkillsList",
       "reflexMcpServers",
+      "reflexProjectFilesList",
+      "reflexProjectFilesRead",
       "reflexBrowserInit",
       "reflexBrowserTabs",
       "reflexBrowserOpen",
@@ -280,8 +284,8 @@ export const BRIDGE_RECIPE_CARDS = [
   },
   {
     title: "MCP и skills проекта",
-    body: "Покажи доступные skills и MCP names без раскрытия raw config.",
-    calls: ["system.context", "skills.list", "mcp.servers"],
-    example: "const ctx = await reflexSystemContext();",
+    body: "Покажи skills/MCP names и читай linked project files без раскрытия .reflex.",
+    calls: ["system.context", "project.files.list", "project.files.read"],
+    example: 'const file = await reflexProjectFilesRead("README.md");',
   },
 ] as const;
