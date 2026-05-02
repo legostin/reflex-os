@@ -553,7 +553,7 @@ fn app_revise(
 - Два runtime: static (default) или server (manifest.runtime=\"server\" + manifest.server.command — node/python stdlib, listen на process.env.PORT).\n\
 - В HTML уже инжектится runtime overlay. Предпочитай helpers window.reflex*; raw postMessage нужен только для нестандартного bridge-вызова.\n\
 - Доступные методы bridge:\n\
-  • system.context() → {{app_id, app_root, manifest, app_project, linked_projects, memory_defaults}}\n\
+  • system.context() → {{app_id, app_root, manifest, app_project, linked_projects, memory_defaults}}; app_project/linked_projects are summaries with skills and mcp_server_names, not raw MCP config\n\
   • manifest.get() / manifest.update({{patch}}) — безопасно читать/обновлять собственный manifest.json\n\
   • agent.ask({{prompt}}) → {{answer}}\n\
   • agent.task({{prompt, sandbox?, cwd?}}) → {{threadId, result}} — изолированный sub-агент\n\
@@ -949,7 +949,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("           if (e.data?.source==='reflex' && e.data.type==='response' && e.data.id===id) ...\n");
     p.push_str("         });\n\n");
     p.push_str("ДОСТУПНЫЕ МЕТОДЫ:\n");
-    p.push_str("  system.context() -> {app_id, app_root, manifest, app_project, linked_projects, memory_defaults} — контекст текущей утилиты и привязанных проектов\n");
+    p.push_str("  system.context() -> {app_id, app_root, manifest, app_project, linked_projects, memory_defaults} — контекст текущей утилиты; app_project/linked_projects это summaries со skills и mcp_server_names, без raw MCP config\n");
     p.push_str("  manifest.get() -> AppManifest; manifest.update({patch}) -> {ok, manifest} — безопасно обновить собственный manifest.json (id всегда остаётся текущим app)\n");
     p.push_str("  agent.ask({prompt}) -> {answer}                       — короткий one-shot вопрос агенту\n");
     p.push_str("  agent.startTopic({prompt, projectId?}) -> {threadId}   — создать полноценный тред\n");

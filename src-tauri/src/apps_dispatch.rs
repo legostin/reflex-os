@@ -624,8 +624,12 @@ fn merge_json(base: &mut serde_json::Value, patch: serde_json::Value) {
 fn system_context(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
     let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
     let manifest = apps::read_manifest(app, app_id).ok();
-    let app_project = project::find_project_for(&app_root);
-    let linked_projects = linked_projects_for_app(app, app_id)?;
+    let app_project =
+        project::find_project_for(&app_root).map(|project| project_summary(&project));
+    let linked_projects: Vec<serde_json::Value> = linked_projects_for_app(app, app_id)?
+        .into_iter()
+        .map(|project| project_summary(&project))
+        .collect();
     Ok(serde_json::json!({
         "app_id": app_id,
         "app_root": app_root.to_string_lossy(),

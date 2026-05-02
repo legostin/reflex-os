@@ -100,8 +100,8 @@ The injected runtime overlay provides:
 
 Core methods:
 
-- `system.context()` -> app id/root, manifest, app project, linked projects,
-  and memory defaults.
+- `system.context()` -> app id/root, manifest, app project summary, linked
+  project summaries, and memory defaults.
 - `manifest.get()` -> current `manifest.json`.
 - `manifest.update({ patch })` -> merge-update this app's manifest; useful for
   adding `actions`, `widgets`, `schedules`, permissions, or network hosts.
