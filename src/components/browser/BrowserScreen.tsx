@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useI18n } from "../../i18n";
 import "./browser.css";
 
 interface TabSummary {
@@ -46,6 +47,7 @@ export function BrowserScreen({
   projectName,
   onStartChat,
 }: BrowserScreenProps) {
+  const { t } = useI18n();
   const [tabs, setTabs] = useState<TabSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [urlDraft, setUrlDraft] = useState("");
@@ -117,7 +119,7 @@ export function BrowserScreen({
     const prompt = chatDraft.trim();
     if (!prompt || chatSubmitting) return;
     if (!projectId) {
-      setError("Активный проект не выбран — выбери проект в шапке.");
+      setError(t("browser.noActiveProject"));
       return;
     }
     setChatSubmitting(true);
@@ -439,7 +441,7 @@ export function BrowserScreen({
     return (
       <div className="browser-root">
         <div className="browser-empty">
-          Чтобы открыть браузер, выбери активный проект в шапке.
+          {t("browser.noActiveProject")}
         </div>
       </div>
     );
@@ -449,27 +451,27 @@ export function BrowserScreen({
     <div className="browser-root">
       <header className="browser-header">
         <div className="browser-project-line">
-          <span className="browser-project-label">Проект:</span>
+          <span className="browser-project-label">{t("browser.projectLabel")}</span>
           <span className="browser-project-name">
             {projectName ?? projectId}
           </span>
         </div>
         <div className="browser-tab-bar">
-          {tabs.map((t) => (
+          {tabs.map((tab) => (
             <button
-              key={t.tab_id}
-              className={`browser-tab ${activeId === t.tab_id ? "active" : ""}`}
-              onClick={() => void switchActive(t.tab_id)}
-              title={t.url}
+              key={tab.tab_id}
+              className={`browser-tab ${activeId === tab.tab_id ? "active" : ""}`}
+              onClick={() => void switchActive(tab.tab_id)}
+              title={tab.url}
             >
               <span className="browser-tab-title">
-                {t.title || t.url || "пусто"}
+                {tab.title || tab.url || t("browser.emptyTab")}
               </span>
               <span
                 className="browser-tab-close"
                 onClick={(ev) => {
                   ev.stopPropagation();
-                  void closeTab(t.tab_id);
+                  void closeTab(tab.tab_id);
                 }}
               >
                 ✕
@@ -480,33 +482,33 @@ export function BrowserScreen({
             className="browser-tab browser-tab-new"
             onClick={() => void newTab()}
             disabled={busy}
-            title="Новая вкладка"
+            title={t("browser.newTab")}
           >
             +
           </button>
         </div>
         <div className="browser-url-bar">
-          <button onClick={() => void back()} disabled={busy} title="Назад">
+          <button onClick={() => void back()} disabled={busy} title={t("browser.back")}>
             ◀
           </button>
           <button
             onClick={() => void forward()}
             disabled={busy}
-            title="Вперёд"
+            title={t("browser.forward")}
           >
             ▶
           </button>
           <button
             onClick={() => void reload()}
             disabled={busy}
-            title="Обновить"
+            title={t("browser.reload")}
           >
             ↻
           </button>
           <input
             className="browser-url-input"
             value={urlDraft}
-            placeholder="URL или поисковый запрос"
+            placeholder={t("browser.urlPlaceholder")}
             onChange={(e) => setUrlDraft(e.currentTarget.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -520,7 +522,7 @@ export function BrowserScreen({
             onClick={() => void go()}
             disabled={busy || !urlDraft.trim()}
           >
-            Перейти
+            {t("browser.go")}
           </button>
         </div>
       </header>
@@ -543,7 +545,7 @@ export function BrowserScreen({
           />
         ) : (
           <div className="browser-empty">
-            {busy ? "Запускаю Chromium…" : "Нет картинки. Открой страницу."}
+            {busy ? t("browser.startingChromium") : t("browser.noImage")}
           </div>
         )}
       </div>
@@ -553,8 +555,10 @@ export function BrowserScreen({
           value={chatDraft}
           placeholder={
             tabs.length === 0
-              ? "Открой страницу и начни чат с агентом…"
-              : `Запустить чат по ${tabs.length} вкладк${tabs.length === 1 ? "е" : "ам"}…`
+              ? t("browser.openPagePrompt")
+              : tabs.length === 1
+                ? t("browser.startChatOneTab")
+                : t("browser.startChatTabs", { count: tabs.length })
           }
           onChange={(e) => setChatDraft(e.currentTarget.value)}
           onKeyDown={(e) => {
@@ -569,9 +573,9 @@ export function BrowserScreen({
           className="browser-chat-send"
           onClick={() => void submitChat()}
           disabled={chatSubmitting || !chatDraft.trim()}
-          title="Создать чат с контекстом текущих вкладок"
+          title={t("browser.startChatTitle")}
         >
-          {chatSubmitting ? "…" : "Чат"}
+          {chatSubmitting ? "..." : t("browser.chat")}
         </button>
       </footer>
     </div>

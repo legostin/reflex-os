@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "../../i18n";
 import "./suggester.css";
 
 interface ExistingSuggestion {
@@ -43,6 +44,7 @@ export function SuggesterModal({
   onClose,
   onApplied,
 }: Props) {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<SuggestionPlan | null>(null);
@@ -131,33 +133,34 @@ export function SuggesterModal({
         className="modal suggester-modal"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="modal-title">Предложения по проекту</h2>
+        <h2 className="modal-title">{t("suggester.title")}</h2>
         {loading && (
           <div className="suggester-loading">
             <div className="suggester-spinner" />
-            Думаю над каталогом утилит…
+            {t("suggester.loading")}
           </div>
         )}
         {error && (
-          <div className="suggester-error">Ошибка анализа: {error}</div>
+          <div className="suggester-error">
+            {t("suggester.analysisError", { error })}
+          </div>
         )}
         {plan && !loading && (
           <>
             {plan.use_existing.length === 0 && plan.create_new.length === 0 ? (
               <p className="modal-hint">
-                Ничего предложить не удалось. Можешь привязать утилиты вручную
-                позже.
+                {t("suggester.none")}
               </p>
             ) : (
               <p className="modal-hint">
-                Сними галочки если что-то не нужно. Создание новых утилит запустится в фоне через Codex.
+                {t("suggester.hint")}
               </p>
             )}
 
             {plan.use_existing.length > 0 && (
               <section className="suggester-section">
                 <h3 className="suggester-section-title">
-                  Привязать существующие
+                  {t("suggester.linkExisting")}
                 </h3>
                 <ul className="suggester-list">
                   {plan.use_existing.map((e) => (
@@ -186,7 +189,7 @@ export function SuggesterModal({
             {plan.create_new.length > 0 && (
               <section className="suggester-section">
                 <h3 className="suggester-section-title">
-                  Создать новые утилиты
+                  {t("suggester.createNew")}
                 </h3>
                 <ul className="suggester-list">
                   {plan.create_new.map((n, i) => (
@@ -225,7 +228,7 @@ export function SuggesterModal({
             disabled={applying}
             onClick={onClose}
           >
-            Пропустить
+            {t("suggester.skip")}
           </button>
           <button
             className="modal-btn modal-btn-primary"
@@ -233,8 +236,10 @@ export function SuggesterModal({
             onClick={() => void applyPlan()}
           >
             {applying
-              ? "Применяю…"
-              : `Применить (${pickedExisting.size + pickedNew.size})`}
+              ? t("suggester.applying")
+              : t("suggester.applyCount", {
+                  count: pickedExisting.size + pickedNew.size,
+                })}
           </button>
         </div>
       </div>
