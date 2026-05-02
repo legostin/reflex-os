@@ -67,6 +67,8 @@ const PERMISSION_EXAMPLES = [
   "topics.read:*",
   "skills.read:<project>",
   "skills.read:*",
+  "skills.write:<project>",
+  "skills.write:*",
   "mcp.read:<project>",
   "mcp.read:*",
   "project.files.read:<project>",

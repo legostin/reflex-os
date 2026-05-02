@@ -1170,6 +1170,14 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexSkillsList = function(params) {
     return reflexInvokeRaw('skills.list', params || {});
   };
+  window.reflexProjectSkillsEnsure = function(skillOrParams) {
+    var params = (typeof skillOrParams === 'string') ? {skill: skillOrParams} : (skillOrParams || {});
+    return reflexInvokeRaw('project.skills.ensure', params);
+  };
+  window.reflexProjectSkillsRevoke = function(skillOrParams) {
+    var params = (typeof skillOrParams === 'string') ? {skill: skillOrParams} : (skillOrParams || {});
+    return reflexInvokeRaw('project.skills.revoke', params);
+  };
   window.reflexMcpServers = function(params) {
     return reflexInvokeRaw('mcp.servers', params || {});
   };

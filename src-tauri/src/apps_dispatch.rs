@@ -629,6 +629,8 @@ pub async fn dispatch_app_method(
         "topics.list" | "threads.list" => topics_list_for_app(app, app_id, params),
         "topics.open" | "threads.open" => topics_open_for_app(app, app_id, params),
         "skills.list" => skills_list_for_app(app, app_id, params),
+        "project.skills.ensure" => project_skills_ensure_for_app(app, app_id, params),
+        "project.skills.revoke" => project_skills_revoke_for_app(app, app_id, params),
         "mcp.servers" | "mcp.list" => mcp_servers_for_app(app, app_id, params),
         "project.files.list" => project_files_list_for_app(app, app_id, params),
         "project.files.read" => project_files_read_for_app(app, app_id, params),
@@ -1232,6 +1234,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "topics.list",
                 "topics.open",
                 "skills.list",
+                "project.skills.ensure",
+                "project.skills.revoke",
                 "mcp.servers",
                 "project.files.list",
                 "project.files.read",
@@ -1377,6 +1381,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexTopicsList",
                 "reflexTopicsOpen",
                 "reflexSkillsList",
+                "reflexProjectSkillsEnsure",
+                "reflexProjectSkillsRevoke",
                 "reflexMcpServers",
                 "reflexProjectFilesList",
                 "reflexProjectFilesRead",
@@ -1473,7 +1479,7 @@ fn bridge_permission_hints() -> serde_json::Value {
         { "scope": "browser", "grants": ["browser.read", "browser.control", "browser:*", "browser.project:<project>"] },
         { "scope": "projects", "grants": ["projects.read:*"] },
         { "scope": "topics", "grants": ["topics.read:<project>", "topics.read:*"] },
-        { "scope": "skills", "grants": ["skills.read:<project>", "skills.read:*"] },
+        { "scope": "skills", "grants": ["skills.read:<project>", "skills.read:*", "skills.write:<project>", "skills.write:*"] },
         { "scope": "mcp", "grants": ["mcp.read:<project>", "mcp.read:*"] },
         { "scope": "project.files", "grants": ["project.files.read:<project>", "project.files.read:*", "project.files.write:<project>", "project.files.write:*"] },
         { "scope": "memory", "grants": ["memory.global.read", "memory.global.write"] },
@@ -2982,6 +2988,125 @@ fn skills_list_for_app(
         })
         .collect();
     Ok(serde_json::Value::Array(out))
+}
+
+fn project_skills_ensure_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut project = resolve_project_skill_write_target(app, app_id, &params)?;
+    let skills = parse_project_skill_names(&params)?;
+    let mut added = Vec::new();
+    for skill in skills {
+        if !project
+            .skills
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&skill))
+        {
+            project.skills.push(skill.clone());
+            added.push(skill);
+        }
+    }
+    write_project_and_register(app, &project)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project.id,
+        "project_name": project.name,
+        "added": added,
+        "skills": project.skills,
+    }))
+}
+
+fn project_skills_revoke_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut project = resolve_project_skill_write_target(app, app_id, &params)?;
+    let skills = parse_project_skill_names(&params)?;
+    let lower: std::collections::HashSet<String> =
+        skills.iter().map(|skill| skill.to_ascii_lowercase()).collect();
+    let before = project.skills.clone();
+    project
+        .skills
+        .retain(|skill| !lower.contains(&skill.to_ascii_lowercase()));
+    let removed: Vec<String> = before
+        .into_iter()
+        .filter(|skill| lower.contains(&skill.to_ascii_lowercase()))
+        .collect();
+    write_project_and_register(app, &project)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project.id,
+        "project_name": project.name,
+        "removed": removed,
+        "skills": project.skills,
+    }))
+}
+
+fn resolve_project_skill_write_target(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<project::Project, String> {
+    if let Some(project_id) = string_param(params, "project_id", "projectId") {
+        let project = list_user_projects(app)?
+            .into_iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| format!("project not found: {project_id}"))?;
+        ensure_scoped_permission(app, app_id, "skills.write", &project.id)?;
+        return Ok(project);
+    }
+    let targets: Vec<project::Project> = list_user_projects(app)?
+        .into_iter()
+        .filter(|project| scoped_permission_allowed(app, app_id, "skills.write", &project.id))
+        .collect();
+    if targets.len() == 1 {
+        return Ok(targets.into_iter().next().expect("one skill write target"));
+    }
+    if targets.is_empty() {
+        return Err(
+            "missing project_id; add manifest.permissions entry 'skills.write:<project>' or 'skills.write:*'"
+                .into(),
+        );
+    }
+    Err("missing project_id; multiple skills.write targets are available".into())
+}
+
+fn parse_project_skill_names(params: &serde_json::Value) -> Result<Vec<String>, String> {
+    let raw = parse_string_list(params, "skill", "skills")?;
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for skill in raw {
+        let skill = normalize_project_skill_name(&skill)?;
+        if seen.insert(skill.to_ascii_lowercase()) {
+            out.push(skill);
+        }
+    }
+    if out.is_empty() {
+        return Err("skills must include at least one skill".into());
+    }
+    Ok(out)
+}
+
+fn normalize_project_skill_name(raw: &str) -> Result<String, String> {
+    let skill = raw.trim();
+    if skill.is_empty() {
+        return Err("skill must be non-empty".into());
+    }
+    if skill.len() > 160 {
+        return Err("skill must be 160 characters or fewer".into());
+    }
+    if skill.chars().any(|ch| ch.is_control() || ch == ',' || ch == '\n' || ch == '\r') {
+        return Err("skill must not contain commas or control characters".into());
+    }
+    Ok(skill.to_string())
+}
+
+fn write_project_and_register(app: &AppHandle, project: &project::Project) -> Result<(), String> {
+    project::write_project(&PathBuf::from(&project.root), project).map_err(|e| e.to_string())?;
+    project::register(app, project).map_err(|e| e.to_string())
 }
 
 fn mcp_servers_for_app(
@@ -4968,5 +5093,24 @@ mod tests {
             "*.example.com"
         );
         assert!(normalize_allowed_host("*.127.0.0.1").is_err());
+    }
+
+    #[test]
+    fn project_skill_names_are_normalized_and_deduped() {
+        let params = serde_json::json!({
+            "skills": [
+                " build-web-apps:react-best-practices ",
+                "BUILD-WEB-APPS:REACT-BEST-PRACTICES",
+                "custom-workflow"
+            ]
+        });
+        assert_eq!(
+            parse_project_skill_names(&params).unwrap(),
+            vec![
+                "build-web-apps:react-best-practices".to_string(),
+                "custom-workflow".to_string()
+            ]
+        );
+        assert!(normalize_project_skill_name("bad,skill").is_err());
     }
 }

@@ -94,6 +94,8 @@ The injected runtime overlay provides:
 - `window.reflexTopicsList(params)`
 - `window.reflexTopicsOpen(threadIdOrParams, projectId?)`
 - `window.reflexSkillsList(params)`
+- `window.reflexProjectSkillsEnsure(skillOrParams)`
+- `window.reflexProjectSkillsRevoke(skillOrParams)`
 - `window.reflexMcpServers(params)`
 - `window.reflexProjectFilesList(pathOrParams, recursive?)`
 - `window.reflexProjectFilesRead(pathOrParams)`
@@ -207,6 +209,12 @@ Core methods:
 - `topics.open({ threadId, projectId? })` -> asks Reflex to open that topic in
   the main UI.
 - `skills.list({ projectId?, includeAll? })`.
+- `project.skills.ensure({ projectId?, skill })` or
+  `project.skills.ensure({ projectId?, skills })` -> `{ ok, added, skills }`;
+  requires `skills.write:<project>` or `skills.write:*`.
+- `project.skills.revoke({ projectId?, skill })` or
+  `project.skills.revoke({ projectId?, skills })` -> `{ ok, removed, skills }`;
+  requires `skills.write:<project>` or `skills.write:*`.
 - `mcp.servers({ projectId?, includeAll?, includeConfig? })`.
 - `project.files.list({ projectId?, path?, recursive?, includeHidden? })` ->
   `{ project_id, project_name, entries }`; linked projects are available by
@@ -247,8 +255,9 @@ Project/topic methods return sanitized summaries for linked projects by
 default. Cross-project overview requires `projects.read:*`,
 `topics.read:<project>`, or `topics.read:*` in `manifest.permissions`.
 Skills and MCP server names are available for linked projects; cross-project
-skills require `skills.read:<project>` or `skills.read:*`, and raw MCP config
-requires `mcp.read:<project>` or `mcp.read:*`.
+skills require `skills.read:<project>` or `skills.read:*`, skill mutations
+require `skills.write:<project>` or `skills.write:*`, and raw MCP config requires
+`mcp.read:<project>` or `mcp.read:*`.
 Browser methods require `browser.read` for read-only inspection or
 `browser.control` for init/open/navigate/click/fill. Project browser state
 requires a linked project or `browser.project:<project>`.
