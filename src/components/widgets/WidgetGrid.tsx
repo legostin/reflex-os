@@ -1,4 +1,5 @@
 import { WidgetFrame } from "./WidgetFrame";
+import { useI18n } from "../../i18n";
 import "./widgets.css";
 
 export interface WidgetDef {
@@ -22,10 +23,11 @@ interface Props {
 }
 
 export function WidgetGrid({ sources, onOpenApp }: Props) {
+  const { t } = useI18n();
   if (sources.length === 0) {
     return (
       <div className="widget-grid-empty">
-        Утилиты в этом проекте пока не предоставляют виджеты.
+        {t("widget.empty")}
       </div>
     );
   }

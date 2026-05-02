@@ -1,4 +1,5 @@
 import type { WidgetSource } from "./WidgetGrid";
+import { useI18n } from "../../i18n";
 
 const ALLOWED_SIZES = new Set(["small", "medium", "large", "wide"]);
 
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export function WidgetFrame({ source, onOpenApp }: Props) {
+  const { t } = useI18n();
   const { appId, appName, appIcon, widget } = source;
   const size = ALLOWED_SIZES.has(widget.size ?? "small")
     ? widget.size
@@ -21,7 +23,7 @@ export function WidgetFrame({ source, onOpenApp }: Props) {
         <button
           className="widget-source"
           onClick={() => onOpenApp?.(appId)}
-          title={`Открыть ${appName}`}
+          title={t("widget.openTitle", { name: appName })}
           disabled={!onOpenApp}
         >
           <span className="widget-source-icon">{appIcon ?? "🧩"}</span>

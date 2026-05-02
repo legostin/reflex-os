@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "../i18n";
 
 export type DiffLine = { op: " " | "+" | "-" | "\\"; text: string };
 export type Hunk = {
@@ -145,11 +146,12 @@ export function DiffPanel({
   onClose: () => void;
   onApplied: () => void;
 }) {
+  const { t } = useI18n();
   const [raw, setRaw] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [commitMsg, setCommitMsg] = useState("частичная ревизия");
+  const [commitMsg, setCommitMsg] = useState("partial revision");
 
   useEffect(() => {
     let alive = true;
@@ -199,7 +201,7 @@ export function DiffPanel({
     if (busy) return;
     const patch = buildPatch(files, selected);
     if (!patch) {
-      setError("Не выбрано ни одного фрагмента");
+      setError(t("diff.noSelection"));
       return;
     }
     setBusy(true);
@@ -208,7 +210,7 @@ export function DiffPanel({
       await invoke("app_save_partial", {
         appId,
         patch,
-        message: commitMsg.trim() || "частичная ревизия",
+        message: commitMsg.trim() || "partial revision",
       });
       onApplied();
     } catch (e) {
@@ -229,7 +231,7 @@ export function DiffPanel({
           <input
             className="diff-commit-msg"
             type="text"
-            placeholder="сообщение ревизии"
+            placeholder={t("diff.commitPlaceholder")}
             value={commitMsg}
             onChange={(e) => setCommitMsg(e.currentTarget.value)}
             onKeyDown={(e) => {
@@ -245,18 +247,22 @@ export function DiffPanel({
               onClick={() => void apply()}
               disabled={busy || files.length === 0 || selected.size === 0}
             >
-              {busy ? "Применяю…" : `Применить (${selected.size})`}
+              {busy
+                ? t("diff.applying")
+                : t("diff.applyCount", { count: selected.size })}
             </button>
             <button className="modal-btn" onClick={onClose} disabled={busy}>
-              Закрыть
+              {t("diff.close")}
             </button>
           </div>
         </header>
         {error && <div className="apps-error">{error}</div>}
         <div className="diff-body">
-          {raw === null && !error && <div className="diff-empty">Загружаю…</div>}
+          {raw === null && !error && (
+            <div className="diff-empty">{t("diff.loading")}</div>
+          )}
           {raw !== null && files.length === 0 && (
-            <div className="diff-empty">Нет изменений.</div>
+            <div className="diff-empty">{t("diff.noChanges")}</div>
           )}
           {files.map((file) => {
             const allKeys = file.hunks.map((_, i) => `${file.path}::${i}`);
@@ -280,19 +286,27 @@ export function DiffPanel({
                   </label>
                   <span className="diff-file-path">
                     {file.isNew && (
-                      <span className="diff-tag diff-tag-new">новый</span>
+                      <span className="diff-tag diff-tag-new">
+                        {t("diff.new")}
+                      </span>
                     )}
                     {file.isDeleted && (
-                      <span className="diff-tag diff-tag-del">удалён</span>
+                      <span className="diff-tag diff-tag-del">
+                        {t("diff.deleted")}
+                      </span>
                     )}
                     {file.isBinary && (
-                      <span className="diff-tag diff-tag-bin">бинарный</span>
+                      <span className="diff-tag diff-tag-bin">
+                        {t("diff.binary")}
+                      </span>
                     )}
                     {file.path}
                   </span>
                 </header>
                 {file.isBinary && (
-                  <div className="diff-empty">Бинарный файл — diff недоступен.</div>
+                  <div className="diff-empty">
+                    {t("diff.binaryUnavailable")}
+                  </div>
                 )}
                 {file.hunks.map((h, i) => {
                   const key = `${file.path}::${i}`;
