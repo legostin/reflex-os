@@ -147,6 +147,48 @@
   font-size: 12px;
 }
 
+.settings-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-stat-card {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.settings-stat-card span,
+.settings-stat-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-stat-card span {
+  color: rgba(180, 185, 195, 0.76);
+  font-size: 11px;
+}
+
+.settings-stat-card strong {
+  color: rgba(245, 245, 247, 0.97);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 24px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.settings-stat-card small {
+  color: rgba(205, 210, 220, 0.62);
+  font-size: 11px;
+}
+
 .settings-cap-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -295,6 +337,12 @@
   }
 
   .settings-flow {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .settings-stat-grid {
     grid-template-columns: 1fr 1fr;
   }
 }

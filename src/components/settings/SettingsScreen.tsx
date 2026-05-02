@@ -102,6 +102,31 @@ const BRIDGE_HELPER_COUNT = BRIDGE_HELPER_GROUPS.reduce(
   0,
 );
 
+const PERMISSION_COUNT = PERMISSION_EXAMPLES.length;
+
+const SYSTEM_STATS = [
+  {
+    label: "Bridge methods",
+    value: BRIDGE_API_COUNT,
+    detail: "dispatch API",
+  },
+  {
+    label: "Overlay helpers",
+    value: BRIDGE_HELPER_COUNT,
+    detail: "window.reflex*",
+  },
+  {
+    label: "Patterns",
+    value: BRIDGE_RECIPE_CARDS.length,
+    detail: "рабочие связки",
+  },
+  {
+    label: "Permission forms",
+    value: PERMISSION_COUNT,
+    detail: "manifest grants",
+  },
+] as const;
+
 export function SettingsScreen() {
   const [tab, setTab] = useState<Tab>("capabilities");
   return (
@@ -152,6 +177,23 @@ function CapabilitiesPane() {
     })).filter((group) => group.helpers.length > 0);
   }, [normalizedBridgeQuery]);
 
+  const visibleRecipeCards = useMemo(() => {
+    if (!normalizedBridgeQuery) return BRIDGE_RECIPE_CARDS;
+    return BRIDGE_RECIPE_CARDS.filter((recipe) =>
+      [recipe.title, recipe.body, recipe.example, ...recipe.calls]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedBridgeQuery),
+    );
+  }, [normalizedBridgeQuery]);
+
+  const visiblePermissionExamples = useMemo(() => {
+    if (!normalizedBridgeQuery) return PERMISSION_EXAMPLES;
+    return PERMISSION_EXAMPLES.filter((permission) =>
+      permission.toLowerCase().includes(normalizedBridgeQuery),
+    );
+  }, [normalizedBridgeQuery]);
+
   const visibleApiCount = visibleApiGroups.reduce(
     (sum, group) => sum + group.methods.length,
     0,
@@ -172,6 +214,16 @@ function CapabilitiesPane() {
         </p>
       </section>
 
+      <div className="settings-stat-grid" aria-label="Reflex OS summary">
+        {SYSTEM_STATS.map((stat) => (
+          <article className="settings-stat-card" key={stat.label}>
+            <span>{stat.label}</span>
+            <strong>{stat.value}</strong>
+            <small>{stat.detail}</small>
+          </article>
+        ))}
+      </div>
+
       <section className="settings-section settings-section-open">
         <h2>Карта системы</h2>
         <div className="settings-cap-grid">
@@ -190,7 +242,7 @@ function CapabilitiesPane() {
           <div className="settings-section-controls">
             <input
               className="settings-bridge-search"
-              placeholder="Поиск bridge…"
+              placeholder="Поиск API, helpers, permissions…"
               value={bridgeQuery}
               onChange={(e) => setBridgeQuery(e.currentTarget.value)}
             />
@@ -221,23 +273,27 @@ function CapabilitiesPane() {
         <div className="settings-section-title-row">
           <h2>Рабочие связки bridge</h2>
           <span className="settings-section-meta">
-            {BRIDGE_RECIPE_CARDS.length} patterns
+            {visibleRecipeCards.length}/{BRIDGE_RECIPE_CARDS.length} patterns
           </span>
         </div>
-        <div className="settings-recipe-grid">
-          {BRIDGE_RECIPE_CARDS.map((recipe) => (
-            <article className="settings-recipe-card" key={recipe.title}>
-              <h3>{recipe.title}</h3>
-              <p>{recipe.body}</p>
-              <div className="settings-method-list">
-                {recipe.calls.map((call) => (
-                  <code key={call}>{call}</code>
-                ))}
-              </div>
-              <code className="settings-recipe-example">{recipe.example}</code>
-            </article>
-          ))}
-        </div>
+        {visibleRecipeCards.length === 0 ? (
+          <div className="settings-empty-inline">Нет совпадений.</div>
+        ) : (
+          <div className="settings-recipe-grid">
+            {visibleRecipeCards.map((recipe) => (
+              <article className="settings-recipe-card" key={recipe.title}>
+                <h3>{recipe.title}</h3>
+                <p>{recipe.body}</p>
+                <div className="settings-method-list">
+                  {recipe.calls.map((call) => (
+                    <code key={call}>{call}</code>
+                  ))}
+                </div>
+                <code className="settings-recipe-example">{recipe.example}</code>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="settings-section settings-section-open">
@@ -273,13 +329,19 @@ function CapabilitiesPane() {
       <section className="settings-section">
         <div className="settings-section-title-row">
           <h2>Разрешения</h2>
-          <span className="settings-section-meta">manifest.json</span>
+          <span className="settings-section-meta">
+            {visiblePermissionExamples.length}/{PERMISSION_COUNT} manifest grants
+          </span>
         </div>
-        <div className="settings-token-list">
-          {PERMISSION_EXAMPLES.map((permission) => (
-            <code key={permission}>{permission}</code>
-          ))}
-        </div>
+        {visiblePermissionExamples.length === 0 ? (
+          <div className="settings-empty-inline">Нет совпадений.</div>
+        ) : (
+          <div className="settings-token-list">
+            {visiblePermissionExamples.map((permission) => (
+              <code key={permission}>{permission}</code>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="settings-section">
