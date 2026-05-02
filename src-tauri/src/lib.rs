@@ -1024,6 +1024,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("      \"id\": \"today-summary\",\n");
     p.push_str("      \"name\": \"Сводка за сегодня\",\n");
     p.push_str("      \"public\": true,                   // если false — caller должен иметь permission \"apps.invoke:<this_app_id>\"\n");
+    p.push_str("      \"params_schema\": {\"type\":\"object\",\"properties\":{}}, // опционально: JSON Schema для входных params\n");
     p.push_str("      \"steps\": [\n");
     p.push_str("        { \"method\": \"storage.get\", \"params\": {\"key\":\"today\"}, \"save_as\": \"output\" }\n");
     p.push_str("      ]\n");

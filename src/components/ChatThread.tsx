@@ -329,6 +329,8 @@ type AppAction = {
   id: string;
   name: string;
   description?: string | null;
+  params_schema?: any;
+  paramsSchema?: any;
   public?: boolean;
   steps?: AppStep[];
 };
@@ -3015,6 +3017,9 @@ function AppViewer({
                 {actionBusy === action.id ? "…" : action.name || action.id}
                 {action.public && (
                   <span className="appviewer-action-public">public</span>
+                )}
+                {(action.params_schema || action.paramsSchema) && (
+                  <span className="appviewer-action-public">params</span>
                 )}
               </button>
             ))}

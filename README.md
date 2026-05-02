@@ -175,6 +175,8 @@ Apps can expose:
 
 - `schedules`: cron-like workflows run by Reflex while it is alive.
 - `actions`: callable workflows for other apps via `apps.invoke`.
+  Actions may include optional `params_schema` JSON Schema metadata; caller
+  input is available to workflow steps as `{{input.<field>}}`.
 - `widgets`: compact pages shown on a linked project's dashboard.
 
 Workflow steps call normal bridge methods and can pass previous results through

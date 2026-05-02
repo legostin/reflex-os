@@ -1261,6 +1261,7 @@ fn list_actions(
                 "id": a.id,
                 "name": a.name,
                 "description": a.description,
+                "params_schema": a.params_schema,
                 "public": a.public,
                 "steps_count": a.steps.len(),
             });

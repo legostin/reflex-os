@@ -79,6 +79,9 @@ pub struct ActionDef {
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
+    #[serde(alias = "paramsSchema")]
+    pub params_schema: Option<serde_json::Value>,
+    #[serde(default)]
     pub public: bool,
     pub steps: Vec<Step>,
 }

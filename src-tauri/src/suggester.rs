@@ -108,6 +108,7 @@ pub async fn suggest(app: AppHandle, project_id: String) -> Result<SuggestionRes
                 "id": a.id,
                 "name": a.name,
                 "description": a.description,
+                "params_schema": a.params_schema,
                 "public": a.public,
             })).collect::<Vec<_>>(),
         });
