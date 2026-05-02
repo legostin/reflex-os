@@ -74,7 +74,9 @@ The injected runtime overlay provides:
 - `window.reflexDialogSaveFile(params)`
 - `window.reflexNotifyShow(titleOrParams, body?)`
 - `window.reflexProjectsList(params)`
+- `window.reflexProjectsOpen(projectIdOrParams)`
 - `window.reflexTopicsList(params)`
+- `window.reflexTopicsOpen(threadIdOrParams, projectId?)`
 - `window.reflexSkillsList(params)`
 - `window.reflexMcpServers(params)`
 - `window.reflexBrowserInit(params)`
@@ -147,7 +149,11 @@ Core methods:
 - `net.fetch({ url, method?, headers?, body?, timeoutMs? })`; requires
   `manifest.network.allowed_hosts`.
 - `projects.list({ includeAll? })`.
+- `projects.open({ projectId })` -> asks Reflex to open that project in the
+  main UI.
 - `topics.list({ projectId?, limit?, includeAll? })`.
+- `topics.open({ threadId, projectId? })` -> asks Reflex to open that topic in
+  the main UI.
 - `skills.list({ projectId?, includeAll? })`.
 - `mcp.servers({ projectId?, includeAll?, includeConfig? })`.
 - `browser.init`, `browser.tabs.list`, `browser.open`, `browser.navigate`.
@@ -212,9 +218,9 @@ Apps can expose:
 Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,
 `clipboard.*`, `system.openUrl`, `system.openPath`, `system.revealPath`, and
-`apps.open` are not valid inside schedules. `scheduler.runNow` and
-`scheduler.setPaused` are also blocked inside schedule steps to prevent
-unattended recursive runs.
+`apps.open` are not valid inside schedules. `projects.open`, `topics.open`,
+`scheduler.runNow`, and `scheduler.setPaused` are also blocked inside schedule
+steps to prevent unattended recursive runs.
 
 ## Development
 

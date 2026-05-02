@@ -607,7 +607,9 @@ pub async fn dispatch_app_method(
             list_actions(app, target_id.as_deref(), include_steps)
         }
         "projects.list" => projects_list_for_app(app, app_id, params),
+        "projects.open" => projects_open_for_app(app, app_id, params),
         "topics.list" | "threads.list" => topics_list_for_app(app, app_id, params),
+        "topics.open" | "threads.open" => topics_open_for_app(app, app_id, params),
         "skills.list" => skills_list_for_app(app, app_id, params),
         "mcp.servers" | "mcp.list" => mcp_servers_for_app(app, app_id, params),
         "browser.init" => browser_init_for_app(app, app_id, params).await,
@@ -1689,6 +1691,29 @@ fn projects_list_for_app(
     Ok(serde_json::Value::Array(out))
 }
 
+fn projects_open_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let project_id = required_string_param(&params, "project_id", "projectId")?;
+    let project = list_user_projects(app)?
+        .into_iter()
+        .find(|project| project.id == project_id)
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    ensure_project_scope_access(app, app_id, "projects.read", &project)?;
+    let project_id = project.id.clone();
+    app.emit(
+        "reflex://project-open-request",
+        &serde_json::json!({
+            "project_id": project_id,
+            "from_app": app_id,
+        }),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "ok": true, "project_id": project_id }))
+}
+
 fn topics_list_for_app(
     app: &AppHandle,
     app_id: &str,
@@ -1748,6 +1773,65 @@ fn topics_list_for_app(
     });
     out.truncate(limit);
     Ok(serde_json::Value::Array(out))
+}
+
+fn topics_open_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let thread_id = required_string_param(&params, "thread_id", "threadId")?;
+    let projects = list_user_projects(app)?;
+
+    let project = if let Some(project_id) = string_param(&params, "project_id", "projectId") {
+        let project = projects
+            .into_iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| format!("project not found: {project_id}"))?;
+        ensure_topic_read_access(app, app_id, &project)?;
+        if !project_has_thread(&project, &thread_id)? {
+            return Err(format!("topic not found: {thread_id}"));
+        }
+        project
+    } else {
+        let mut found = None;
+        for project in projects {
+            if !can_read_topics(app, app_id, &project) {
+                continue;
+            }
+            match project_has_thread(&project, &thread_id) {
+                Ok(true) => {
+                    found = Some(project);
+                    break;
+                }
+                Ok(false) => {}
+                Err(e) => eprintln!("[reflex] topics.open scan {}: {e}", project.root),
+            }
+        }
+        found.ok_or_else(|| format!("topic not found or not accessible: {thread_id}"))?
+    };
+
+    let project_id = project.id.clone();
+    app.emit(
+        "reflex://topic-open-request",
+        &serde_json::json!({
+            "project_id": project_id,
+            "thread_id": thread_id,
+            "from_app": app_id,
+        }),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project_id,
+        "thread_id": thread_id,
+    }))
+}
+
+fn project_has_thread(project: &project::Project, thread_id: &str) -> Result<bool, String> {
+    let root = PathBuf::from(&project.root);
+    let threads = storage::read_all_threads(&root).map_err(|e| e.to_string())?;
+    Ok(threads.iter().any(|thread| thread.meta.id == thread_id))
 }
 
 fn skills_list_for_app(

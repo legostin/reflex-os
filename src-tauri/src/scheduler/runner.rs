@@ -17,6 +17,7 @@ const SCHEDULE_STEP_METHOD_BLACKLIST: &[&str] = &[
     "dialog.openDirectory",
     "dialog.openFile",
     "dialog.saveFile",
+    "projects.open",
     "scheduler.runNow",
     "scheduler.run_now",
     "scheduler.setPaused",
@@ -27,6 +28,8 @@ const SCHEDULE_STEP_METHOD_BLACKLIST: &[&str] = &[
     "system.open_url",
     "system.revealPath",
     "system.reveal_path",
+    "threads.open",
+    "topics.open",
 ];
 
 tokio::task_local! {
@@ -307,6 +310,7 @@ mod tests {
             "dialog.openDirectory",
             "dialog.openFile",
             "dialog.saveFile",
+            "projects.open",
             "scheduler.runNow",
             "scheduler.run_now",
             "scheduler.setPaused",
@@ -317,6 +321,8 @@ mod tests {
             "system.open_url",
             "system.revealPath",
             "system.reveal_path",
+            "threads.open",
+            "topics.open",
         ] {
             assert!(
                 SCHEDULE_STEP_METHOD_BLACKLIST.contains(&method),

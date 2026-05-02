@@ -35,7 +35,14 @@ export const BRIDGE_API_GROUPS = [
   },
   {
     title: "Проекты и топики",
-    methods: ["projects.list", "topics.list", "skills.list", "mcp.servers"],
+    methods: [
+      "projects.list",
+      "projects.open",
+      "topics.list",
+      "topics.open",
+      "skills.list",
+      "mcp.servers",
+    ],
   },
   {
     title: "Browser sidecar",
@@ -152,7 +159,9 @@ export const BRIDGE_HELPER_GROUPS = [
     title: "Projects / Browser",
     helpers: [
       "reflexProjectsList",
+      "reflexProjectsOpen",
       "reflexTopicsList",
+      "reflexTopicsOpen",
       "reflexSkillsList",
       "reflexMcpServers",
       "reflexBrowserInit",

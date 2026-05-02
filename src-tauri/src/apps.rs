@@ -1103,8 +1103,16 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexProjectsList = function(params) {
     return reflexInvokeRaw('projects.list', params || {});
   };
+  window.reflexProjectsOpen = function(projectIdOrParams) {
+    var params = (typeof projectIdOrParams === 'string') ? {projectId: projectIdOrParams} : (projectIdOrParams || {});
+    return reflexInvokeRaw('projects.open', params);
+  };
   window.reflexTopicsList = function(params) {
     return reflexInvokeRaw('topics.list', params || {});
+  };
+  window.reflexTopicsOpen = function(threadIdOrParams, projectId) {
+    var params = (typeof threadIdOrParams === 'string') ? {threadId: threadIdOrParams, projectId: projectId || null} : (threadIdOrParams || {});
+    return reflexInvokeRaw('topics.open', params);
   };
   window.reflexSkillsList = function(params) {
     return reflexInvokeRaw('skills.list', params || {});

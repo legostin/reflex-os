@@ -73,6 +73,17 @@ type AppOpenRequestPayload = {
   from_app?: string;
 };
 
+type ProjectOpenRequestPayload = {
+  project_id: string;
+  from_app?: string;
+};
+
+type TopicOpenRequestPayload = {
+  project_id?: string;
+  thread_id: string;
+  from_app?: string;
+};
+
 type ThreadEvent = {
   seq: number;
   stream: CodexEventPayload["stream"];
@@ -1087,6 +1098,22 @@ export default function ChatThread() {
         }
       },
     );
+    const projectOpen = listen<ProjectOpenRequestPayload>(
+      "reflex://project-open-request",
+      (e) => {
+        if (e.payload.project_id) {
+          navigate({ kind: "project", project_id: e.payload.project_id });
+        }
+      },
+    );
+    const topicOpen = listen<TopicOpenRequestPayload>(
+      "reflex://topic-open-request",
+      (e) => {
+        if (e.payload.thread_id) {
+          navigate({ kind: "topic", thread_id: e.payload.thread_id });
+        }
+      },
+    );
 
     const onResolved = (e: Event) => {
       const detail = (e as CustomEvent).detail as {
@@ -1115,6 +1142,8 @@ export default function ChatThread() {
       end.then((u) => u());
       running.then((u) => u());
       appOpen.then((u) => u());
+      projectOpen.then((u) => u());
+      topicOpen.then((u) => u());
       metaUpdated.then((u) => u());
       question.then((u) => u());
       window.removeEventListener("reflex-question-resolved", onResolved);

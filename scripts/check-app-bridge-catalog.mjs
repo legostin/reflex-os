@@ -115,6 +115,7 @@ const dispatchAliasesOrInternal = new Set([
   "system.open_path",
   "system.open_url",
   "system.reveal_path",
+  "threads.open",
   "scheduler.run_detail",
   "scheduler.run_now",
   "scheduler.set_paused",
