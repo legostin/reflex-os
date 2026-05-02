@@ -96,6 +96,7 @@ The injected runtime overlay provides:
 - `window.reflexMemoryPathStatus(pathOrParams)`
 - `window.reflexMemoryForgetPath(pathOrParams)`
 - `window.reflexAppsList(params)`
+- `window.reflexAppsOpen(appIdOrParams)`
 - `window.reflexAppsInvoke(appId, actionId, params)`
 - `window.reflexAppsListActions(appIdOrParams, includeSteps?)`
 - `window.reflexEventOn(topic, handler)`
@@ -138,6 +139,7 @@ Core methods:
 - `browser.clickText`, `browser.clickSelector`, `browser.fill`.
 - `events.emit`, `events.subscribe`, `events.unsubscribe`.
 - `apps.list()`.
+- `apps.open({ app_id })` -> asks Reflex to open that app in the main UI.
 - `apps.invoke({ app_id, action_id, params })`.
 - `apps.list_actions({ app_id?, include_steps? })`.
 

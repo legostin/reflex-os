@@ -569,6 +569,23 @@ pub async fn dispatch_app_method(
             invoke_app_action(app, app_id, &target_id, &action_id, action_params).await
         }
         "apps.list" => list_app_summaries(app),
+        "apps.open" => {
+            let target_id = params
+                .get("app_id")
+                .or_else(|| params.get("appId"))
+                .and_then(|v| v.as_str())
+                .ok_or("missing app_id")?;
+            apps::read_manifest(app, target_id).map_err(|e| e.to_string())?;
+            app.emit(
+                "reflex://app-open-request",
+                &serde_json::json!({
+                    "app_id": target_id,
+                    "from_app": app_id,
+                }),
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({ "ok": true, "app_id": target_id }))
+        }
         "apps.list_actions" => {
             let target_id = params
                 .get("app_id")

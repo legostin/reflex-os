@@ -68,6 +68,11 @@ type ThreadRunningPayload = {
   thread_id: string;
 };
 
+type AppOpenRequestPayload = {
+  app_id: string;
+  from_app?: string;
+};
+
 type ThreadEvent = {
   seq: number;
   stream: CodexEventPayload["stream"];
@@ -1074,6 +1079,14 @@ export default function ChatThread() {
         );
       },
     );
+    const appOpen = listen<AppOpenRequestPayload>(
+      "reflex://app-open-request",
+      (e) => {
+        if (e.payload.app_id) {
+          navigate({ kind: "app", app_id: e.payload.app_id });
+        }
+      },
+    );
 
     const onResolved = (e: Event) => {
       const detail = (e as CustomEvent).detail as {
@@ -1101,6 +1114,7 @@ export default function ChatThread() {
       evt.then((u) => u());
       end.then((u) => u());
       running.then((u) => u());
+      appOpen.then((u) => u());
       metaUpdated.then((u) => u());
       question.then((u) => u());
       window.removeEventListener("reflex-question-resolved", onResolved);
