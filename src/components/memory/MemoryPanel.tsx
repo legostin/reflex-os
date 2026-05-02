@@ -117,6 +117,8 @@ export default function MemoryPanel({
   const [stats, setStats] = useState<MemoryStats | null>(null);
   const [statsLoading, setStatsLoading] = useState<boolean>(false);
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [reindexing, setReindexing] = useState<boolean>(false);
+  const [reindexMessage, setReindexMessage] = useState<string | null>(null);
 
   const scopeRequiresProject = scope === "project" || scope === "topic";
   const scopeRequiresThread = scope === "topic";
@@ -139,6 +141,7 @@ export default function MemoryPanel({
     if (!projectRoot) {
       setStats(null);
       setStatsError(null);
+      setReindexMessage(null);
       return;
     }
     setStatsLoading(true);
@@ -155,6 +158,22 @@ export default function MemoryPanel({
       setStatsLoading(false);
     }
   }, [projectRoot]);
+
+  const reindexProject = useCallback(async () => {
+    if (!projectRoot || reindexing) return;
+    setReindexing(true);
+    setStatsError(null);
+    setReindexMessage(null);
+    try {
+      const indexed = await invoke<number>("memory_reindex", { projectRoot });
+      setReindexMessage(`reindexed ${indexed} docs`);
+      await refreshStats();
+    } catch (e) {
+      setStatsError(String(e));
+    } finally {
+      setReindexing(false);
+    }
+  }, [projectRoot, refreshStats, reindexing]);
 
   const refresh = useCallback(async () => {
     if (missingProject || missingThread) {
@@ -260,7 +279,7 @@ export default function MemoryPanel({
     setRecallQuery(q);
   }
 
-function resetFilters() {
+  function resetFilters() {
     setQueryFilter("");
     setTagFilter("");
     setKindFilter("all");
@@ -345,6 +364,18 @@ function resetFilters() {
             <strong>{indexedLabel(stats, statsLoading)}</strong>
             <span>{memoryHealthLabel(stats)}</span>
           </span>
+          <button
+            type="button"
+            className="memory-reindex-btn"
+            onClick={() => void reindexProject()}
+            disabled={reindexing || statsLoading}
+            title="Rebuild supported project-file RAG entries"
+          >
+            {reindexing ? "Reindexing..." : "Reindex"}
+          </button>
+          {reindexMessage && (
+            <span className="memory-stat-note">{reindexMessage}</span>
+          )}
           {statsError && (
             <span className="memory-stat-error" title={statsError}>
               stats unavailable
