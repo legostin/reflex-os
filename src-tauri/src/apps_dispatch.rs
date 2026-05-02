@@ -628,6 +628,8 @@ pub async fn dispatch_app_method(
         "projects.open" => projects_open_for_app(app, app_id, params),
         "project.profile.update" => project_profile_update_for_app(app, app_id, params),
         "project.sandbox.set" => project_sandbox_set_for_app(app, app_id, params),
+        "project.apps.link" => project_apps_link_for_app(app, app_id, params),
+        "project.apps.unlink" => project_apps_unlink_for_app(app, app_id, params),
         "topics.list" | "threads.list" => topics_list_for_app(app, app_id, params),
         "topics.open" | "threads.open" => topics_open_for_app(app, app_id, params),
         "skills.list" => skills_list_for_app(app, app_id, params),
@@ -1238,6 +1240,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "projects.open",
                 "project.profile.update",
                 "project.sandbox.set",
+                "project.apps.link",
+                "project.apps.unlink",
                 "topics.list",
                 "topics.open",
                 "skills.list",
@@ -1391,6 +1395,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexProjectsOpen",
                 "reflexProjectProfileUpdate",
                 "reflexProjectSandboxSet",
+                "reflexProjectAppsLink",
+                "reflexProjectAppsUnlink",
                 "reflexTopicsList",
                 "reflexTopicsOpen",
                 "reflexSkillsList",
@@ -2924,6 +2930,49 @@ fn project_sandbox_set_for_app(
     }))
 }
 
+fn project_apps_link_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut project = resolve_project_write_target(app, caller_app_id, &params, "projects.write")?;
+    let target_app_id = project_app_target_param(&params).unwrap_or_else(|| caller_app_id.into());
+    apps::read_manifest(app, &target_app_id)
+        .map_err(|e| format!("app not found or unreadable: {target_app_id}: {e}"))?;
+    let linked = if project.apps.iter().any(|id| id == &target_app_id) {
+        false
+    } else {
+        project.apps.push(target_app_id.clone());
+        true
+    };
+    write_project_and_register(app, &project)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "linked": linked,
+        "app_id": target_app_id,
+        "project": project_summary(&project),
+    }))
+}
+
+fn project_apps_unlink_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut project = resolve_project_write_target(app, caller_app_id, &params, "projects.write")?;
+    let target_app_id = project_app_target_param(&params).unwrap_or_else(|| caller_app_id.into());
+    let before = project.apps.len();
+    project.apps.retain(|id| id != &target_app_id);
+    let unlinked = project.apps.len() != before;
+    write_project_and_register(app, &project)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "unlinked": unlinked,
+        "app_id": target_app_id,
+        "project": project_summary(&project),
+    }))
+}
+
 fn resolve_project_write_target(
     app: &AppHandle,
     app_id: &str,
@@ -2975,6 +3024,10 @@ fn normalize_optional_project_text(
         return Err(format!("{label} must be {max_len} characters or fewer"));
     }
     Ok(Some(text))
+}
+
+fn project_app_target_param(params: &serde_json::Value) -> Option<String> {
+    string_param(params, "app_id", "appId")
 }
 
 fn normalize_project_sandbox(raw: &str) -> Result<String, String> {
@@ -5536,5 +5589,18 @@ mod tests {
         assert!(normalize_project_sandbox("read-only").is_ok());
         assert!(normalize_project_sandbox("danger-full-access").is_ok());
         assert!(normalize_project_sandbox("full-access").is_err());
+    }
+
+    #[test]
+    fn project_app_target_param_accepts_snake_and_camel() {
+        assert_eq!(
+            project_app_target_param(&serde_json::json!({ "app_id": "notes" })).unwrap(),
+            "notes"
+        );
+        assert_eq!(
+            project_app_target_param(&serde_json::json!({ "appId": "calendar" })).unwrap(),
+            "calendar"
+        );
+        assert!(project_app_target_param(&serde_json::json!({})).is_none());
     }
 }

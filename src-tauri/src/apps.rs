@@ -1171,6 +1171,14 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof sandboxOrParams === 'string') ? {sandbox: sandboxOrParams} : (sandboxOrParams || {});
     return reflexInvokeRaw('project.sandbox.set', params);
   };
+  window.reflexProjectAppsLink = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {appId: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('project.apps.link', params);
+  };
+  window.reflexProjectAppsUnlink = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {appId: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('project.apps.unlink', params);
+  };
   window.reflexTopicsList = function(params) {
     return reflexInvokeRaw('topics.list', params || {});
   };

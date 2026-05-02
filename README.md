@@ -93,6 +93,8 @@ The injected runtime overlay provides:
 - `window.reflexProjectsOpen(projectIdOrParams)`
 - `window.reflexProjectProfileUpdate(patch)`
 - `window.reflexProjectSandboxSet(sandboxOrParams)`
+- `window.reflexProjectAppsLink(appIdOrParams?)`
+- `window.reflexProjectAppsUnlink(appIdOrParams?)`
 - `window.reflexTopicsList(params)`
 - `window.reflexTopicsOpen(threadIdOrParams, projectId?)`
 - `window.reflexSkillsList(params)`
@@ -218,6 +220,11 @@ Core methods:
   `{ ok, changed, sandbox, project }`; requires `projects.write:<project>` or
   `projects.write:*`. `sandbox` must be `read-only`, `workspace-write`, or
   `danger-full-access`.
+- `project.apps.link({ projectId?, appId? })` ->
+  `{ ok, linked, app_id, project }`; requires `projects.write:<project>` or
+  `projects.write:*`. Omit `appId` to link the current app.
+- `project.apps.unlink({ projectId?, appId? })` ->
+  `{ ok, unlinked, app_id, project }`; same permission.
 - `topics.list({ projectId?, limit?, includeAll? })`.
 - `topics.open({ threadId, projectId? })` -> asks Reflex to open that topic in
   the main UI.
@@ -277,7 +284,7 @@ Core methods:
 Project/topic methods return sanitized summaries for linked projects by
 default. Cross-project overview requires `projects.read:*`,
 `topics.read:<project>`, or `topics.read:*` in `manifest.permissions`. Project
-profile and sandbox updates require `projects.write:<project>` or
+profile, sandbox, and linked-app updates require `projects.write:<project>` or
 `projects.write:*`.
 Skills and MCP server names are available for linked projects; cross-project
 skills require `skills.read:<project>` or `skills.read:*`, skill mutations
