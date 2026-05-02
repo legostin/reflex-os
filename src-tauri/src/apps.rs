@@ -964,6 +964,26 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof trashIdOrParams === 'string') ? {trash_id: trashIdOrParams} : (trashIdOrParams || {});
     return reflexInvokeRaw('apps.purge', params);
   };
+  window.reflexAppsServerStatus = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.server.status', params);
+  };
+  window.reflexAppsServerLogs = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.server.logs', params);
+  };
+  window.reflexAppsServerStart = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.server.start', params);
+  };
+  window.reflexAppsServerStop = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.server.stop', params);
+  };
+  window.reflexAppsServerRestart = function(appIdOrParams) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.server.restart', params);
+  };
   window.reflexAppsOpen = function(appIdOrParams) {
     var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
     return reflexInvokeRaw('apps.open', params);

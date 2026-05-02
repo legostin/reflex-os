@@ -149,6 +149,11 @@ The injected runtime overlay provides:
 - `window.reflexAppsTrashList()`
 - `window.reflexAppsRestore(trashIdOrParams)`
 - `window.reflexAppsPurge(trashIdOrParams)`
+- `window.reflexAppsServerStatus(appIdOrParams)`
+- `window.reflexAppsServerLogs(appIdOrParams)`
+- `window.reflexAppsServerStart(appIdOrParams)`
+- `window.reflexAppsServerStop(appIdOrParams)`
+- `window.reflexAppsServerRestart(appIdOrParams)`
 - `window.reflexAppsOpen(appIdOrParams)`
 - `window.reflexAppsInvoke(appId, actionId, params)`
 - `window.reflexAppsListActions(appIdOrParams, includeSteps?)`
@@ -296,6 +301,10 @@ Core methods:
   `apps.restore({ trash_id })`, and `apps.purge({ trash_id })`; require
   `apps.manage` or `apps:*`. Delete moves an app to trash; purge permanently
   removes a trashed app.
+- `apps.server.status({ app_id })`, `apps.server.logs({ app_id })`,
+  `apps.server.start({ app_id })`, `apps.server.stop({ app_id })`, and
+  `apps.server.restart({ app_id })`; require `apps.manage` or `apps:*` and
+  control server-runtime apps.
 - `apps.open({ app_id })` -> asks Reflex to open that app in the main UI.
 - `apps.invoke({ app_id, action_id, params })`.
 - `apps.list_actions({ app_id?, include_steps? })`.

@@ -1,5 +1,5 @@
 use crate::app_bus::{self, AppBusBridge};
-use crate::app_server;
+use crate::{app_runtime, app_server};
 use crate::apps;
 use crate::memory::agents::recall::{self, RecallRequest};
 use crate::memory::files;
@@ -601,6 +601,11 @@ pub async fn dispatch_app_method(
         "apps.trashList" => apps_trash_list_for_app(app, app_id),
         "apps.restore" => apps_restore_for_app(app, app_id, params),
         "apps.purge" => apps_purge_for_app(app, app_id, params),
+        "apps.server.status" => apps_server_status_for_app(app, app_id, params).await,
+        "apps.server.logs" => apps_server_logs_for_app(app, app_id, params).await,
+        "apps.server.start" => apps_server_start_for_app(app, app_id, params).await,
+        "apps.server.stop" => apps_server_stop_for_app(app, app_id, params).await,
+        "apps.server.restart" => apps_server_restart_for_app(app, app_id, params).await,
         "apps.open" => {
             let target_id = params
                 .get("app_id")
@@ -1343,6 +1348,11 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "apps.trashList",
                 "apps.restore",
                 "apps.purge",
+                "apps.server.status",
+                "apps.server.logs",
+                "apps.server.start",
+                "apps.server.stop",
+                "apps.server.restart",
                 "apps.open",
                 "apps.invoke",
                 "apps.list_actions",
@@ -1476,6 +1486,11 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexAppsTrashList",
                 "reflexAppsRestore",
                 "reflexAppsPurge",
+                "reflexAppsServerStatus",
+                "reflexAppsServerLogs",
+                "reflexAppsServerStart",
+                "reflexAppsServerStop",
+                "reflexAppsServerRestart",
                 "reflexAppsOpen",
                 "reflexAppsInvoke",
                 "reflexAppsListActions",
@@ -2923,6 +2938,69 @@ fn apps_purge_for_app(
         .ok_or_else(|| "missing trash_id".to_string())?;
     crate::purge_trashed_app(app.clone(), trash_id)?;
     Ok(serde_json::json!({ "ok": true }))
+}
+
+async fn apps_server_status_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    apps::read_manifest(app, &target_app_id).map_err(|e| e.to_string())?;
+    let runtimes = app.state::<app_runtime::AppRuntimes>();
+    let status = app_runtime::status(&runtimes, &target_app_id).await;
+    serde_json::to_value(status).map_err(|e| e.to_string())
+}
+
+async fn apps_server_logs_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    apps::read_manifest(app, &target_app_id).map_err(|e| e.to_string())?;
+    let runtimes = app.state::<app_runtime::AppRuntimes>();
+    let logs = app_runtime::logs(&runtimes, &target_app_id).await;
+    serde_json::to_value(logs).map_err(|e| e.to_string())
+}
+
+async fn apps_server_start_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    let runtimes = app.state::<app_runtime::AppRuntimes>();
+    let port = app_runtime::ensure_started(&runtimes, app, &target_app_id).await?;
+    Ok(serde_json::json!({ "ok": true, "app_id": target_app_id, "port": port }))
+}
+
+async fn apps_server_stop_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    apps::read_manifest(app, &target_app_id).map_err(|e| e.to_string())?;
+    let runtimes = app.state::<app_runtime::AppRuntimes>();
+    app_runtime::stop(&runtimes, &target_app_id).await;
+    Ok(serde_json::json!({ "ok": true, "app_id": target_app_id }))
+}
+
+async fn apps_server_restart_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    let runtimes = app.state::<app_runtime::AppRuntimes>();
+    let port = app_runtime::restart(&runtimes, app, &target_app_id).await?;
+    Ok(serde_json::json!({ "ok": true, "app_id": target_app_id, "port": port }))
 }
 
 fn list_actions(

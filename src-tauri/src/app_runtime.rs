@@ -258,6 +258,45 @@ pub async fn start(
     Ok(port)
 }
 
+/// Start a server-runtime app without incrementing refcount when it is already alive.
+/// This is intended for explicit app-management controls rather than mounted viewers.
+pub async fn ensure_started(
+    runtimes: &AppRuntimes,
+    app: &AppHandle,
+    app_id: &str,
+) -> Result<u16, String> {
+    {
+        let mut map = runtimes.servers.lock().await;
+        if let Some(entry) = map.get_mut(app_id) {
+            let alive = matches!(entry.child.try_wait(), Ok(None));
+            if alive {
+                return Ok(entry.port);
+            } else {
+                if let Ok(Some(s)) = entry.child.try_wait() {
+                    entry.exit_code = s.code();
+                }
+                map.remove(app_id);
+            }
+        }
+    }
+
+    let mut entry = spawn_child(runtimes.servers.clone(), app, app_id).await?;
+    entry.ref_count = 1;
+    let port = entry.port;
+    let init = LogLine {
+        seq: 0,
+        stream: "system".into(),
+        line: format!("[reflex] server started on :{port}"),
+        ts_ms: now_ms(),
+    };
+    entry.logs.push(init);
+    {
+        let mut map = runtimes.servers.lock().await;
+        map.insert(app_id.to_string(), entry);
+    }
+    Ok(port)
+}
+
 /// Decrement refcount; if 0, kill the child.
 pub async fn stop(runtimes: &AppRuntimes, app_id: &str) {
     let mut map = runtimes.servers.lock().await;
