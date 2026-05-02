@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run check:bridge && tsc && vite build",
     "check:bridge": "node scripts/check-app-bridge-catalog.mjs",
     "preview": "vite preview",
     "tauri": "tauri"

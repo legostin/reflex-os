@@ -191,6 +191,5 @@ blocked inside schedule steps to prevent unattended recursive runs.
 
 ```sh
 npm run build
-npm run check:bridge
 cd src-tauri && cargo check
 ```
