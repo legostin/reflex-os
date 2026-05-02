@@ -5230,6 +5230,7 @@ function TopicScreen({
     ev: React.MouseEvent<HTMLAnchorElement>,
   ) => void;
 }) {
+  const { t } = useI18n();
   const thread = threads.find((t) => t.id === thread_id);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showRecall, setShowRecall] = useState(false);
@@ -5245,7 +5246,7 @@ function TopicScreen({
   if (!thread) {
     return (
       <div className="chat-empty">
-        <p>Тред не найден или ещё грузится…</p>
+        <p>{t("topic.notFound")}</p>
       </div>
     );
   }
@@ -5261,9 +5262,9 @@ function TopicScreen({
           type="button"
           className="header-tab"
           onClick={() => setShowRecall((v) => !v)}
-          title="Показать или скрыть память для этого топика"
+          title={t("topic.memoryToggleTitle")}
         >
-          {showRecall ? "Скрыть память" : "Память"}
+          {showRecall ? t("topic.hideMemory") : t("topic.memory")}
         </button>
       </li>
       {showRecall && projectRoot && (
@@ -5311,13 +5312,14 @@ function ThreadCard({
     ev: React.MouseEvent<HTMLAnchorElement>,
   ) => void;
 }) {
+  const { t } = useI18n();
   const [followup, setFollowup] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Banner появляется только когда у треда уже есть выдача агента (план написан)
-  // и тред в done-состоянии. На пустом или ещё работающем треде — скрыт.
+  // Show the banner only after the agent has produced a plan and the turn is done.
+  // Empty or still-running turns keep it hidden.
   const latestUserSeq = thread.events.reduce(
     (max, ev) => (ev.stream === "user" ? Math.max(max, ev.seq) : max),
     0,
@@ -5345,9 +5347,9 @@ function ThreadCard({
 
   const status = thread.done
     ? thread.exit_code === 0
-      ? "готово"
+      ? t("project.done")
       : `exit ${thread.exit_code ?? "?"}`
-    : "выполняется";
+    : t("project.running");
 
   const running = !thread.done;
   const followupDisabled = submitting;
@@ -5491,31 +5493,33 @@ function ThreadCard({
       {showPlanBanner && (
         <div className="plan-banner">
           <div className="plan-banner-text">
-            📋 <strong>Режим плана.</strong> Codex составил план — проверь и
-            подтверди, или напиши в поле ниже что поправить.
+            📋 <strong>{t("thread.planMode")}</strong>{" "}
+            {t("thread.planBanner")}
           </div>
           <button
             className="appviewer-btn appviewer-btn-primary"
             disabled={submitting}
             onClick={() => void confirmPlan()}
           >
-            {submitting ? "…" : "✓ Confirm & run"}
+            {submitting ? "..." : `✓ ${t("thread.confirmRun")}`}
           </button>
         </div>
       )}
       <div className="chat-followup">
         {running && (
-          <span className="chat-followup-running">Codex работает…</span>
+          <span className="chat-followup-running">
+            {t("thread.codexWorking")}
+          </span>
         )}
         <input
           className="chat-followup-input"
           type="text"
           placeholder={
             running
-              ? "Прервать и отправить новое сообщение…"
+              ? t("thread.placeholderInterrupt")
               : showPlanBanner
-                ? "Поправь план или напиши `go`…"
-                : "Продолжить тред…"
+                ? t("thread.placeholderPlan")
+                : t("thread.placeholderContinue")
           }
           value={followup}
           onChange={(e) => setFollowup(e.currentTarget.value)}
@@ -5532,9 +5536,9 @@ function ThreadCard({
             className="chat-followup-button chat-followup-stop"
             onClick={() => void stopThread()}
             disabled={stopping || submitting}
-            title="Остановить агента без сообщения"
+            title={t("thread.stopTitle")}
           >
-            {stopping ? "…" : "Стоп"}
+            {stopping ? "..." : t("thread.stop")}
           </button>
         )}
         <button
@@ -5543,8 +5547,8 @@ function ThreadCard({
           disabled={followupDisabled || !followup.trim()}
           title={
             running
-              ? "Прервать агента и отправить сообщение"
-              : "Отправить"
+              ? t("thread.interruptSendTitle")
+              : t("thread.sendTitle")
           }
         >
           {running ? "⤳" : "↵"}
@@ -5575,6 +5579,7 @@ function QuestionCard({
   question: ThreadQuestion;
   onResolved: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -5658,7 +5663,7 @@ function QuestionCard({
         <textarea
           className="question-input"
           rows={3}
-          placeholder="Ответ агенту…"
+          placeholder={t("thread.answerPlaceholder")}
           value={text}
           onChange={(e) => setText(e.currentTarget.value)}
         />
