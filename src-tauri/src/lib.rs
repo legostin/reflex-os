@@ -551,7 +551,8 @@ fn app_revise(
 ПАМЯТКА (актуальный bridge / runtime):\n\
 - Можно использовать любую структуру: index.html + style.css + app.js + assets/. Reflex отдаёт всё через reflexapp:// scheme c правильным mime.\n\
 - Два runtime: static (default) или server (manifest.runtime=\"server\" + manifest.server.command — node/python stdlib, listen на process.env.PORT).\n\
-- Bridge через window.parent.postMessage({{source:'reflex-app', type:'request', id, method, params}}). Доступные методы:\n\
+- В HTML уже инжектится runtime overlay. Предпочитай helpers window.reflex*; raw postMessage нужен только для нестандартного bridge-вызова.\n\
+- Доступные методы bridge:\n\
   • system.context() → {{app_id, app_root, manifest, app_project, linked_projects, memory_defaults}}\n\
   • manifest.get() / manifest.update({{patch}}) — безопасно читать/обновлять собственный manifest.json\n\
   • agent.ask({{prompt}}) → {{answer}}\n\
@@ -565,6 +566,7 @@ fn app_revise(
   • dialog.openDirectory/openFile/saveFile — нативные диалоги\n\
   • notify.show — macOS push\n\
   • net.fetch({{url, method?, headers?, body?}}) — требует manifest.network.allowed_hosts (поддержка \"*.foo.com\")\n\
+- Overlay helpers: reflexAgentAsk/Task/Stream/StreamAbort, reflexStorageGet/Set, reflexFsRead/Write, reflexNetFetch, reflexDialogOpenDirectory/OpenFile/SaveFile, reflexNotifyShow, reflexProjectsList, reflexTopicsList, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexAppsInvoke, reflexAppsListActions, reflexEventOn/Off/Emit.\n\
 - iframe sandbox=\"allow-scripts allow-forms\" (для server runtime + allow-same-origin). Никаких внешних CDN — только inline или локальные файлы.\n\
 - Reflex автоматически инжектит overlay-скрипт в HTML: ловит window.onerror/unhandledrejection (юзер увидит ✨Fix), и режим Inspector (юзер кликает → ты получишь selector + outerHTML). Не пиши свой обработчик с теми же типами событий.\n\
 - После твоих правок iframe перезагрузится сам (file watcher), для server runtime — процесс перезапустится. Не требуй ручного reload.\n\
@@ -876,35 +878,35 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
         "chat" => Some(
             "Шаблон CHAT-UTILITY:\n\
 - Layout: список сообщений сверху + textarea + кнопка Send снизу.\n\
-- Использовать `agent.stream({prompt})` для стриминга ответа. Ловить window 'message' с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done'.\n\
-- Хранить историю сообщений в storage.json (key=\"messages\").\n\
+- Использовать `window.reflexAgentStream({prompt})` для стриминга ответа. Ловить window 'message' с {source:'reflex', type:'stream.token', streamId, token} и …'stream.done'.\n\
+- Хранить историю сообщений через `window.reflexStorageGet/Set(\"messages\", value)`.\n\
 - Сообщения user/agent визуально разные. Streaming-сообщение растёт по токенам.\n",
         ),
         "dashboard" => Some(
             "Шаблон DASHBOARD:\n\
-- Кнопка \"Refresh\" вызывает `agent.task({prompt: \"...запрос за данными...\"})` и парсит JSON-ответ.\n\
+- Кнопка \"Refresh\" вызывает `window.reflexAgentTask({prompt: \"...запрос за данными...\"})` и парсит JSON-ответ.\n\
 - Показывать данные в таблице или как summary-карточки.\n\
-- Кэшировать последний результат в storage.json.\n",
+- Кэшировать последний результат через `window.reflexStorageSet(\"lastResult\", data)`.\n",
         ),
         "form" => Some(
             "Шаблон FORM-TOOL:\n\
 - Несколько input-полей сверху, кнопка \"Run\" снизу.\n\
-- На submit собрать значения, дёрнуть `agent.task({prompt: \"...на основе значений...\"})`, показать результат.\n\
-- Сохранять последний submit в storage.json для preset'а.\n",
+- На submit собрать значения, дёрнуть `window.reflexAgentTask({prompt: \"...на основе значений...\"})`, показать результат.\n\
+- Сохранять последний submit через `window.reflexStorageSet(\"lastSubmit\", values)` для preset'а.\n",
         ),
         "api-client" => Some(
             "Шаблон API-CLIENT:\n\
-- Используй `net.fetch` к указанному API. ОБЯЗАТЕЛЬНО добавь в manifest:\n  \"network\": { \"allowed_hosts\": [\"<host>\"] }\n\
+- Используй `window.reflexNetFetch(...)` к указанному API. ОБЯЗАТЕЛЬНО добавь в manifest:\n  \"network\": { \"allowed_hosts\": [\"<host>\"] }\n\
 - Кнопка для запроса, отображение результата (JSON pretty-print).\n\
-- Если нужны секреты — спроси у пользователя через input-field, храни в storage.json.\n",
+- Если нужны секреты — спроси у пользователя через input-field, храни через `window.reflexStorageSet`.\n",
         ),
         "automation" => Some(
             "Шаблон AUTOMATION:\n\
 - Обязательно добавь в manifest.schedules хотя бы одно расписание с 6-польным cron (sec min hour dom month dow, UTC).\n\
 - В schedule.steps используй bridge methods без UI: agent.task, storage.*, fs.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/runDetail.\n\
 - Не используй dialog.* и scheduler.runNow/setPaused внутри schedule.steps.\n\
-- Добавь обычный UI, где видно состояние: scheduler.list(), scheduler.runs({limit: 20}), кнопка ручного запуска через scheduler.runNow({scheduleId}).\n\
-- Если автоматизация производит полезные данные, сохраняй их в storage или memory.save и добавь manifest.actions для других apps.\n\
+- Добавь обычный UI, где видно состояние: `window.reflexSchedulerList()`, `window.reflexSchedulerRuns({limit: 20})`, кнопка ручного запуска через `window.reflexSchedulerRunNow(scheduleId)`.\n\
+- Если автоматизация производит полезные данные, сохраняй их через `window.reflexStorageSet` или `window.reflexMemorySave` и добавь manifest.actions для других apps.\n\
 - Если результат нужен на проектном дашборде, добавь manifest.widgets с компактной страницей widgets/<id>.html.\n",
         ),
         "node-server" => Some(
