@@ -100,6 +100,8 @@ The injected runtime overlay provides:
 - `window.reflexProjectFilesSearch(queryOrParams, includeContent?)`
 - `window.reflexProjectFilesWrite(pathOrParams, content?)`
 - `window.reflexProjectFilesMkdir(pathOrParams)`
+- `window.reflexProjectFilesMove(fromOrParams, to?)`
+- `window.reflexProjectFilesCopy(fromOrParams, to?)`
 - `window.reflexProjectFilesDelete(pathOrParams, recursive?)`
 - `window.reflexBrowserInit(params)`
 - `window.reflexBrowserTabs()`
@@ -224,6 +226,11 @@ Core methods:
 - `project.files.mkdir({ projectId?, path, recursive? })` ->
   `{ ok, project_id, project_name, path, created }`; requires
   `project.files.write:<project>` or `project.files.write:*`.
+- `project.files.move({ projectId?, from, to, createDirs?, overwrite? })` ->
+  `{ ok, project_id, project_name, from, to, kind }`; requires write permission.
+- `project.files.copy({ projectId?, from, to, createDirs?, overwrite?, recursive? })`
+  -> `{ ok, project_id, project_name, from, to, kind }`; directory copies require
+  `recursive: true` and write permission.
 - `project.files.delete({ projectId?, path, recursive? })` ->
   `{ ok, project_id, project_name, path, kind }`; refuses to delete the project
   root and requires `project.files.write:<project>` or `project.files.write:*`.

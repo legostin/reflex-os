@@ -1193,6 +1193,14 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
     return reflexInvokeRaw('project.files.mkdir', params);
   };
+  window.reflexProjectFilesMove = function(fromOrParams, to) {
+    var params = (typeof fromOrParams === 'string') ? {from: fromOrParams, to: to} : (fromOrParams || {});
+    return reflexInvokeRaw('project.files.move', params);
+  };
+  window.reflexProjectFilesCopy = function(fromOrParams, to) {
+    var params = (typeof fromOrParams === 'string') ? {from: fromOrParams, to: to} : (fromOrParams || {});
+    return reflexInvokeRaw('project.files.copy', params);
+  };
   window.reflexProjectFilesDelete = function(pathOrParams, recursive) {
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams, recursive: !!recursive} : (pathOrParams || {});
     return reflexInvokeRaw('project.files.delete', params);

@@ -62,6 +62,8 @@ export const BRIDGE_API_GROUPS = [
       "project.files.search",
       "project.files.write",
       "project.files.mkdir",
+      "project.files.move",
+      "project.files.copy",
       "project.files.delete",
     ],
   },
@@ -209,6 +211,8 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexProjectFilesSearch",
       "reflexProjectFilesWrite",
       "reflexProjectFilesMkdir",
+      "reflexProjectFilesMove",
+      "reflexProjectFilesCopy",
       "reflexProjectFilesDelete",
       "reflexBrowserInit",
       "reflexBrowserTabs",
@@ -293,7 +297,7 @@ export const BRIDGE_RECIPE_CARDS = [
   {
     title: "MCP и skills проекта",
     body: "Читай linked project files и записывай артефакты только с явным write grant.",
-    calls: ["project.files.search", "project.files.read", "project.files.write"],
-    example: 'const hits = await reflexProjectFilesSearch({ query, includeContent: true });',
+    calls: ["project.files.search", "project.files.copy", "project.files.move"],
+    example: 'await reflexProjectFilesMove({ from: "draft.md", to: "archive/draft.md" });',
   },
 ] as const;

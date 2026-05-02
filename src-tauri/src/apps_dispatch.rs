@@ -635,6 +635,8 @@ pub async fn dispatch_app_method(
         "project.files.search" => project_files_search_for_app(app, app_id, params),
         "project.files.write" => project_files_write_for_app(app, app_id, params),
         "project.files.mkdir" => project_files_mkdir_for_app(app, app_id, params),
+        "project.files.move" => project_files_move_for_app(app, app_id, params),
+        "project.files.copy" => project_files_copy_for_app(app, app_id, params),
         "project.files.delete" => project_files_delete_for_app(app, app_id, params),
         "browser.init" => browser_init_for_app(app, app_id, params).await,
         "browser.tabs.list" | "browser.tabsList" => {
@@ -1236,6 +1238,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "project.files.search",
                 "project.files.write",
                 "project.files.mkdir",
+                "project.files.move",
+                "project.files.copy",
                 "project.files.delete",
             ],
         ),
@@ -1379,6 +1383,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexProjectFilesSearch",
                 "reflexProjectFilesWrite",
                 "reflexProjectFilesMkdir",
+                "reflexProjectFilesMove",
+                "reflexProjectFilesCopy",
                 "reflexProjectFilesDelete",
                 "reflexBrowserInit",
                 "reflexBrowserTabs",
@@ -3201,6 +3207,75 @@ fn project_files_mkdir_for_app(
     }))
 }
 
+fn project_files_move_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let project =
+        resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
+    let from_path = required_project_file_from(&params)?;
+    let to_path = required_project_file_to(&params)?;
+    let overwrite = bool_param(&params, "overwrite", "overwrite").unwrap_or(false);
+    let create_dirs = bool_param(&params, "create_dirs", "createDirs").unwrap_or(true);
+    let root = canonical_project_root(&project.root)?;
+    let source = resolve_project_file_path(&root, &from_path)?;
+    if source == root {
+        return Err("refusing to move project root".into());
+    }
+    let source_meta = std::fs::symlink_metadata(&source).map_err(|e| e.to_string())?;
+    let kind = project_file_kind(&source_meta);
+    let from_rel = project_rel_path(&root, &source)?;
+    let (target, to_rel) = resolve_project_mutation_path(&root, &to_path, create_dirs)?;
+    ensure_project_transfer_target(&source, &target, &source_meta)?;
+    prepare_project_move_target(&target, &source_meta, overwrite)?;
+    std::fs::rename(&source, &target).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project.id,
+        "project_name": project.name,
+        "from": from_rel,
+        "to": to_rel,
+        "kind": kind,
+    }))
+}
+
+fn project_files_copy_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let project =
+        resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
+    let from_path = required_project_file_from(&params)?;
+    let to_path = required_project_file_to(&params)?;
+    let overwrite = bool_param(&params, "overwrite", "overwrite").unwrap_or(false);
+    let recursive = bool_param(&params, "recursive", "recursive").unwrap_or(false);
+    let create_dirs = bool_param(&params, "create_dirs", "createDirs").unwrap_or(true);
+    let root = canonical_project_root(&project.root)?;
+    let source = resolve_project_file_path(&root, &from_path)?;
+    if source == root {
+        return Err("refusing to copy project root".into());
+    }
+    let source_meta = std::fs::symlink_metadata(&source).map_err(|e| e.to_string())?;
+    let kind = project_file_kind(&source_meta);
+    if source_meta.is_dir() && !source_meta.file_type().is_symlink() && !recursive {
+        return Err("copying a directory requires recursive=true".into());
+    }
+    let from_rel = project_rel_path(&root, &source)?;
+    let (target, to_rel) = resolve_project_mutation_path(&root, &to_path, create_dirs)?;
+    ensure_project_transfer_target(&source, &target, &source_meta)?;
+    copy_project_path(&root, &source, &target, &source_meta, overwrite)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "project_id": project.id,
+        "project_name": project.name,
+        "from": from_rel,
+        "to": to_rel,
+        "kind": kind,
+    }))
+}
+
 fn project_files_delete_for_app(
     app: &AppHandle,
     app_id: &str,
@@ -3233,6 +3308,22 @@ fn project_files_delete_for_app(
         "path": project_rel_path(&root, &target)?,
         "kind": kind,
     }))
+}
+
+fn required_project_file_from(params: &serde_json::Value) -> Result<String, String> {
+    string_param(params, "from", "from")
+        .or_else(|| string_param(params, "from_path", "fromPath"))
+        .or_else(|| string_param(params, "source", "source"))
+        .or_else(|| string_param(params, "source_path", "sourcePath"))
+        .ok_or_else(|| "missing from".to_string())
+}
+
+fn required_project_file_to(params: &serde_json::Value) -> Result<String, String> {
+    string_param(params, "to", "to")
+        .or_else(|| string_param(params, "to_path", "toPath"))
+        .or_else(|| string_param(params, "target", "target"))
+        .or_else(|| string_param(params, "target_path", "targetPath"))
+        .ok_or_else(|| "missing to".to_string())
 }
 
 fn resolve_project_file_target(
@@ -3383,6 +3474,104 @@ fn nearest_existing_ancestor(path: &Path) -> Result<PathBuf, String> {
             return Err("no existing parent directory".into());
         }
     }
+}
+
+fn prepare_project_move_target(
+    target: &Path,
+    source_meta: &std::fs::Metadata,
+    overwrite: bool,
+) -> Result<(), String> {
+    let Ok(target_meta) = std::fs::symlink_metadata(target) else {
+        return Ok(());
+    };
+    if !overwrite {
+        return Err("target already exists".into());
+    }
+    if source_meta.is_dir() && !source_meta.file_type().is_symlink() {
+        return Err("moving a directory over an existing path is not supported".into());
+    }
+    if target_meta.is_dir() && !target_meta.file_type().is_symlink() {
+        return Err("target is a directory".into());
+    }
+    std::fs::remove_file(target).map_err(|e| e.to_string())
+}
+
+fn ensure_project_transfer_target(
+    source: &Path,
+    target: &Path,
+    source_meta: &std::fs::Metadata,
+) -> Result<(), String> {
+    if source == target {
+        return Err("source and target must differ".into());
+    }
+    if source_meta.is_dir() && !source_meta.file_type().is_symlink() && target.starts_with(source) {
+        return Err("target cannot be inside the source directory".into());
+    }
+    Ok(())
+}
+
+fn copy_project_path(
+    root: &Path,
+    source: &Path,
+    target: &Path,
+    source_meta: &std::fs::Metadata,
+    overwrite: bool,
+) -> Result<(), String> {
+    if source_meta.is_dir() && !source_meta.file_type().is_symlink() {
+        if std::fs::symlink_metadata(target).is_ok() {
+            return Err("target already exists".into());
+        }
+        copy_project_dir(root, source, target)?;
+        return Ok(());
+    }
+    if let Ok(target_meta) = std::fs::symlink_metadata(target) {
+        if !overwrite {
+            return Err("target already exists".into());
+        }
+        if target_meta.is_dir() && !target_meta.file_type().is_symlink() {
+            return Err("target is a directory".into());
+        }
+    }
+    std::fs::copy(source, target)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+fn copy_project_dir(root: &Path, source: &Path, target: &Path) -> Result<(), String> {
+    if project_path_is_blocked(root, source) || project_path_is_blocked(root, target) {
+        return Err("project.files cannot access .reflex internals".into());
+    }
+    std::fs::create_dir(target).map_err(|e| e.to_string())?;
+    let mut entries = std::fs::read_dir(source)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let child_source = entry.path();
+        if project_path_is_blocked(root, &child_source) {
+            continue;
+        }
+        let child_target = target.join(entry.file_name());
+        let child_meta = std::fs::symlink_metadata(&child_source).map_err(|e| e.to_string())?;
+        if child_meta.is_dir() && !child_meta.file_type().is_symlink() {
+            copy_project_dir(root, &child_source, &child_target)?;
+        } else {
+            let child_canon = child_source
+                .canonicalize()
+                .map_err(|e| format!("canonicalize copied project file: {e}"))?;
+            if !child_canon.starts_with(root) {
+                return Err("path must stay inside the selected project root".into());
+            }
+            if project_path_is_blocked(root, &child_canon) {
+                return Err("project.files cannot access .reflex internals".into());
+            }
+            std::fs::copy(&child_canon, &child_target)
+                .map(|_| ())
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4519,6 +4708,33 @@ mod tests {
         assert!(target.ends_with("generated/report.md"));
         assert_eq!(rel, "generated/report.md");
         assert!(target.parent().unwrap().exists());
+
+        let source = canonical_root.join("src/notes.md");
+        let copy_target = canonical_root.join("generated/copied.md");
+        let source_meta = std::fs::symlink_metadata(&source).unwrap();
+        copy_project_path(&canonical_root, &source, &copy_target, &source_meta, false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&copy_target).unwrap(),
+            "Alpha target line\nsecond"
+        );
+        assert!(copy_project_path(&canonical_root, &source, &copy_target, &source_meta, false)
+            .unwrap_err()
+            .contains("target already exists"));
+        let move_target = canonical_root.join("generated/moved.md");
+        let copy_meta = std::fs::symlink_metadata(&copy_target).unwrap();
+        ensure_project_transfer_target(&copy_target, &move_target, &copy_meta).unwrap();
+        prepare_project_move_target(&move_target, &copy_meta, false).unwrap();
+        std::fs::rename(&copy_target, &move_target).unwrap();
+        assert!(!copy_target.exists());
+        assert!(move_target.exists());
+        let dir_meta = std::fs::symlink_metadata(canonical_root.join("src")).unwrap();
+        assert!(ensure_project_transfer_target(
+            &canonical_root.join("src"),
+            &canonical_root.join("src/nested"),
+            &dir_meta,
+        )
+        .unwrap_err()
+        .contains("inside"));
 
         let mut matches = Vec::new();
         let mut scanned = 0;
