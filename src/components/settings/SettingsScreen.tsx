@@ -220,6 +220,7 @@ const HELPER_GROUPS = [
       "reflexSchedulerRunNow",
       "reflexSchedulerSetPaused",
       "reflexSchedulerRuns",
+      "reflexSchedulerRunDetail",
       "reflexAppsInvoke",
       "reflexAppsList",
       "reflexAppsListActions",

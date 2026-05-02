@@ -906,7 +906,7 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
 - Обязательно добавь в manifest.schedules хотя бы одно расписание с 6-польным cron (sec min hour dom month dow, UTC).\n\
 - В schedule.steps используй bridge methods без UI: agent.task, storage.*, fs.*, net.fetch, notify.show, events.*, apps.invoke, memory.*, manifest.*, scheduler.list/runs/runDetail.\n\
 - Не используй dialog.* и scheduler.runNow/setPaused внутри schedule.steps.\n\
-- Добавь обычный UI, где видно состояние: `window.reflexSchedulerList()`, `window.reflexSchedulerRuns({limit: 20})`, кнопка ручного запуска через `window.reflexSchedulerRunNow(scheduleId)`.\n\
+- Добавь обычный UI, где видно состояние: `window.reflexSchedulerList()`, `window.reflexSchedulerRuns({limit: 20})`, детали запуска через `window.reflexSchedulerRunDetail(runId)`, кнопка ручного запуска через `window.reflexSchedulerRunNow(scheduleId)`.\n\
 - Если автоматизация производит полезные данные, сохраняй их через `window.reflexStorageSet` или `window.reflexMemorySave` и добавь manifest.actions для других apps.\n\
 - Если результат нужен на проектном дашборде, добавь manifest.widgets с компактной страницей widgets/<id>.html.\n",
         ),
@@ -992,7 +992,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  memory.indexPath({path, projectId?}) -> {indexed, skipped}; memory.pathStatus({path, projectId?}); memory.forgetPath({path, projectId?})\n");
     p.push_str("- scope: \"project\" по умолчанию. Если app привязан ровно к одному проекту, project scope попадёт в память этого проекта; иначе — в память самого app.\n");
     p.push_str("- Для выбора проекта вызови system.context() и передай projectId из linked_projects. Для global scope добавь permission \"memory.global.read\" или \"memory.global.write\".\n");
-    p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexManifestGet(), reflexManifestUpdate(patch), reflexCapabilities(), reflexProjectsList(params), reflexTopicsList(params), reflexSkillsList(params), reflexMcpServers(params), reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexAppsList(params), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit.\n");
+    p.push_str("- В overlay уже есть helpers: reflexInvoke(method, params), reflexSystemContext(), reflexManifestGet(), reflexManifestUpdate(patch), reflexCapabilities(), reflexProjectsList(params), reflexTopicsList(params), reflexSkillsList(params), reflexMcpServers(params), reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit.\n");
     p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set(...), reflexFsRead/Write(...), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
     p.push_str("  Browser helpers: reflexBrowserInit(params), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserNavigate(tabId, url), reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?), reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?).\n");
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
@@ -1044,7 +1044,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("    }]\n");
     p.push_str("  }\n");
     p.push_str("- Каждый widget.entry — отдельный HTML-файл в папке app, обычно `widgets/<id>.html`.\n");
-    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexAgent*/Storage/Fs/Net/Dialog/Notify helpers, reflexSystemContext, reflexManifestGet, reflexCapabilities, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser* helpers, reflexSchedulerList/RunNow/SetPaused/Runs, reflexMemorySave/List/Search/Recall/PathStatus helpers, reflexEventOn/Emit, reflexAppsList, reflexAppsInvoke, reflexAppsListActions).\n");
+    p.push_str("- Внутри виджета доступен тот же bridge и runtime overlay (reflexInvoke, reflexAgent*/Storage/Fs/Net/Dialog/Notify helpers, reflexSystemContext, reflexManifestGet, reflexCapabilities, reflexProjectsList, reflexTopicsList, reflexSkillsList, reflexMcpServers, reflexBrowser* helpers, reflexSchedulerList/RunNow/SetPaused/Runs/RunDetail, reflexMemorySave/List/Search/Recall/PathStatus helpers, reflexEventOn/Emit, reflexAppsList, reflexAppsInvoke, reflexAppsListActions).\n");
     p.push_str("- Виджет компактный: тёмная прозрачная подложка (background:transparent), html/body высотой 100%, padding 12-14px, без своих рамок (рамки рисует grid).\n");
     p.push_str("- Если данные обновляются часто — сам ставь setInterval на 5-30 сек.\n");
     p.push_str("- Если виджет читает данные другой утилиты — используй reflexAppsInvoke('<app>','<action>',{...}); НЕ дублируй сбор данных.\n\n");
@@ -1072,7 +1072,7 @@ fn build_app_creation_prompt(description: &str, template: &str) -> String {
     p.push_str("  window.reflexBrowserInit(params), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserNavigate(tabId, url)\n");
     p.push_str("  window.reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?)\n");
     p.push_str("  window.reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?)\n");
-    p.push_str("  window.reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params)\n");
+    p.push_str("  window.reflexSchedulerList(params), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerRunDetail(runIdOrParams)\n");
     p.push_str("  window.reflexMemorySave(params), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams)\n");
     p.push_str("  window.reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams)\n");
     p.push_str("  window.reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryForgetPath(pathOrParams)\n");

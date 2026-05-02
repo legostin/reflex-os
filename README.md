@@ -82,6 +82,7 @@ The injected runtime overlay provides:
 - `window.reflexSchedulerRunNow(scheduleId)`
 - `window.reflexSchedulerSetPaused(scheduleId, paused)`
 - `window.reflexSchedulerRuns(params)`
+- `window.reflexSchedulerRunDetail(runIdOrParams)`
 - `window.reflexMemorySave(params)`
 - `window.reflexMemoryList(params)`
 - `window.reflexMemoryDelete(relPathOrParams)`
