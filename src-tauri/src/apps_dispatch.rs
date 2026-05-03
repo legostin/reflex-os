@@ -40,6 +40,9 @@ pub async fn dispatch_app_method(
         "integration.learnVisible" | "integration.learn_visible" => {
             integration_learn_visible(app, app_id, params).await
         }
+        "integration.mcpStatus" | "integration.mcp_status" => {
+            integration_mcp_status(app, app_id, params)
+        }
         "integration.mcpQuery" | "integration.mcp_query" => {
             integration_mcp_query(app, app_id, params).await
         }
@@ -847,6 +850,85 @@ fn integration_profile(app: &AppHandle, app_id: &str) -> Result<serde_json::Valu
         "runtime": manifest.runtime.unwrap_or_else(|| "static".into()),
         "linked_projects": context.get("linked_projects").cloned().unwrap_or_else(|| serde_json::json!([])),
         "app_project": context.get("app_project").cloned().unwrap_or(serde_json::Value::Null),
+    }))
+}
+
+fn integration_mcp_status(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let integration = manifest.integration.as_ref();
+    let provider = string_param(&params, "provider", "provider")
+        .or_else(|| integration.map(|i| i.provider.clone()))
+        .filter(|provider| !provider.trim().is_empty())
+        .unwrap_or_else(|| "generic_web".into());
+    let expected_server = string_param(&params, "server_name", "serverName")
+        .or_else(|| {
+            integration
+                .and_then(|i| i.mcp.get("server_name"))
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+        })
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| provider.clone());
+    let include_config = bool_param(&params, "include_config", "includeConfig").unwrap_or(false);
+
+    let mut target_params = serde_json::json!({});
+    if let Some(project_id) = string_param(&params, "project_id", "projectId") {
+        target_params["projectId"] = serde_json::Value::String(project_id);
+    }
+    let targets = mcp_targets_for_app(app, app_id, &target_params, "mcp.read")?;
+    let mut projects = Vec::new();
+    let mut configured = false;
+    let mut matched_project: Option<serde_json::Value> = None;
+    let mut matched_server = serde_json::Value::Null;
+
+    for project in targets {
+        if include_config {
+            ensure_scoped_permission(app, app_id, "mcp.read", &project.id)?;
+        }
+        let object = project
+            .mcp_servers
+            .as_ref()
+            .and_then(|value| value.as_object());
+        let mut names: Vec<String> = object
+            .map(|servers| servers.keys().cloned().collect())
+            .unwrap_or_default();
+        names.sort();
+        let has_expected = names.iter().any(|name| name == &expected_server);
+        if has_expected {
+            configured = true;
+            matched_project = Some(project_summary(&project));
+            if include_config {
+                matched_server = object
+                    .and_then(|servers| servers.get(&expected_server))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+            }
+        }
+        projects.push(serde_json::json!({
+            "project_id": project.id,
+            "project_name": project.name,
+            "server_names": names,
+            "has_expected_server": has_expected,
+        }));
+    }
+
+    let mcp = integration
+        .map(|i| i.mcp.clone())
+        .unwrap_or_else(|| serde_json::json!({}));
+    Ok(serde_json::json!({
+        "provider": provider,
+        "expected_server": expected_server,
+        "configured": configured,
+        "checked": mcp.get("last_query_at_ms").is_some(),
+        "last_query_at_ms": mcp.get("last_query_at_ms").cloned().unwrap_or(serde_json::Value::Null),
+        "last_query_thread_id": mcp.get("last_query_thread_id").cloned().unwrap_or(serde_json::Value::Null),
+        "matched_project": matched_project.unwrap_or(serde_json::Value::Null),
+        "matched_server": matched_server,
+        "projects": projects,
     }))
 }
 
@@ -1742,6 +1824,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "integration.profile",
                 "integration.update",
                 "integration.learnVisible",
+                "integration.mcpStatus",
                 "integration.mcpQuery",
                 "permissions.list",
                 "permissions.ensure",
@@ -1926,6 +2009,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexIntegrationProfile",
                 "reflexIntegrationUpdate",
                 "reflexIntegrationLearnVisible",
+                "reflexIntegrationMcpStatus",
                 "reflexIntegrationMcpQuery",
                 "reflexPermissionsList",
                 "reflexPermissionsEnsure",
