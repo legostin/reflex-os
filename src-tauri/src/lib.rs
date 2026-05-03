@@ -366,6 +366,28 @@ fn read_app_manifest(app: AppHandle, app_id: String) -> Result<apps::AppManifest
     apps::read_manifest(&app, &app_id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn resolve_app_permission_request(
+    app: AppHandle,
+    app_id: String,
+    request_id: String,
+    approve: bool,
+    note: Option<String>,
+) -> Result<apps::AppManifest, String> {
+    let manifest = apps::resolve_permission_request(&app, &app_id, &request_id, approve, note)
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit(
+        "reflex://app-permission-resolved",
+        &serde_json::json!({
+            "app_id": app_id,
+            "request_id": request_id,
+            "approved": approve,
+        }),
+    );
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    Ok(manifest)
+}
+
 struct ConnectedAppSpec {
     app_id: String,
     provider: String,
@@ -436,6 +458,7 @@ fn install_connected_app(
             notes: Some(spec.notes.clone()),
         }),
         network: None,
+        permission_requests: Vec::new(),
         schedules: Vec::new(),
         actions: vec![
             apps::ActionDef {
@@ -1755,6 +1778,7 @@ CURRENT BRIDGE / RUNTIME NOTES:\n\
 - After revising, check empty/loading/error/success states and main control accessibility. The first screen must remain a real usable tool, not a feature description.\n\
 - Available bridge methods: bridge.catalog, system.context, system.openPanel, system.openUrl/openPath/revealPath, logs.write/list, manifest.get/update, integration.catalog/profile/update/learnVisible/mcpStatus/mcpQuery, permissions.*, network.*, widgets.*, actions.*, agent.*, storage.*, fs.*, clipboard.*, projects.*, topics.*, skills.*, mcp.*, project.files.*, browser.*, memory.*, scheduler.*, dialog.*, notify.show, net.fetch, events.*, apps.*.\n\
 - Overlay helpers include reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexIntegrationCatalog/Profile/Update/LearnVisible/McpStatus/McpQuery, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjects*, reflexTopics*, reflexSkills*, reflexMcp*, reflexProjectFiles*, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexApps*, reflexEvent*.\n\
+- If the utility needs extra app permissions, network hosts, or local server listen access, call `window.reflexPermissionsRequest({{permissions, hosts, reason, serverListen}})` and render a setup-required state until the host user approves it.\n\
 - iframe sandbox=\"allow-scripts allow-forms\"; server runtime also gets allow-same-origin. No external CDNs: use inline or local files.\n\
 - Reflex injects an overlay script that captures window.onerror/unhandledrejection for Fix and supports Inspector pick events. Do not override those same event types with your own global handler.\n\
 - After edits, the iframe reloads automatically; server runtime processes restart automatically. Do not ask for manual reload.\n\
@@ -1833,6 +1857,7 @@ async fn create_app(
             .filter(|_| template == "repo-wrapper")
             .map(|repo_url| open_source_repo_integration(&label, repo_url)),
         network: None,
+        permission_requests: Vec::new(),
         schedules: Vec::new(),
         actions: Vec::new(),
         widgets: Vec::new(),
@@ -2298,6 +2323,7 @@ fn build_app_creation_prompt(
     p.push_str("- Think through logic before coding: edge cases, errors, empty states, and what the user sees. It is better to reason carefully than to need a revision.\n");
     p.push_str("- Ask the user only when the actual product task is ambiguous, for example which fields to show, what should happen for an empty list, or which data source to use. Answer technical questions yourself.\n");
     p.push_str("- Do the work only when you understand the task. If there is substantial ambiguity, ask first.\n\n");
+    p.push_str("- If the app cannot proceed without extra permissions, network hosts, a local server listener, or an external setup step, do not fail silently. Call `permissions.request` / `window.reflexPermissionsRequest({permissions, hosts, reason, serverListen})`, show a setup-required state, and retry only after approval or required files are present.\n\n");
     p.push_str("FILES:\n");
     p.push_str("- manifest.json already exists as a stub. Update name, icon (one emoji), description (one sentence), and permissions (array of API permission strings).\n");
     p.push_str("- For external-service wrappers, add manifest.integration with a learned provider/data/MCP profile. If the web surface itself should be embedded, use runtime=\"external\" plus manifest.external.url; otherwise build a local companion UI.\n");
@@ -2384,7 +2410,7 @@ fn build_app_creation_prompt(
     p.push_str("  integration.learnVisible({tabId?, serviceUrl?, visibleText?, outline?}) -> {ok, profile, storageKey, learnedKey, event}; learn a connected-app adapter profile from visible browser text/outline, save it in storage, and merge it into manifest.integration.data_model.learned_profile.\n");
     p.push_str("  integration.mcpStatus({provider?, serverName?, includeConfig?}) -> {provider, expected_server, configured, checked, projects}; inspect provider MCP config across accessible targets, including the app-owned project.\n");
     p.push_str("  integration.mcpQuery({query?, serviceUrl?}) -> {ok, record, storageKey, event}; run an English-wrapped agent query against configured project MCP servers, store the last MCP result, and update manifest.integration.mcp last-query metadata.\n");
-    p.push_str("  permissions.list() -> {permissions}; permissions.ensure({permission}) or ensure({permissions}) -> {ok, added, permissions}; permissions.revoke(...) -> {ok, removed, permissions}; targeted manifest.permissions updates without manual merging\n");
+    p.push_str("  permissions.list() -> {permissions}; permissions.requests() -> {requests}; permissions.request({permissions?, hosts?, reason?, serverListen?}) -> {ok, request, requests}; permissions.ensure({permission}) or ensure({permissions}) -> {ok, added, permissions}; permissions.revoke(...) -> {ok, removed, permissions}; request or update manifest permissions without manual merging\n");
     p.push_str("  network.hosts() -> {allowed_hosts}; network.allowHost({host}) or allowHost({hosts}) -> {ok, added, allowed_hosts}; network.revokeHost(...) -> {ok, removed, allowed_hosts}; targeted manifest.network.allowed_hosts updates for net.fetch\n");
     p.push_str("  widgets.list() -> {widgets}; widgets.upsert({id, name?, entry?, size?, description?, html?}) or widgets.upsert({widget, html?}) -> {ok, created, widget}; widgets.delete({widgetId, deleteEntry?}) -> {ok, deleted}; manage dashboard widgets without manual manifest merging\n");
     p.push_str("  actions.list() -> {actions}; actions.upsert({id, name?, description?, public?, params_schema?, steps}) or actions.upsert({action}) -> {ok, created, action}; actions.delete({actionId}) -> {ok, deleted}; publish callable API for apps.invoke without manual manifest merging\n");
@@ -2450,7 +2476,7 @@ fn build_app_creation_prompt(
     p.push_str("  memory.indexPath({path, projectId?}) -> {indexed, skipped}; memory.pathStatus({path, projectId?}); memory.pathStatusBatch({paths, projectId?}); memory.forgetPath({path, projectId?})\n");
     p.push_str("- scope defaults to \"project\". If the app is linked to exactly one project, project scope targets that project memory; otherwise it targets the app's own memory.\n");
     p.push_str("- To choose a project, call system.context() and pass a projectId from linked_projects. For global scope, add permission \"memory.global.read\" or \"memory.global.write\".\n");
-    p.push_str("- The overlay already provides helpers: reflexInvoke(method, params), reflexBridgeCatalog(), reflexSystemContext(), reflexSystemOpenPanel(panelOrParams, projectId?, threadId?), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexLogList(params), reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexIntegrationLearnVisible(params?), reflexIntegrationMcpStatus(params?), reflexIntegrationMcpQuery(queryOrParams?), reflexPermissionsList(), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexSchedulerList(params), reflexSchedulerUpsert(scheduleOrParams), reflexSchedulerDelete(scheduleIdOrParams), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerStats(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions. For open-source wrappers, call reflexAppsCreate({description, template:\"repo-wrapper\", sourceRepoUrl}).\n");
+    p.push_str("- The overlay already provides helpers: reflexInvoke(method, params), reflexBridgeCatalog(), reflexSystemContext(), reflexSystemOpenPanel(panelOrParams, projectId?, threadId?), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexLogList(params), reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexIntegrationLearnVisible(params?), reflexIntegrationMcpStatus(params?), reflexIntegrationMcpQuery(queryOrParams?), reflexPermissionsList(), reflexPermissionsRequests(), reflexPermissionsRequest(requestOrPermission), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexSchedulerList(params), reflexSchedulerUpsert(scheduleOrParams), reflexSchedulerDelete(scheduleIdOrParams), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerStats(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions. For open-source wrappers, call reflexAppsCreate({description, template:\"repo-wrapper\", sourceRepoUrl}).\n");
     p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set/List/Delete(...), reflexFsRead/List/Write/Delete(...), reflexClipboardReadText(), reflexClipboardWriteText(textOrParams), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
     p.push_str("  Browser helpers: reflexBrowserInit(params), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserClose(tabIdOrParams), reflexBrowserSetActive(tabIdOrParams), reflexBrowserNavigate(tabId, url), reflexBrowserBack(tabIdOrParams), reflexBrowserForward(tabIdOrParams), reflexBrowserReload(tabIdOrParams), reflexBrowserCurrentUrl(tabIdOrParams), reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?), reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?), reflexBrowserScroll(tabIdOrParams, dx?, dy?), reflexBrowserWaitFor(tabIdOrParams, selector?, timeoutMs?).\n");
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryUpdate(relPathOrParams, patch?), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryStats(params), reflexMemoryReindex(params), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryPathStatusBatch(pathsOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
@@ -2539,7 +2565,7 @@ fn build_app_creation_prompt(
     p.push_str("  window.reflexSystemOpenPanel(panelOrParams, projectId?, threadId?)\n");
     p.push_str("  window.reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams)\n");
     p.push_str("  window.reflexLog(levelOrParams, message?), reflexLogList(params)\n");
-    p.push_str("  window.reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexIntegrationLearnVisible(params?), reflexIntegrationMcpStatus(params?), reflexIntegrationMcpQuery(queryOrParams?), reflexPermissionsList(), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities() // manifest summary + hasPermission()/hasNetworkHost()\n");
+    p.push_str("  window.reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexIntegrationLearnVisible(params?), reflexIntegrationMcpStatus(params?), reflexIntegrationMcpQuery(queryOrParams?), reflexPermissionsList(), reflexPermissionsRequests(), reflexPermissionsRequest(requestOrPermission), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities() // manifest summary + hasPermission()/hasNetworkHost()/pendingPermissionRequests\n");
     p.push_str("  window.reflexAgentAsk(promptOrParams), reflexAgentStartTopic(promptOrParams, projectId?), reflexAgentTask(promptOrParams), reflexAgentStream(promptOrParams), reflexAgentStreamAbort(threadIdOrParams)\n");
     p.push_str("  window.reflexStorageGet(keyOrParams), reflexStorageSet(keyOrParams, value?), reflexStorageList(params), reflexStorageDelete(keyOrParams)\n");
     p.push_str("  window.reflexFsRead(pathOrParams), reflexFsList(pathOrParams, recursive?), reflexFsWrite(pathOrParams, content?), reflexFsDelete(pathOrParams, recursive?)\n");
@@ -4259,6 +4285,7 @@ pub fn run() {
             pick_open_file,
             pick_save_file,
             read_app_manifest,
+            resolve_app_permission_request,
             app_export,
             app_import,
             delete_app,

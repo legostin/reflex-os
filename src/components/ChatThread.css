@@ -2443,7 +2443,76 @@
 
 .appviewer-banner-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+}
+
+.appviewer-permission-requests {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(74, 140, 255, 0.28);
+  background: rgba(74, 140, 255, 0.08);
+}
+
+.appviewer-permission-requests header {
+  display: grid;
+  gap: 2px;
+}
+
+.appviewer-permission-requests header strong {
+  font-size: 13px;
+  color: rgba(245, 245, 247, 0.9);
+}
+
+.appviewer-permission-requests header span {
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(245, 245, 247, 0.58);
+}
+
+.appviewer-permission-request {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.appviewer-permission-request-main {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.appviewer-permission-request-reason {
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(245, 245, 247, 0.78);
+}
+
+.appviewer-permission-request-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.appviewer-permission-request-chips code {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 4px;
+  border: 1px solid rgba(74, 140, 255, 0.22);
+  background: rgba(74, 140, 255, 0.11);
+  color: rgba(225, 233, 255, 0.92);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  padding: 2px 5px;
 }
 
 .appviewer-capabilities {

@@ -35,11 +35,38 @@ pub struct AppManifest {
     #[serde(default)]
     pub network: Option<NetworkPolicy>,
     #[serde(default)]
+    pub permission_requests: Vec<PermissionRequest>,
+    #[serde(default)]
     pub schedules: Vec<ScheduleDef>,
     #[serde(default)]
     pub actions: Vec<ActionDef>,
     #[serde(default)]
     pub widgets: Vec<WidgetDef>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct PermissionRequest {
+    pub id: String,
+    #[serde(default = "default_permission_request_status")]
+    pub status: String,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+    #[serde(default)]
+    pub network_hosts: Vec<String>,
+    #[serde(default)]
+    pub server_listen: bool,
+    #[serde(default)]
+    pub created_at_ms: u128,
+    #[serde(default)]
+    pub resolved_at_ms: Option<u128>,
+    #[serde(default)]
+    pub resolved_note: Option<String>,
+}
+
+fn default_permission_request_status() -> String {
+    "pending".into()
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -442,6 +469,131 @@ pub fn write_manifest(app: &AppHandle, id: &str, manifest: &AppManifest) -> io::
         serde_json::to_string_pretty(manifest)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
     )
+}
+
+pub fn timestamp_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+pub fn upsert_permission_request(
+    app: &AppHandle,
+    id: &str,
+    request: PermissionRequest,
+) -> io::Result<(AppManifest, PermissionRequest, bool)> {
+    let mut manifest = read_manifest(app, id)?;
+    let (request, created) = upsert_permission_request_in_manifest(&mut manifest, request);
+    write_manifest(app, id, &manifest)?;
+    Ok((manifest, request, created))
+}
+
+pub fn upsert_permission_request_in_manifest(
+    manifest: &mut AppManifest,
+    mut request: PermissionRequest,
+) -> (PermissionRequest, bool) {
+    if request.id.trim().is_empty() {
+        request.id = format!(
+            "perm_{}_{}",
+            timestamp_ms(),
+            manifest.permission_requests.len() + 1
+        );
+    }
+    if request.status.trim().is_empty() {
+        request.status = "pending".into();
+    }
+    if request.created_at_ms == 0 {
+        request.created_at_ms = timestamp_ms();
+    }
+    if let Some(existing) = manifest
+        .permission_requests
+        .iter()
+        .find(|existing| permission_request_matches(existing, &request))
+        .cloned()
+    {
+        return (existing, false);
+    }
+    if let Some(existing) = manifest
+        .permission_requests
+        .iter_mut()
+        .find(|existing| existing.id == request.id)
+    {
+        *existing = request.clone();
+        return (request, false);
+    }
+    manifest.permission_requests.push(request.clone());
+    (request, true)
+}
+
+pub fn resolve_permission_request(
+    app: &AppHandle,
+    id: &str,
+    request_id: &str,
+    approve: bool,
+    note: Option<String>,
+) -> io::Result<AppManifest> {
+    let mut manifest = read_manifest(app, id)?;
+    resolve_permission_request_in_manifest(&mut manifest, request_id, approve, note)?;
+    write_manifest(app, id, &manifest)?;
+    Ok(manifest)
+}
+
+pub fn resolve_permission_request_in_manifest(
+    manifest: &mut AppManifest,
+    request_id: &str,
+    approve: bool,
+    note: Option<String>,
+) -> io::Result<()> {
+    let idx = manifest
+        .permission_requests
+        .iter()
+        .position(|request| request.id == request_id)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "permission request not found"))?;
+    if manifest.permission_requests[idx].status != "pending" {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "permission request is already resolved",
+        ));
+    }
+
+    let requested = manifest.permission_requests[idx].clone();
+    if approve {
+        for permission in requested.permissions {
+            if !manifest.permissions.iter().any(|p| p == &permission) {
+                manifest.permissions.push(permission);
+            }
+        }
+        if !requested.network_hosts.is_empty() {
+            let network = manifest
+                .network
+                .get_or_insert_with(NetworkPolicy::default);
+            for host in requested.network_hosts {
+                if !network.allowed_hosts.iter().any(|h| h == &host) {
+                    network.allowed_hosts.push(host);
+                }
+            }
+        }
+    }
+
+    let request = &mut manifest.permission_requests[idx];
+    request.status = if approve { "approved" } else { "denied" }.into();
+    request.resolved_at_ms = Some(timestamp_ms());
+    request.resolved_note = note.filter(|value| !value.trim().is_empty());
+    Ok(())
+}
+
+fn permission_request_matches(existing: &PermissionRequest, request: &PermissionRequest) -> bool {
+    existing.status == "pending"
+        && same_string_set(&existing.permissions, &request.permissions)
+        && same_string_set(&existing.network_hosts, &request.network_hosts)
+        && existing.server_listen == request.server_listen
+}
+
+fn same_string_set(a: &[String], b: &[String]) -> bool {
+    let a: std::collections::BTreeSet<&str> = a.iter().map(String::as_str).collect();
+    let b: std::collections::BTreeSet<&str> = b.iter().map(String::as_str).collect();
+    a == b
 }
 
 /// Read a file under apps/<id>/ with path-traversal protection.
@@ -1111,6 +1263,13 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexPermissionsList = function() {
     return reflexInvokeRaw('permissions.list', {});
   };
+  window.reflexPermissionsRequests = function() {
+    return reflexInvokeRaw('permissions.requests', {});
+  };
+  window.reflexPermissionsRequest = function(requestOrPermission) {
+    var params = (typeof requestOrPermission === 'string') ? {permission: requestOrPermission} : (requestOrPermission || {});
+    return reflexInvokeRaw('permissions.request', params);
+  };
   window.reflexPermissionsEnsure = function(permissionOrParams) {
     var params = (typeof permissionOrParams === 'string') ? {permission: permissionOrParams} : (permissionOrParams || {});
     return reflexInvokeRaw('permissions.ensure', params);
@@ -1187,6 +1346,8 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var schedules = reflexArray(m.schedules);
     var actions = reflexArray(m.actions);
     var widgets = reflexArray(m.widgets);
+    var permissionRequests = reflexArray(m.permission_requests);
+    var pendingPermissionRequests = permissionRequests.filter(function(r){ return !r || !r.status || r.status === 'pending'; });
     return {
       manifest: m,
       runtime: m.runtime === 'server' ? 'server' : (m.runtime === 'external' ? 'external' : 'static'),
@@ -1198,9 +1359,13 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
       schedules: schedules,
       actions: actions,
       widgets: widgets,
+      permissionRequests: permissionRequests,
+      pendingPermissionRequests: pendingPermissionRequests,
       counts: {
         permissions: permissions.length,
         networkHosts: hosts.length,
+        permissionRequests: permissionRequests.length,
+        pendingPermissionRequests: pendingPermissionRequests.length,
         schedules: schedules.length,
         activeSchedules: schedules.filter(function(s){ return s && s.enabled !== false; }).length,
         actions: actions.length,
@@ -1725,6 +1890,28 @@ fn decode_chunked_body(raw: &[u8]) -> Result<Vec<u8>, String> {
 mod proxy_tests {
     use super::*;
 
+    fn test_manifest() -> AppManifest {
+        AppManifest {
+            id: "test-app".into(),
+            name: "Test App".into(),
+            icon: None,
+            description: None,
+            entry: "index.html".into(),
+            permissions: Vec::new(),
+            kind: "panel".into(),
+            created_at_ms: 1,
+            runtime: None,
+            server: None,
+            external: None,
+            integration: None,
+            network: None,
+            permission_requests: Vec::new(),
+            schedules: Vec::new(),
+            actions: Vec::new(),
+            widgets: Vec::new(),
+        }
+    }
+
     #[test]
     fn parse_http_response_injects_overlay_into_html() {
         let raw = concat!(
@@ -1765,6 +1952,69 @@ mod proxy_tests {
                 .iter()
                 .all(|(name, _)| !name.eq_ignore_ascii_case("transfer-encoding"))
         );
+    }
+
+    #[test]
+    fn permission_request_resolution_applies_permissions_and_hosts() {
+        let mut manifest = test_manifest();
+        manifest.permission_requests.push(PermissionRequest {
+            id: "req_1".into(),
+            status: "pending".into(),
+            reason: Some("Need upstream access".into()),
+            permissions: vec!["agent.cwd:*".into(), "runtime.server.listen".into()],
+            network_hosts: vec!["github.com".into()],
+            server_listen: true,
+            created_at_ms: 1,
+            resolved_at_ms: None,
+            resolved_note: None,
+        });
+
+        resolve_permission_request_in_manifest(
+            &mut manifest,
+            "req_1",
+            true,
+            Some("ok".into()),
+        )
+        .expect("resolve request");
+
+        assert!(manifest.permissions.iter().any(|p| p == "agent.cwd:*"));
+        assert!(manifest
+            .permissions
+            .iter()
+            .any(|p| p == "runtime.server.listen"));
+        assert_eq!(
+            manifest.network.as_ref().unwrap().allowed_hosts,
+            vec!["github.com".to_string()]
+        );
+        assert_eq!(manifest.permission_requests[0].status, "approved");
+        assert_eq!(
+            manifest.permission_requests[0].resolved_note.as_deref(),
+            Some("ok")
+        );
+    }
+
+    #[test]
+    fn permission_request_upsert_deduplicates_pending_grants() {
+        let mut manifest = test_manifest();
+        let request = PermissionRequest {
+            id: "req_a".into(),
+            status: "pending".into(),
+            reason: Some("Need network".into()),
+            permissions: vec!["runtime.server.listen".into()],
+            network_hosts: vec!["github.com".into()],
+            server_listen: true,
+            created_at_ms: 1,
+            resolved_at_ms: None,
+            resolved_note: None,
+        };
+        let (_, created_first) =
+            upsert_permission_request_in_manifest(&mut manifest, request.clone());
+        let (_, created_second) =
+            upsert_permission_request_in_manifest(&mut manifest, request);
+
+        assert!(created_first);
+        assert!(!created_second);
+        assert_eq!(manifest.permission_requests.len(), 1);
     }
 }
 
@@ -1991,6 +2241,7 @@ pub fn ensure_sample_app(app: &AppHandle) -> io::Result<()> {
         external: None,
         integration: None,
         network: None,
+        permission_requests: Vec::new(),
         schedules: Vec::new(),
         actions: Vec::new(),
         widgets: Vec::new(),
@@ -2025,6 +2276,7 @@ fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
         external: None,
         integration: None,
         network: None,
+        permission_requests: Vec::new(),
         schedules: vec![ScheduleDef {
             id: "heartbeat".into(),
             name: "Heartbeat (every minute)".into(),

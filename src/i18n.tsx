@@ -92,6 +92,13 @@ const dictionaries: Record<Locale, Dictionary> = {
     "appViewer.manifestPermissions": "Manifest permissions",
     "appViewer.permissions": "Permissions",
     "appViewer.networkHosts": "Network hosts",
+    "appViewer.permissionRequestsTitle": "Permission requests",
+    "appViewer.permissionRequestsHint":
+      "The utility needs extra access before it can continue. Approving updates its manifest immediately.",
+    "appViewer.permissionRequestNoReason": "No reason provided.",
+    "appViewer.permissionRequestServerListen": "local server listen",
+    "appViewer.approvePermission": "Approve",
+    "appViewer.denyPermission": "Deny",
     "appViewer.bridgeCatalog": "Runtime bridge catalog",
     "appViewer.bridgeSearch": "Search methods, helpers, workflows...",
     "appViewer.methodsCount": "{visible}/{total} methods",
@@ -744,7 +751,7 @@ const dictionaries: Record<Locale, Dictionary> = {
       "Save new facts and update known relPath entries without duplicates.",
     "recipe.capabilities.title": "Capabilities",
     "recipe.capabilities.body":
-      "Add permissions and network hosts precisely, without manual manifest merging.",
+      "Request or add permissions and network hosts precisely, without manual manifest merging.",
     "recipe.utilityService.title": "Utility as a service",
     "recipe.utilityService.body":
       "Publish actions/widgets, create utilities, wrap open-source repos, export bundles, and manage server runtime.",
@@ -838,6 +845,13 @@ const dictionaries: Record<Locale, Dictionary> = {
     "appViewer.manifestPermissions": "Разрешения manifest",
     "appViewer.permissions": "Права",
     "appViewer.networkHosts": "Сетевые хосты",
+    "appViewer.permissionRequestsTitle": "Запросы разрешений",
+    "appViewer.permissionRequestsHint":
+      "Утилите нужен дополнительный доступ, чтобы продолжить. Подтверждение сразу обновит manifest.",
+    "appViewer.permissionRequestNoReason": "Причина не указана.",
+    "appViewer.permissionRequestServerListen": "локальный server listen",
+    "appViewer.approvePermission": "Разрешить",
+    "appViewer.denyPermission": "Отклонить",
     "appViewer.bridgeCatalog": "Каталог runtime bridge",
     "appViewer.bridgeSearch": "Поиск методов, helpers, связок...",
     "appViewer.methodsCount": "{visible}/{total} методов",
@@ -1495,7 +1509,7 @@ const dictionaries: Record<Locale, Dictionary> = {
       "Сохраняй новые факты и обновляй известный relPath без дублей.",
     "recipe.capabilities.title": "Возможности",
     "recipe.capabilities.body":
-      "Добавляй permissions и network hosts точечно, без ручного слияния manifest.",
+      "Запрашивай или добавляй permissions и network hosts точечно, без ручного слияния manifest.",
     "recipe.utilityService.title": "Утилита как сервис",
     "recipe.utilityService.body":
       "Публикуй actions/widgets, создавай утилиты, оборачивай open-source repos, экспортируй bundles и управляй server runtime.",

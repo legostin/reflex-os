@@ -419,6 +419,18 @@ type AppNetworkPolicy = {
   allowed_hosts?: string[];
 };
 
+type AppPermissionRequest = {
+  id: string;
+  status?: string;
+  reason?: string | null;
+  permissions?: string[];
+  network_hosts?: string[];
+  server_listen?: boolean;
+  created_at_ms?: number;
+  resolved_at_ms?: number | null;
+  resolved_note?: string | null;
+};
+
 type AppStep = {
   method: string;
   params?: any;
@@ -471,6 +483,7 @@ type AppManifest = {
     notes?: string | null;
   } | null;
   network?: AppNetworkPolicy | null;
+  permission_requests?: AppPermissionRequest[];
   schedules?: AppSchedule[];
   actions?: AppAction[];
   widgets?: AppWidget[];
@@ -580,6 +593,9 @@ function buildAppCapabilityFacts(
   const actions = manifest.actions ?? [];
   const schedules = manifest.schedules ?? [];
   const widgets = manifest.widgets ?? [];
+  const pendingRequests = (manifest.permission_requests ?? []).filter(
+    (request) => (request.status ?? "pending") === "pending",
+  );
   const enabledSchedules = schedules.filter((s) => s.enabled !== false).length;
   const serverCommand = manifest.server?.command?.join(" ");
   const integrationProvider = manifest.integration?.provider?.trim();
@@ -627,6 +643,19 @@ function buildAppCapabilityFacts(
       title: allowedHosts.length
         ? `allowed hosts: ${allowedHosts.join(", ")}`
         : "no allowed network hosts",
+    },
+    {
+      key: "permission_requests",
+      label: "requests",
+      value:
+        pendingRequests.length === 0
+          ? "none"
+          : `${pendingRequests.length} pending`,
+      title: pendingRequests.length
+        ? pendingRequests
+            .map((request) => request.reason || request.id)
+            .join(", ")
+        : "no pending permission requests",
     },
     {
       key: "actions",
@@ -742,6 +771,73 @@ function AppCapabilityDetails({ manifest }: { manifest: AppManifest | null }) {
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+function AppPermissionRequestsPanel({
+  requests,
+  resolvingId,
+  onResolve,
+}: {
+  requests: AppPermissionRequest[];
+  resolvingId: string | null;
+  onResolve: (requestId: string, approve: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const pending = requests.filter(
+    (request) => (request.status ?? "pending") === "pending",
+  );
+  if (pending.length === 0) return null;
+
+  return (
+    <div className="appviewer-permission-requests">
+      <header>
+        <strong>{t("appViewer.permissionRequestsTitle")}</strong>
+        <span>{t("appViewer.permissionRequestsHint")}</span>
+      </header>
+      {pending.map((request) => {
+        const permissions = request.permissions ?? [];
+        const hosts = request.network_hosts ?? [];
+        return (
+          <section key={request.id} className="appviewer-permission-request">
+            <div className="appviewer-permission-request-main">
+              <div className="appviewer-permission-request-reason">
+                {request.reason || t("appViewer.permissionRequestNoReason")}
+              </div>
+              <div className="appviewer-permission-request-chips">
+                {permissions.map((permission) => (
+                  <code key={`p:${permission}`}>{permission}</code>
+                ))}
+                {hosts.map((host) => (
+                  <code key={`h:${host}`}>host:{host}</code>
+                ))}
+                {request.server_listen && (
+                  <code>{t("appViewer.permissionRequestServerListen")}</code>
+                )}
+              </div>
+            </div>
+            <div className="appviewer-banner-actions">
+              <button
+                className="appviewer-btn appviewer-btn-primary"
+                onClick={() => onResolve(request.id, true)}
+                disabled={resolvingId === request.id}
+              >
+                {resolvingId === request.id
+                  ? "..."
+                  : t("appViewer.approvePermission")}
+              </button>
+              <button
+                className="appviewer-btn"
+                onClick={() => onResolve(request.id, false)}
+                disabled={resolvingId === request.id}
+              >
+                {t("appViewer.denyPermission")}
+              </button>
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -2957,9 +3053,13 @@ function AppViewer({
   const [pickInstruction, setPickInstruction] = useState("");
   const [lastError, setLastError] = useState<RuntimeErrorPayload | null>(null);
   const [reviseBusy, setReviseBusy] = useState(false);
+  const [resolvingPermissionRequest, setResolvingPermissionRequest] = useState<
+    string | null
+  >(null);
 
   const isServerRuntime = manifest?.runtime === "server";
   const isExternalRuntime = manifest?.runtime === "external";
+  const permissionRequests = manifest?.permission_requests ?? [];
   isServerRuntimeRef.current = isServerRuntime;
   const normalizedBridgeQuery = bridgeQuery.trim().toLowerCase();
   const visibleBridgeApiGroups = useMemo(() => {
@@ -3136,6 +3236,36 @@ function AppViewer({
     };
   }, [appId]);
 
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => {
+      void invoke<AppManifest>("read_app_manifest", { appId })
+        .then((m) => {
+          if (alive) setManifest(m);
+        })
+        .catch((e) => {
+          if (alive) setError(String(e));
+        });
+    };
+    const requested = listen<{ app_id: string }>(
+      "reflex://app-permission-requested",
+      (event) => {
+        if (event.payload.app_id === appId) refresh();
+      },
+    );
+    const resolved = listen<{ app_id: string }>(
+      "reflex://app-permission-resolved",
+      (event) => {
+        if (event.payload.app_id === appId) refresh();
+      },
+    );
+    return () => {
+      alive = false;
+      requested.then((unlisten) => unlisten());
+      resolved.then((unlisten) => unlisten());
+    };
+  }, [appId]);
+
   // Start/stop server-runtime app while this AppViewer is mounted.
   useEffect(() => {
     if (manifest?.runtime !== "server") return;
@@ -3292,6 +3422,25 @@ function AppViewer({
       setServerState("failed");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function resolvePermissionRequest(requestId: string, approve: boolean) {
+    if (resolvingPermissionRequest) return;
+    setResolvingPermissionRequest(requestId);
+    setError(null);
+    try {
+      const updated = await invoke<AppManifest>("resolve_app_permission_request", {
+        appId,
+        requestId,
+        approve,
+        note: approve ? "Approved from app viewer" : "Denied from app viewer",
+      });
+      setManifest(updated);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setResolvingPermissionRequest(null);
     }
   }
 
@@ -4033,6 +4182,14 @@ function AppViewer({
       )}
 
       {error && <div className="apps-error">{error}</div>}
+
+      <AppPermissionRequestsPanel
+        requests={permissionRequests}
+        resolvingId={resolvingPermissionRequest}
+        onResolve={(requestId, approve) =>
+          void resolvePermissionRequest(requestId, approve)
+        }
+      />
 
       {isServerRuntime && serverState !== "running" && (
         <div

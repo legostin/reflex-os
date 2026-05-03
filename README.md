@@ -66,6 +66,8 @@ The injected runtime overlay provides:
 - `window.reflexIntegrationMcpStatus(params?)`
 - `window.reflexIntegrationMcpQuery(queryOrParams?)`
 - `window.reflexPermissionsList()`
+- `window.reflexPermissionsRequests()`
+- `window.reflexPermissionsRequest(requestOrPermission)`
 - `window.reflexPermissionsEnsure(permissionOrParams)`
 - `window.reflexPermissionsRevoke(permissionOrParams)`
 - `window.reflexNetworkHosts()`
@@ -255,9 +257,12 @@ Core methods:
 - `integration.mcpQuery({ query?, serviceUrl? })` -> run an English-wrapped
   agent query against configured project MCP servers, store the latest MCP
   result, emit a connected-app event, and update `manifest.integration.mcp`.
-- `permissions.list()`, `permissions.ensure({ permission })` or
-  `permissions.ensure({ permissions })`, `permissions.revoke(...)` -> targeted
-  updates to this app's manifest permissions.
+- `permissions.list()`, `permissions.requests()`,
+  `permissions.request({ permissions?, hosts?, reason?, serverListen? })`,
+  `permissions.ensure({ permission })` or `permissions.ensure({ permissions })`,
+  `permissions.revoke(...)` -> pending runtime access requests and targeted
+  updates to this app's manifest permissions. Pending requests appear in the
+  host app viewer where the user can approve or deny them on the fly.
 - `network.hosts()`, `network.allowHost({ host })` or
   `network.allowHost({ hosts })`, `network.revokeHost(...)` -> targeted updates
   to `manifest.network.allowed_hosts` for `net.fetch`.

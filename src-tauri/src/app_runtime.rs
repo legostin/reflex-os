@@ -99,6 +99,31 @@ fn append_log(
     log
 }
 
+fn record_server_permission_request(app: &AppHandle, app_id: &str, reason: String) {
+    let request = apps::PermissionRequest {
+        id: String::new(),
+        status: "pending".into(),
+        reason: Some(reason),
+        permissions: vec!["runtime.server.listen".into()],
+        network_hosts: Vec::new(),
+        server_listen: true,
+        created_at_ms: apps::timestamp_ms(),
+        resolved_at_ms: None,
+        resolved_note: None,
+    };
+    if let Ok((_, request, created)) = apps::upsert_permission_request(app, app_id, request) {
+        let _ = app.emit(
+            "reflex://app-permission-requested",
+            &serde_json::json!({
+                "app_id": app_id,
+                "request": request,
+                "created": created,
+            }),
+        );
+        let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    }
+}
+
 async fn push_log(
     runtimes: &AppRuntimes,
     app_handle: &AppHandle,
@@ -166,7 +191,16 @@ async fn spawn_child(
         return Err("manifest.server.command is empty".into());
     }
     let dir = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
-    let port = pick_free_port().map_err(|e| format!("pick_free_port: {e}"))?;
+    let port = pick_free_port().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            record_server_permission_request(
+                app,
+                app_id,
+                format!("Local server runtime could not bind a development port: {e}"),
+            );
+        }
+        format!("pick_free_port: {e}; a runtime permission request was added if local listen access is blocked")
+    })?;
 
     let mut cmd = Command::new(&server_cfg.command[0]);
     cmd.args(&server_cfg.command[1..])
@@ -206,7 +240,16 @@ async fn spawn_child(
     // Note: on failure here, ServerEntry is dropped → child dropped → kill_on_drop kicks in.
     let timeout = server_cfg.ready_timeout_ms.unwrap_or(15_000);
     if let Err(e) = wait_port_open(port, timeout).await {
-        return Err(e);
+        record_server_permission_request(
+            app,
+            app_id,
+            format!(
+                "Local server runtime did not become reachable on 127.0.0.1:{port}: {e}"
+            ),
+        );
+        return Err(format!(
+            "{e}; a runtime permission request was added if local listen access is blocked"
+        ));
     }
 
     Ok(ServerEntry {

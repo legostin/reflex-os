@@ -47,6 +47,8 @@ pub async fn dispatch_app_method(
             integration_mcp_query(app, app_id, params).await
         }
         "permissions.list" => permissions_list_for_app(app, app_id),
+        "permissions.requests" => permissions_requests_for_app(app, app_id),
+        "permissions.request" => permissions_request_for_app(app, app_id, params),
         "permissions.ensure" => permissions_ensure_for_app(app, app_id, params),
         "permissions.revoke" => permissions_revoke_for_app(app, app_id, params),
         "network.hosts" => network_hosts_for_app(app, app_id),
@@ -1346,6 +1348,96 @@ fn permissions_list_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json:
     Ok(serde_json::json!({ "permissions": manifest.permissions }))
 }
 
+fn permissions_requests_for_app(
+    app: &AppHandle,
+    app_id: &str,
+) -> Result<serde_json::Value, String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "requests": manifest.permission_requests }))
+}
+
+fn permissions_request_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut permissions: Vec<String> =
+        optional_string_list(&params, "permission", "permissions")?
+            .into_iter()
+            .map(|permission| normalize_permission(&permission))
+            .collect::<Result<_, _>>()?;
+    let mut raw_hosts = optional_string_list(&params, "host", "hosts")?;
+    raw_hosts.extend(optional_string_list(
+        &params,
+        "network_host",
+        "network_hosts",
+    )?);
+    let mut network_hosts = Vec::new();
+    for host in raw_hosts {
+        let host = normalize_allowed_host(&host)?;
+        if !network_hosts.iter().any(|existing| existing == &host) {
+            network_hosts.push(host);
+        }
+    }
+    let server_listen = params
+        .get("server_listen")
+        .or_else(|| params.get("serverListen"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if server_listen
+        && !permissions
+            .iter()
+            .any(|permission| permission == "runtime.server.listen")
+    {
+        permissions.push("runtime.server.listen".into());
+    }
+    if permissions.is_empty() && network_hosts.is_empty() && !server_listen {
+        return Err("permission request must include permissions, network_hosts, host, or serverListen".into());
+    }
+    let reason = params
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty())
+        .map(|reason| reason.chars().take(1200).collect::<String>());
+    let id = params
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .unwrap_or_default();
+
+    let request = apps::PermissionRequest {
+        id,
+        status: "pending".into(),
+        reason,
+        permissions,
+        network_hosts,
+        server_listen,
+        created_at_ms: apps::timestamp_ms(),
+        resolved_at_ms: None,
+        resolved_note: None,
+    };
+    let (manifest, request, created) =
+        apps::upsert_permission_request(app, app_id, request).map_err(|e| e.to_string())?;
+    let _ = app.emit(
+        "reflex://app-permission-requested",
+        &serde_json::json!({
+            "app_id": app_id,
+            "request": request,
+            "created": created,
+        }),
+    );
+    emit_apps_changed(app);
+    Ok(serde_json::json!({
+        "ok": true,
+        "created": created,
+        "request": request,
+        "requests": manifest.permission_requests,
+    }))
+}
+
 fn permissions_ensure_for_app(
     app: &AppHandle,
     app_id: &str,
@@ -1454,6 +1546,20 @@ fn network_revoke_host_for_app(
         "removed": removed,
         "allowed_hosts": allowed_hosts,
     }))
+}
+
+fn optional_string_list(
+    params: &serde_json::Value,
+    single_key: &str,
+    list_key: &str,
+) -> Result<Vec<String>, String> {
+    if params.get(single_key).is_none()
+        && params.get(list_key).is_none()
+        && params.get(&snake_to_camel(list_key)).is_none()
+    {
+        return Ok(Vec::new());
+    }
+    parse_string_list(params, single_key, list_key)
 }
 
 fn parse_string_list(
@@ -1793,6 +1899,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "integration.mcpStatus",
                 "integration.mcpQuery",
                 "permissions.list",
+                "permissions.requests",
+                "permissions.request",
                 "permissions.ensure",
                 "permissions.revoke",
                 "network.hosts",
@@ -1978,6 +2086,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexIntegrationMcpStatus",
                 "reflexIntegrationMcpQuery",
                 "reflexPermissionsList",
+                "reflexPermissionsRequests",
+                "reflexPermissionsRequest",
                 "reflexPermissionsEnsure",
                 "reflexPermissionsRevoke",
                 "reflexNetworkHosts",
@@ -3528,6 +3638,11 @@ fn app_summary_from_manifest(manifest: apps::AppManifest, ready: bool) -> serde_
                 .as_ref()
                 .map(|n| n.allowed_hosts.len())
                 .unwrap_or(0),
+            "permission_requests": manifest
+                .permission_requests
+                .iter()
+                .filter(|request| request.status == "pending")
+                .count(),
             "schedules": manifest.schedules.len(),
             "actions": manifest.actions.len(),
             "widgets": manifest.widgets.len(),
