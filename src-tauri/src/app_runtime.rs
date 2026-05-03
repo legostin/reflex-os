@@ -111,7 +111,12 @@ fn record_server_permission_request(app: &AppHandle, app_id: &str, reason: Strin
         resolved_at_ms: None,
         resolved_note: None,
     };
-    if let Ok((_, request, created)) = apps::upsert_permission_request(app, app_id, request) {
+    if let Ok((_, request, created, changed)) =
+        apps::upsert_permission_request(app, app_id, request)
+    {
+        if !changed {
+            return;
+        }
         let _ = app.emit(
             "reflex://app-permission-requested",
             &serde_json::json!({

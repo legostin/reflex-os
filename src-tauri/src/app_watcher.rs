@@ -10,7 +10,12 @@ use tauri::{AppHandle, Emitter};
 use crate::apps;
 
 const IGNORED_DIR_NAMES: &[&str] = &[".reflex", ".git", "node_modules"];
-const IGNORED_FILE_NAMES: &[&str] = &["storage.json", "meta-llm.txt", ".DS_Store"];
+const IGNORED_FILE_NAMES: &[&str] = &[
+    "manifest.json",
+    "storage.json",
+    "meta-llm.txt",
+    ".DS_Store",
+];
 const IGNORED_FILE_EXTS: &[&str] = &["log", "tmp", "swp"];
 
 pub struct WatcherEntry {
@@ -128,5 +133,20 @@ pub fn stop(watchers: &AppWatchers, app_id: &str) {
     if drop_now {
         // Drop releases the watcher.
         map.remove(app_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_ignored;
+    use std::path::Path;
+
+    #[test]
+    fn watcher_ignores_manifest_changes() {
+        let app_dir = Path::new("/tmp/reflex-app");
+
+        assert!(is_ignored(&app_dir.join("manifest.json"), app_dir));
+        assert!(is_ignored(&app_dir.join("storage.json"), app_dir));
+        assert!(!is_ignored(&app_dir.join("server.js"), app_dir));
     }
 }

@@ -1365,17 +1365,19 @@ fn create_network_host_permission_request(
     host: &str,
 ) -> Result<(), String> {
     let request = network_host_permission_request(host)?;
-    let (_, request, created) =
+    let (_, request, created, changed) =
         apps::upsert_permission_request(app, app_id, request).map_err(|e| e.to_string())?;
-    let _ = app.emit(
-        "reflex://app-permission-requested",
-        &serde_json::json!({
-            "app_id": app_id,
-            "request": request,
-            "created": created,
-        }),
-    );
-    emit_apps_changed(app);
+    if changed {
+        let _ = app.emit(
+            "reflex://app-permission-requested",
+            &serde_json::json!({
+                "app_id": app_id,
+                "request": request,
+                "created": created,
+            }),
+        );
+        emit_apps_changed(app);
+    }
     Ok(())
 }
 
@@ -1459,17 +1461,19 @@ fn permissions_request_for_app(
         resolved_at_ms: None,
         resolved_note: None,
     };
-    let (manifest, request, created) =
+    let (manifest, request, created, changed) =
         apps::upsert_permission_request(app, app_id, request).map_err(|e| e.to_string())?;
-    let _ = app.emit(
-        "reflex://app-permission-requested",
-        &serde_json::json!({
-            "app_id": app_id,
-            "request": request,
-            "created": created,
-        }),
-    );
-    emit_apps_changed(app);
+    if changed {
+        let _ = app.emit(
+            "reflex://app-permission-requested",
+            &serde_json::json!({
+                "app_id": app_id,
+                "request": request,
+                "created": created,
+            }),
+        );
+        emit_apps_changed(app);
+    }
     Ok(serde_json::json!({
         "ok": true,
         "created": created,

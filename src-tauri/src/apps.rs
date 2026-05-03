@@ -482,17 +482,20 @@ pub fn upsert_permission_request(
     app: &AppHandle,
     id: &str,
     request: PermissionRequest,
-) -> io::Result<(AppManifest, PermissionRequest, bool)> {
+) -> io::Result<(AppManifest, PermissionRequest, bool, bool)> {
     let mut manifest = read_manifest(app, id)?;
-    let (request, created) = upsert_permission_request_in_manifest(&mut manifest, request);
-    write_manifest(app, id, &manifest)?;
-    Ok((manifest, request, created))
+    let (request, created, changed) =
+        upsert_permission_request_in_manifest(&mut manifest, request);
+    if changed {
+        write_manifest(app, id, &manifest)?;
+    }
+    Ok((manifest, request, created, changed))
 }
 
 pub fn upsert_permission_request_in_manifest(
     manifest: &mut AppManifest,
     mut request: PermissionRequest,
-) -> (PermissionRequest, bool) {
+) -> (PermissionRequest, bool, bool) {
     if request.id.trim().is_empty() {
         request.id = format!(
             "perm_{}_{}",
@@ -512,7 +515,7 @@ pub fn upsert_permission_request_in_manifest(
         .find(|existing| permission_request_matches(existing, &request))
         .cloned()
     {
-        return (existing, false);
+        return (existing, false, false);
     }
     if let Some(existing) = manifest
         .permission_requests
@@ -520,10 +523,10 @@ pub fn upsert_permission_request_in_manifest(
         .find(|existing| existing.id == request.id)
     {
         *existing = request.clone();
-        return (request, false);
+        return (request, false, true);
     }
     manifest.permission_requests.push(request.clone());
-    (request, true)
+    (request, true, true)
 }
 
 pub fn resolve_permission_request(
@@ -2022,13 +2025,15 @@ mod proxy_tests {
             resolved_at_ms: None,
             resolved_note: None,
         };
-        let (_, created_first) =
+        let (_, created_first, changed_first) =
             upsert_permission_request_in_manifest(&mut manifest, request.clone());
-        let (_, created_second) =
+        let (_, created_second, changed_second) =
             upsert_permission_request_in_manifest(&mut manifest, request);
 
         assert!(created_first);
+        assert!(changed_first);
         assert!(!created_second);
+        assert!(!changed_second);
         assert_eq!(manifest.permission_requests.len(), 1);
     }
 
