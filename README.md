@@ -185,6 +185,12 @@ The injected runtime overlay provides:
 - `window.reflexEventSubscriptions()`
 - `window.reflexEventClearSubscriptions()`
 
+The Apps screen also has a ready-made `Connected app` installer for Telegram.
+It creates a local `connected_telegram` utility with `manifest.integration`,
+Browser bridge permissions, and callable actions for summarizing visible
+Telegram Web session text. Raw visible text is exposed only through the
+non-public `read_visible_session` action or an explicit panel click.
+
 ## App Bridge API
 
 Core methods:

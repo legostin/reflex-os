@@ -2173,6 +2173,7 @@ function AppsScreen({
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [installingConnected, setInstallingConnected] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [step, setStep] = useState<"template" | "describe">("template");
   const [template, setTemplate] = useState<string>("blank");
@@ -2331,6 +2332,29 @@ function AppsScreen({
       setError(String(e));
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function installConnected(provider: string) {
+    if (installingConnected) return;
+    setInstallingConnected(true);
+    setError(null);
+    try {
+      const manifest = await invoke<AppManifest>("install_connected_app", {
+        provider,
+        projectId: targetProject?.id ?? null,
+      });
+      setShowModal(false);
+      setDescription("");
+      setStep("template");
+      setTemplate("blank");
+      await refresh();
+      onOpenApp(manifest.id);
+    } catch (e) {
+      console.error("[reflex] install_connected_app failed", e);
+      setError(String(e));
+    } finally {
+      setInstallingConnected(false);
     }
   }
 
@@ -2552,6 +2576,23 @@ function AppsScreen({
                     {t("apps.linkedToProject", { name: targetProject.name })}
                   </div>
                 )}
+                {template === "connected-app" && (
+                  <div className="connected-install-panel">
+                    <div>
+                      <strong>{t("apps.installTelegramTitle")}</strong>
+                      <span>{t("apps.installTelegramHint")}</span>
+                    </div>
+                    <button
+                      className="modal-btn modal-btn-primary"
+                      disabled={creating || installingConnected}
+                      onClick={() => void installConnected("telegram")}
+                    >
+                      {installingConnected
+                        ? t("apps.installing")
+                        : t("apps.installTelegram")}
+                    </button>
+                  </div>
+                )}
                 <textarea
                   className="modal-input"
                   placeholder={t(selectedTemplate.placeholderKey)}
@@ -2569,21 +2610,23 @@ function AppsScreen({
                 <div className="modal-actions">
                   <button
                     className="modal-btn"
-                    disabled={creating}
+                    disabled={creating || installingConnected}
                     onClick={() => setStep("template")}
                   >
                     {t("apps.back")}
                   </button>
                   <button
                     className="modal-btn"
-                    disabled={creating}
+                    disabled={creating || installingConnected}
                     onClick={() => setShowModal(false)}
                   >
                     {t("apps.cancel")}
                   </button>
                   <button
                     className="modal-btn modal-btn-primary"
-                    disabled={creating || !description.trim()}
+                    disabled={
+                      creating || installingConnected || !description.trim()
+                    }
                     onClick={() => void submitCreate()}
                   >
                     {creating ? t("apps.creating") : t("apps.createShortcut")}

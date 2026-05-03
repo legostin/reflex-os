@@ -366,6 +366,184 @@ fn read_app_manifest(app: AppHandle, app_id: String) -> Result<apps::AppManifest
     apps::read_manifest(&app, &app_id).map_err(|e| e.to_string())
 }
 
+struct ConnectedAppSpec {
+    app_id: String,
+    provider: String,
+    name: String,
+    icon: String,
+    description: String,
+    url: String,
+    open_url: String,
+    capabilities: Vec<String>,
+    data_model: serde_json::Value,
+    auth: serde_json::Value,
+    mcp: serde_json::Value,
+    notes: String,
+}
+
+#[tauri::command]
+fn install_connected_app(
+    app: AppHandle,
+    provider: String,
+    url: Option<String>,
+    display_name: Option<String>,
+    project_id: Option<String>,
+) -> Result<apps::AppManifest, String> {
+    let spec = connected_app_spec(provider, url, display_name)?;
+    let dir = apps::app_dir(&app, &spec.app_id).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let created_at_ms = apps::read_manifest(&app, &spec.app_id)
+        .map(|manifest| manifest.created_at_ms)
+        .unwrap_or_else(|_| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
+        });
+
+    let storage_key = format!("connected.{}.latestVisibleSession", spec.provider);
+    let manifest = apps::AppManifest {
+        id: spec.app_id.clone(),
+        name: spec.name.clone(),
+        icon: Some(spec.icon.clone()),
+        description: Some(spec.description.clone()),
+        entry: "index.html".into(),
+        permissions: vec!["browser.control".into(), "browser.read".into()],
+        kind: "panel".into(),
+        created_at_ms,
+        runtime: Some("static".into()),
+        server: None,
+        external: Some(apps::ExternalConfig {
+            url: spec.url.clone(),
+            title: Some(spec.name.clone()),
+            open_url: Some(spec.open_url.clone()),
+        }),
+        integration: Some(apps::IntegrationConfig {
+            provider: spec.provider.clone(),
+            display_name: Some(spec.name.clone()),
+            capabilities: spec.capabilities.clone(),
+            data_model: spec.data_model.clone(),
+            auth: spec.auth.clone(),
+            mcp: spec.mcp.clone(),
+            notes: Some(spec.notes.clone()),
+        }),
+        network: None,
+        schedules: Vec::new(),
+        actions: vec![
+            apps::ActionDef {
+                id: "summarize_visible_session".into(),
+                name: "Summarize visible session".into(),
+                description: Some(
+                    "Open the connected service in the Browser bridge and summarize only visible text."
+                        .into(),
+                ),
+                params_schema: None,
+                public: true,
+                steps: vec![
+                    apps::Step {
+                        method: "browser.init".into(),
+                        params: serde_json::json!({ "headless": true }),
+                        save_as: Some("browser".into()),
+                    },
+                    apps::Step {
+                        method: "browser.open".into(),
+                        params: serde_json::json!({ "url": spec.url.clone() }),
+                        save_as: Some("opened".into()),
+                    },
+                    apps::Step {
+                        method: "browser.waitFor".into(),
+                        params: serde_json::json!({
+                            "tabId": "{{steps.opened.tab_id}}",
+                            "selector": "body",
+                            "timeoutMs": 15000
+                        }),
+                        save_as: Some("page_ready".into()),
+                    },
+                    apps::Step {
+                        method: "browser.readText".into(),
+                        params: serde_json::json!({ "tabId": "{{steps.opened.tab_id}}" }),
+                        save_as: Some("visible_text".into()),
+                    },
+                    apps::Step {
+                        method: "agent.task".into(),
+                        params: serde_json::json!({
+                            "includeContext": false,
+                            "prompt": "Summarize the visible web-session text below. Use only content present in the text. If it appears to be a chat app, extract visible chats/messages and names when present. Do not claim access to hidden messages or private data outside this visible session. Return concise JSON with summary, visible_items, and warnings.\n\nVISIBLE_TEXT:\n{{steps.visible_text}}"
+                        }),
+                        save_as: Some("summary".into()),
+                    },
+                ],
+            },
+            apps::ActionDef {
+                id: "read_visible_session".into(),
+                name: "Read visible session".into(),
+                description: Some(
+                    "Explicit raw read of the connected service's currently visible browser text."
+                        .into(),
+                ),
+                params_schema: None,
+                public: false,
+                steps: vec![
+                    apps::Step {
+                        method: "browser.init".into(),
+                        params: serde_json::json!({ "headless": true }),
+                        save_as: Some("browser".into()),
+                    },
+                    apps::Step {
+                        method: "browser.open".into(),
+                        params: serde_json::json!({ "url": spec.url.clone() }),
+                        save_as: Some("opened".into()),
+                    },
+                    apps::Step {
+                        method: "browser.waitFor".into(),
+                        params: serde_json::json!({
+                            "tabId": "{{steps.opened.tab_id}}",
+                            "selector": "body",
+                            "timeoutMs": 15000
+                        }),
+                        save_as: Some("page_ready".into()),
+                    },
+                    apps::Step {
+                        method: "browser.readText".into(),
+                        params: serde_json::json!({ "tabId": "{{steps.opened.tab_id}}" }),
+                        save_as: Some("visible_text".into()),
+                    },
+                ],
+            },
+            apps::ActionDef {
+                id: "latest_visible_session".into(),
+                name: "Latest visible session".into(),
+                description: Some("Return the latest snapshot explicitly saved from the panel.".into()),
+                params_schema: None,
+                public: true,
+                steps: vec![apps::Step {
+                    method: "storage.get".into(),
+                    params: serde_json::json!({ "key": storage_key }),
+                    save_as: Some("snapshot".into()),
+                }],
+            },
+        ],
+        widgets: Vec::new(),
+    };
+
+    apps::write_manifest(&app, &spec.app_id, &manifest).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("index.html"), connected_app_index_html(&spec)?)
+        .map_err(|e| e.to_string())?;
+    let _ = ensure_app_project(&app, &spec.app_id)?;
+
+    if let Some(project_id) = project_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    {
+        link_app_to_project_inner(&app, project_id, &spec.app_id)?;
+    }
+
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    Ok(manifest)
+}
+
 fn ensure_app_project(app: &AppHandle, app_id: &str) -> Result<project::Project, String> {
     let dir = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
     if let Some(p) = project::find_project_for(&dir) {
@@ -378,6 +556,488 @@ fn ensure_app_project(app: &AppHandle, app_id: &str) -> Result<project::Project,
         .unwrap_or_else(|| format!("App · {app_id}"));
     project::create_project(app, &dir, Some(proj_name), None).map_err(|e| e.to_string())
 }
+
+fn connected_app_spec(
+    provider: String,
+    url: Option<String>,
+    display_name: Option<String>,
+) -> Result<ConnectedAppSpec, String> {
+    let provider = provider.trim().to_ascii_lowercase();
+    if provider.is_empty() {
+        return Err("provider is required".into());
+    }
+    if provider == "telegram" {
+        return Ok(ConnectedAppSpec {
+            app_id: "connected_telegram".into(),
+            provider,
+            name: display_name
+                .and_then(non_empty_string)
+                .unwrap_or_else(|| "Telegram".into()),
+            icon: "TG".into(),
+            description:
+                "Telegram Web visible-session adapter with Browser bridge actions and MCP plan."
+                    .into(),
+            url: url
+                .and_then(non_empty_string)
+                .unwrap_or_else(|| "https://web.telegram.org/a/".into()),
+            open_url: "https://web.telegram.org/a/".into(),
+            capabilities: vec![
+                "messages.visible_session.read".into(),
+                "messages.visible_session.summarize".into(),
+                "chats.visible_session.list".into(),
+                "mcp.telegram.optional".into(),
+            ],
+            data_model: serde_json::json!({
+                "entities": ["visible_session", "visible_chat", "visible_message", "summary"],
+                "read_modes": ["browser.visible_session", "mcp.telegram"],
+                "storage_policy": {
+                    "default": "derived summaries",
+                    "raw_text": "explicit user action only"
+                }
+            }),
+            auth: serde_json::json!({
+                "type": "user_visible_session",
+                "browser_login_required": true,
+                "credential_storage": "Reflex does not store Telegram credentials in the app manifest."
+            }),
+            mcp: serde_json::json!({
+                "recommended": true,
+                "server_name": "telegram",
+                "config_shape": {
+                    "command": "node",
+                    "args": ["path/to/telegram-mcp-server.js"],
+                    "env": {
+                        "TELEGRAM_API_ID": "<from user>",
+                        "TELEGRAM_API_HASH": "<from user>",
+                        "TELEGRAM_SESSION": "<stored outside manifest>"
+                    }
+                },
+                "notes": "Personal chat access requires a user-approved Telegram client session such as MTProto/TDLib/MCP. Bot API tokens cannot read arbitrary personal chats."
+            }),
+            notes:
+                "Reads only what the user opens in the visible Telegram Web session unless a user-approved Telegram MCP bridge is configured."
+                    .into(),
+        });
+    }
+
+    let url = url
+        .and_then(non_empty_string)
+        .ok_or_else(|| "url is required for generic connected apps".to_string())?;
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("url must start with http:// or https://".into());
+    }
+    let name = display_name
+        .and_then(non_empty_string)
+        .unwrap_or_else(|| "Connected app".into());
+    let app_id = format!("connected_{}", sanitize_app_id(&format!("{provider}_{name}")));
+    Ok(ConnectedAppSpec {
+        app_id,
+        provider,
+        name,
+        icon: "APP".into(),
+        description: "Generic visible-session adapter with Browser bridge actions.".into(),
+        open_url: url.clone(),
+        url,
+        capabilities: vec![
+            "visible_session.read".into(),
+            "visible_session.summarize".into(),
+            "mcp.optional".into(),
+        ],
+        data_model: serde_json::json!({
+            "entities": ["visible_session", "visible_item", "summary"],
+            "read_modes": ["browser.visible_session", "mcp.optional"],
+            "storage_policy": {
+                "default": "derived summaries",
+                "raw_text": "explicit user action only"
+            }
+        }),
+        auth: serde_json::json!({
+            "type": "user_visible_session",
+            "browser_login_required": true
+        }),
+        mcp: serde_json::json!({
+            "recommended": false,
+            "notes": "Add a provider-specific MCP server when durable authenticated data access is required."
+        }),
+        notes: "Reads only visible browser-session content unless a provider MCP bridge is configured."
+            .into(),
+    })
+}
+
+fn non_empty_string(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn sanitize_app_id(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut last_was_sep = false;
+    for ch in value.chars() {
+        let next = if ch.is_ascii_alphanumeric() {
+            last_was_sep = false;
+            Some(ch.to_ascii_lowercase())
+        } else if !last_was_sep {
+            last_was_sep = true;
+            Some('_')
+        } else {
+            None
+        };
+        if let Some(ch) = next {
+            out.push(ch);
+        }
+    }
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        "app".into()
+    } else {
+        trimmed.chars().take(48).collect()
+    }
+}
+
+fn connected_app_index_html(spec: &ConnectedAppSpec) -> Result<String, String> {
+    let config = serde_json::json!({
+        "provider": spec.provider.clone(),
+        "displayName": spec.name.clone(),
+        "serviceUrl": spec.url.clone(),
+        "openUrl": spec.open_url.clone(),
+        "capabilities": spec.capabilities.clone(),
+        "notes": spec.notes.clone(),
+        "storageKey": format!("connected.{}.latestVisibleSession", spec.provider),
+        "eventTopic": format!("connected.{}.visible_session", spec.provider),
+    });
+    let config_json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
+    Ok(CONNECTED_APP_INDEX_HTML.replace("__CONNECTED_APP_CONFIG__", &config_json))
+}
+
+const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Connected app</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0d1117;
+      color: #eef2ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0d1117;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 22px;
+      display: grid;
+      gap: 14px;
+    }
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding-bottom: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 6px 0 0;
+      color: rgba(238,242,255,0.68);
+      line-height: 1.5;
+      font-size: 13px;
+    }
+    .status {
+      min-width: 180px;
+      border: 1px solid rgba(80,140,255,0.25);
+      background: rgba(80,140,255,0.12);
+      color: #cfe0ff;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      text-align: right;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    button {
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.07);
+      color: #f8fbff;
+      border-radius: 7px;
+      padding: 8px 12px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button.primary {
+      background: rgba(80,140,255,0.25);
+      border-color: rgba(80,140,255,0.55);
+      color: #dbe7ff;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    section {
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(255,255,255,0.035);
+      border-radius: 8px;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    h2 {
+      margin: 0;
+      font-size: 13px;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      color: rgba(238,242,255,0.7);
+    }
+    pre {
+      margin: 0;
+      max-height: 380px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-radius: 7px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(0,0,0,0.28);
+      padding: 12px;
+      color: rgba(238,242,255,0.86);
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 8px;
+    }
+    .chip {
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.09);
+      padding: 8px;
+      background: rgba(0,0,0,0.18);
+      min-width: 0;
+    }
+    .chip strong {
+      display: block;
+      font-size: 11px;
+      color: rgba(238,242,255,0.55);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    .chip span {
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1 id="title">Connected app</h1>
+        <p id="notes"></p>
+      </div>
+      <div id="status" class="status">Ready</div>
+    </header>
+
+    <div class="actions">
+      <button class="primary" id="open">Open in Reflex Browser</button>
+      <button id="read">Read visible text</button>
+      <button id="summarize">Summarize visible text</button>
+      <button id="external">Open system browser</button>
+    </div>
+
+    <section>
+      <h2>Bridge profile</h2>
+      <div class="meta">
+        <div class="chip"><strong>Provider</strong><span id="provider"></span></div>
+        <div class="chip"><strong>Service URL</strong><span id="serviceUrl"></span></div>
+        <div class="chip"><strong>Last tab</strong><span id="tabId">none</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Latest output</h2>
+      <pre id="output">Open the service, log in if needed, then read or summarize the visible session.</pre>
+    </section>
+  </main>
+
+  <script>
+    const config = __CONNECTED_APP_CONFIG__;
+    const state = { tabId: null, busy: false };
+
+    const el = (id) => document.getElementById(id);
+    const setStatus = (text) => { el("status").textContent = text; };
+    const setOutput = (value) => {
+      el("output").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    };
+    const setBusy = (busy) => {
+      state.busy = busy;
+      for (const button of document.querySelectorAll("button")) button.disabled = busy;
+    };
+
+    function textFromReadResult(value) {
+      if (typeof value === "string") return value;
+      if (!value || typeof value !== "object") return String(value ?? "");
+      return value.text || value.body || value.content || JSON.stringify(value);
+    }
+
+    function normalizeTabs(value) {
+      if (Array.isArray(value)) return value;
+      if (value && Array.isArray(value.tabs)) return value.tabs;
+      return [];
+    }
+
+    async function refreshProfile() {
+      el("title").textContent = config.displayName;
+      el("notes").textContent = config.notes;
+      el("provider").textContent = config.provider;
+      el("serviceUrl").textContent = config.serviceUrl;
+      try {
+        await window.reflexIntegrationUpdate({
+          provider: config.provider,
+          display_name: config.displayName,
+          capabilities: config.capabilities,
+          notes: config.notes
+        }, {
+          url: config.serviceUrl,
+          open_url: config.openUrl,
+          title: config.displayName
+        });
+      } catch (error) {
+        console.warn("[connected-app] profile sync failed", error);
+      }
+      try {
+        const savedTab = await window.reflexStorageGet("lastTabId");
+        const saved = savedTab && (savedTab.value || savedTab);
+        if (typeof saved === "string" && saved) {
+          state.tabId = saved;
+          el("tabId").textContent = saved;
+        }
+      } catch {}
+    }
+
+    async function openService() {
+      setBusy(true);
+      setStatus("Opening service...");
+      try {
+        await window.reflexBrowserInit({ headless: true });
+        await window.reflexSystemOpenPanel({ panel: "browser" });
+        const opened = await window.reflexBrowserOpen(config.serviceUrl);
+        state.tabId = opened.tab_id || opened.tabId || null;
+        el("tabId").textContent = state.tabId || "opened";
+        if (state.tabId) await window.reflexStorageSet("lastTabId", state.tabId);
+        setOutput(opened);
+        setStatus("Service opened");
+      } catch (error) {
+        setStatus("Open failed");
+        setOutput(String(error));
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function resolveTabId() {
+      if (state.tabId) return state.tabId;
+      const tabs = normalizeTabs(await window.reflexBrowserTabs());
+      const serviceHost = new URL(config.serviceUrl).host;
+      const match = tabs.find((tab) => {
+        try { return new URL(tab.url || "").host === serviceHost; } catch { return false; }
+      }) || tabs[0];
+      if (match) {
+        state.tabId = match.tab_id || match.tabId;
+        el("tabId").textContent = state.tabId || "unknown";
+        if (state.tabId) await window.reflexStorageSet("lastTabId", state.tabId);
+      }
+      return state.tabId;
+    }
+
+    async function readVisibleText() {
+      setBusy(true);
+      setStatus("Reading visible text...");
+      try {
+        await window.reflexBrowserInit({ headless: true });
+        let tabId = await resolveTabId();
+        if (!tabId) {
+          await openService();
+          tabId = await resolveTabId();
+        }
+        if (!tabId) throw new Error("No browser tab available");
+        try {
+          await window.reflexBrowserWaitFor({ tabId, selector: "body", timeoutMs: 15000 });
+        } catch (error) {
+          console.warn("[connected-app] wait for body failed", error);
+        }
+        const result = await window.reflexBrowserReadText(tabId);
+        const text = textFromReadResult(result);
+        const snapshot = {
+          provider: config.provider,
+          service_url: config.serviceUrl,
+          tab_id: tabId,
+          captured_at_ms: Date.now(),
+          text
+        };
+        await window.reflexStorageSet(config.storageKey, snapshot);
+        await window.reflexEventEmit(config.eventTopic, {
+          provider: config.provider,
+          captured_at_ms: snapshot.captured_at_ms,
+          text_length: text.length
+        });
+        setOutput(text || result);
+        setStatus("Visible text captured");
+        return snapshot;
+      } catch (error) {
+        setStatus("Read failed");
+        setOutput(String(error));
+        throw error;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function summarizeVisibleText() {
+      setBusy(true);
+      setStatus("Summarizing...");
+      try {
+        const snapshot = await readVisibleText();
+        setBusy(true);
+        const prompt = "Summarize the visible web-session text below. Only use visible content. If it appears to be a chat app, extract visible chats/messages and names when present. Do not claim access to hidden messages. Return concise JSON with summary, visible_items, and warnings.\n\nVISIBLE_TEXT:\n" + snapshot.text;
+        const result = await window.reflexAgentTask({ prompt, includeContext: false });
+        setOutput(result);
+        setStatus("Summary ready");
+      } catch (error) {
+        setStatus("Summary failed");
+        setOutput(String(error));
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    el("open").addEventListener("click", openService);
+    el("read").addEventListener("click", () => void readVisibleText());
+    el("summarize").addEventListener("click", summarizeVisibleText);
+    el("external").addEventListener("click", () => window.reflexSystemOpenUrl(config.openUrl || config.serviceUrl));
+    refreshProfile();
+  </script>
+</body>
+</html>
+"#;
 
 fn build_empty_app_thread(
     app: &AppHandle,
@@ -2928,6 +3588,7 @@ pub fn run() {
             read_app_html,
             app_invoke,
             create_app,
+            install_connected_app,
             app_status,
             app_save,
             app_revert,

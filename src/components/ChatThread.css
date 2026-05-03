@@ -2831,6 +2831,35 @@
   white-space: nowrap;
 }
 
+.connected-install-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(74, 140, 255, 0.24);
+  background: rgba(74, 140, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.connected-install-panel div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.connected-install-panel strong {
+  font-size: 13px;
+  color: rgba(245, 245, 247, 0.9);
+}
+
+.connected-install-panel span {
+  color: rgba(245, 245, 247, 0.58);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .modal-field {
   display: flex;
   flex-direction: column;

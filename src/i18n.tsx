@@ -180,6 +180,11 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.back": "<- Back",
     "apps.describeHint":
       "Describe what the utility should do. Codex will write the files in the background.",
+    "apps.installTelegramTitle": "Ready-made Telegram adapter",
+    "apps.installTelegramHint":
+      "Install a local panel with Browser bridge actions for visible Telegram Web sessions.",
+    "apps.installTelegram": "Install Telegram adapter",
+    "apps.installing": "Installing...",
     "apps.createShortcut": "Create (⌘↵)",
     "apps.creating": "Creating...",
     "apps.deleteConfirm": "Move \"{name}\" to trash?",
@@ -900,6 +905,11 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.back": "<- Назад",
     "apps.describeHint":
       "Опиши, что должна делать утилита. Codex напишет файлы в фоне.",
+    "apps.installTelegramTitle": "Готовый Telegram-адаптер",
+    "apps.installTelegramHint":
+      "Поставить локальную панель с Browser bridge actions для видимой сессии Telegram Web.",
+    "apps.installTelegram": "Установить Telegram-адаптер",
+    "apps.installing": "Устанавливаю...",
     "apps.createShortcut": "Создать (⌘↵)",
     "apps.creating": "Создаю...",
     "apps.deleteConfirm": "Переместить \"{name}\" в корзину?",
