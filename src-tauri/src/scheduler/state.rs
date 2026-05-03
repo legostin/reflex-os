@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
@@ -35,6 +36,8 @@ pub struct StepTrace {
     pub status: String,
     pub started_ms: u64,
     pub ended_ms: u64,
+    #[serde(skip)]
+    pub output: Option<Value>,
     #[serde(default)]
     pub output_preview: Option<String>,
     #[serde(default)]

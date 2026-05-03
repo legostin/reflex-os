@@ -182,6 +182,7 @@ async fn run_workflow_inner(
                 status: "error".into(),
                 started_ms: now,
                 ended_ms: now,
+                output: None,
                 output_preview: None,
                 output_size: 0,
                 error: Some(format!(
@@ -215,6 +216,7 @@ async fn run_workflow_inner(
                     status: "ok".into(),
                     started_ms: started,
                     ended_ms: ended,
+                    output: Some(value.clone()),
                     output_preview: preview,
                     output_size: size,
                     error: None,
@@ -236,6 +238,7 @@ async fn run_workflow_inner(
                     status: "error".into(),
                     started_ms: started,
                     ended_ms: ended,
+                    output: None,
                     output_preview: None,
                     output_size: 0,
                     error: Some(e.clone()),
@@ -305,8 +308,13 @@ pub fn last_step_value(record: &RunRecord) -> Value {
     record
         .steps
         .last()
-        .and_then(|s| s.output_preview.as_ref())
-        .map(|p| serde_json::from_str(p).unwrap_or_else(|_| Value::String(p.clone())))
+        .and_then(|s| {
+            s.output.clone().or_else(|| {
+                s.output_preview
+                    .as_ref()
+                    .map(|p| serde_json::from_str(p).unwrap_or_else(|_| Value::String(p.clone())))
+            })
+        })
         .unwrap_or(Value::Null)
 }
 
@@ -357,5 +365,37 @@ mod tests {
                 "{method} should be blocked in unattended scheduler workflows"
             );
         }
+    }
+
+    #[test]
+    fn last_step_value_prefers_full_output_over_preview() {
+        let full = serde_json::json!({
+            "messages": ["one", "two", "three"],
+            "summary": "complete"
+        });
+        let record = RunRecord {
+            run_id: "run_test".into(),
+            app_id: "app".into(),
+            schedule_id: None,
+            action_id: Some("read_recent_messages".into()),
+            caller: "inter_app".into(),
+            started_ms: 1,
+            ended_ms: Some(2),
+            status: "ok".into(),
+            steps: vec![StepTrace {
+                name: "messages".into(),
+                method: "integration.mcpQuery".into(),
+                status: "ok".into(),
+                started_ms: 1,
+                ended_ms: 2,
+                output: Some(full.clone()),
+                output_preview: Some("{\"messages\":[".into()),
+                output_size: 8192,
+                error: None,
+            }],
+            error: None,
+        };
+
+        assert_eq!(last_step_value(&record), full);
     }
 }
