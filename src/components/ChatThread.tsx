@@ -2178,6 +2178,8 @@ function AppsScreen({
   const [step, setStep] = useState<"template" | "describe">("template");
   const [template, setTemplate] = useState<string>("blank");
   const [description, setDescription] = useState("");
+  const [connectedUrl, setConnectedUrl] = useState("");
+  const [connectedName, setConnectedName] = useState("");
   const [trash, setTrash] = useState<TrashEntry[]>([]);
   const [showTrash, setShowTrash] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -2335,19 +2337,26 @@ function AppsScreen({
     }
   }
 
-  async function installConnected(provider: string) {
+  async function installConnected(
+    provider: string,
+    options?: { url?: string | null; displayName?: string | null },
+  ) {
     if (installingConnected) return;
     setInstallingConnected(true);
     setError(null);
     try {
       const manifest = await invoke<AppManifest>("install_connected_app", {
         provider,
+        url: options?.url ?? null,
+        displayName: options?.displayName ?? null,
         projectId: targetProject?.id ?? null,
       });
       setShowModal(false);
       setDescription("");
       setStep("template");
       setTemplate("blank");
+      setConnectedUrl("");
+      setConnectedName("");
       await refresh();
       onOpenApp(manifest.id);
     } catch (e) {
@@ -2577,20 +2586,61 @@ function AppsScreen({
                   </div>
                 )}
                 {template === "connected-app" && (
-                  <div className="connected-install-panel">
-                    <div>
-                      <strong>{t("apps.installTelegramTitle")}</strong>
-                      <span>{t("apps.installTelegramHint")}</span>
+                  <div className="connected-install-stack">
+                    <div className="connected-install-panel">
+                      <div>
+                        <strong>{t("apps.installTelegramTitle")}</strong>
+                        <span>{t("apps.installTelegramHint")}</span>
+                      </div>
+                      <button
+                        className="modal-btn modal-btn-primary"
+                        disabled={creating || installingConnected}
+                        onClick={() => void installConnected("telegram")}
+                      >
+                        {installingConnected
+                          ? t("apps.installing")
+                          : t("apps.installTelegram")}
+                      </button>
                     </div>
-                    <button
-                      className="modal-btn modal-btn-primary"
-                      disabled={creating || installingConnected}
-                      onClick={() => void installConnected("telegram")}
-                    >
-                      {installingConnected
-                        ? t("apps.installing")
-                        : t("apps.installTelegram")}
-                    </button>
+                    <div className="connected-custom-panel">
+                      <strong>{t("apps.installCustomTitle")}</strong>
+                      <div className="connected-custom-grid">
+                        <input
+                          className="modal-input"
+                          value={connectedName}
+                          onChange={(e) =>
+                            setConnectedName(e.currentTarget.value)
+                          }
+                          placeholder={t("apps.installCustomNamePlaceholder")}
+                        />
+                        <input
+                          className="modal-input"
+                          value={connectedUrl}
+                          onChange={(e) =>
+                            setConnectedUrl(e.currentTarget.value)
+                          }
+                          placeholder={t("apps.installCustomUrlPlaceholder")}
+                        />
+                      </div>
+                      <button
+                        className="modal-btn"
+                        disabled={
+                          creating ||
+                          installingConnected ||
+                          !connectedUrl.trim()
+                        }
+                        onClick={() =>
+                          void installConnected("generic_web", {
+                            url: connectedUrl.trim(),
+                            displayName: connectedName.trim() || null,
+                          })
+                        }
+                      >
+                        {installingConnected
+                          ? t("apps.installing")
+                          : t("apps.installCustom")}
+                      </button>
+                    </div>
                   </div>
                 )}
                 <textarea

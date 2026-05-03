@@ -184,6 +184,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.installTelegramHint":
       "Install a local panel with Browser bridge actions for visible Telegram Web sessions.",
     "apps.installTelegram": "Install Telegram adapter",
+    "apps.installCustomTitle": "Generic web adapter",
+    "apps.installCustomNamePlaceholder": "Display name",
+    "apps.installCustomUrlPlaceholder": "https://service.example.com",
+    "apps.installCustom": "Install custom adapter",
     "apps.installing": "Installing...",
     "apps.createShortcut": "Create (⌘↵)",
     "apps.creating": "Creating...",
@@ -909,6 +913,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.installTelegramHint":
       "Поставить локальную панель с Browser bridge actions для видимой сессии Telegram Web.",
     "apps.installTelegram": "Установить Telegram-адаптер",
+    "apps.installCustomTitle": "Универсальный web-адаптер",
+    "apps.installCustomNamePlaceholder": "Название",
+    "apps.installCustomUrlPlaceholder": "https://service.example.com",
+    "apps.installCustom": "Установить свой адаптер",
     "apps.installing": "Устанавливаю...",
     "apps.createShortcut": "Создать (⌘↵)",
     "apps.creating": "Создаю...",

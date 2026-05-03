@@ -2831,6 +2831,11 @@
   white-space: nowrap;
 }
 
+.connected-install-stack {
+  display: grid;
+  gap: 8px;
+}
+
 .connected-install-panel {
   display: flex;
   align-items: center;
@@ -2858,6 +2863,26 @@
   color: rgba(245, 245, 247, 0.58);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.connected-custom-panel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.16);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.connected-custom-panel strong {
+  font-size: 13px;
+  color: rgba(245, 245, 247, 0.84);
+}
+
+.connected-custom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 8px;
 }
 
 .modal-field {

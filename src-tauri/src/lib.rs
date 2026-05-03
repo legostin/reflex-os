@@ -629,7 +629,7 @@ fn connected_app_spec(
     let name = display_name
         .and_then(non_empty_string)
         .unwrap_or_else(|| "Connected app".into());
-    let app_id = format!("connected_{}", sanitize_app_id(&format!("{provider}_{name}")));
+    let app_id = connected_app_id(&provider, &name, &url);
     Ok(ConnectedAppSpec {
         app_id,
         provider,
@@ -695,6 +695,32 @@ fn sanitize_app_id(value: &str) -> String {
         "app".into()
     } else {
         trimmed.chars().take(48).collect()
+    }
+}
+
+fn connected_app_id(provider: &str, name: &str, url: &str) -> String {
+    let provider_slug = sanitize_app_id(provider);
+    let name_slug = sanitize_app_id(name);
+    let host_slug = sanitize_app_id(url_host(url).unwrap_or("custom"));
+    let detail = if matches!(name_slug.as_str(), "connected_app" | "app") {
+        host_slug
+    } else {
+        name_slug
+    };
+    format!("connected_{provider_slug}_{detail}")
+        .chars()
+        .take(64)
+        .collect()
+}
+
+fn url_host(url: &str) -> Option<&str> {
+    let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    let authority = after_scheme.split('/').next()?.split('@').last()?;
+    let host = authority.split(':').next()?.trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
     }
 }
 
