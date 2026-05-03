@@ -792,6 +792,7 @@ fn connected_app_index_html(spec: &ConnectedAppSpec) -> Result<String, String> {
     }
     let config = serde_json::json!({
         "provider": spec.provider.clone(),
+        "appId": spec.app_id.clone(),
         "displayName": spec.name.clone(),
         "serviceUrl": spec.url.clone(),
         "openUrl": spec.open_url.clone(),
@@ -891,6 +892,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       color: #eef2ff;
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body {
       margin: 0;
       min-height: 100vh;
@@ -1106,6 +1108,24 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       </div>
     </section>
 
+    <section id="telegramMessagesSection" hidden>
+      <h2>Telegram messages</h2>
+      <p>Reads only messages available through the configured Telegram MCP server.</p>
+      <div class="form-grid">
+        <label class="field">
+          <span>Chat filter</span>
+          <input id="telegramChat" autocomplete="off" placeholder="optional chat title, username, or id" />
+        </label>
+        <label class="field">
+          <span>Limit</span>
+          <input id="telegramLimit" autocomplete="off" inputmode="numeric" placeholder="20" />
+        </label>
+      </div>
+      <div class="actions">
+        <button class="primary" id="readTelegramMessages">Read recent messages</button>
+      </div>
+    </section>
+
     <section>
       <h2>Latest output</h2>
       <pre id="output">Open the service, log in if needed, then read or summarize the visible session.</pre>
@@ -1155,6 +1175,12 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       el("mcpQuery").value = config.provider === "telegram"
         ? "Use the configured Telegram MCP server to list recent visible/available chats and summarize the latest messages. Do not claim access to chats or messages the MCP server cannot access. Return concise JSON with chats, latest_messages, summary, and warnings."
         : "Use the configured provider MCP server for this connected app to inspect available recent data. Do not claim access to data the MCP server cannot access. Return concise JSON with items, summary, and warnings.";
+    }
+
+    function initializeProviderTools() {
+      if (config.provider !== "telegram") return;
+      el("telegramMessagesSection").hidden = false;
+      el("telegramLimit").value = "20";
     }
 
     function parseJsonField(id, fallback) {
@@ -1231,6 +1257,36 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         setStatus("MCP query finished");
       } catch (error) {
         setStatus("MCP query failed");
+        setOutput(String(error));
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function readTelegramMessages() {
+      setBusy(true);
+      setStatus("Reading Telegram messages...");
+      try {
+        const chat = el("telegramChat").value.trim();
+        const rawLimit = el("telegramLimit").value.trim();
+        const params = {};
+        if (chat) params.chat = chat;
+        if (rawLimit) {
+          const limit = Number.parseInt(rawLimit, 10);
+          if (!Number.isFinite(limit) || limit <= 0) {
+            throw new Error("Limit must be a positive integer");
+          }
+          params.limit = limit;
+        }
+        const result = await window.reflexAppsInvoke(
+          config.appId,
+          "read_recent_messages",
+          params
+        );
+        setOutput(result);
+        setStatus("Telegram messages loaded");
+      } catch (error) {
+        setStatus("Telegram read failed");
         setOutput(String(error));
       } finally {
         setBusy(false);
@@ -1401,7 +1457,9 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
     el("saveMcp").addEventListener("click", saveMcpConfig);
     el("refreshMcp").addEventListener("click", refreshMcpStatus);
     el("runMcpQuery").addEventListener("click", runMcpAgentQuery);
+    el("readTelegramMessages").addEventListener("click", readTelegramMessages);
     initializeMcpForm();
+    initializeProviderTools();
     refreshProfile();
   </script>
 </body>
@@ -4153,12 +4211,16 @@ mod connected_app_tests {
         let html = connected_app_index_html(&spec).expect("connected app html");
 
         assert!(!html.contains("__CONNECTED_APP_CONFIG__"));
+        assert!(html.contains("\"appId\":\"connected_telegram\""));
         assert!(html.contains("Save MCP config"));
         assert!(html.contains("Run MCP query"));
+        assert!(html.contains("Read recent messages"));
         assert!(html.contains("Learn interface"));
         assert!(html.contains("reflexProjectMcpUpsert"));
         assert!(html.contains("reflexIntegrationMcpQuery"));
         assert!(html.contains("reflexIntegrationLearnVisible"));
+        assert!(html.contains("reflexAppsInvoke"));
+        assert!(html.contains("read_recent_messages"));
         assert!(html.contains("interface.visible_session.learn"));
     }
 }
