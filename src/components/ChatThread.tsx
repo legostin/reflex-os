@@ -4855,11 +4855,26 @@ type DashboardRecord = {
   error?: string;
 };
 
+type DashboardViewLayout = "summary" | "list" | "table" | "metric";
+
+type DashboardViewSpec = {
+  version: 1;
+  title: string;
+  query: string;
+  tokens: string[];
+  includeTokens: string[];
+  excludeKeys: string[];
+  layout: DashboardViewLayout;
+  maxItems: number;
+  showMeta: boolean;
+};
+
 type CustomDashboardWidget = {
   id: string;
   title: string;
   prompt: string;
   createdAtMs: number;
+  spec?: DashboardViewSpec;
 };
 
 const DASHBOARD_ACTION_PATTERN =
@@ -4904,15 +4919,30 @@ function readCustomDashboardWidgets(projectId: string): CustomDashboardWidget[] 
     const raw = window.localStorage.getItem(customDashboardWidgetsKey(projectId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is CustomDashboardWidget =>
-          isJsonObject(item) &&
-          typeof item.id === "string" &&
-          typeof item.title === "string" &&
-          typeof item.prompt === "string" &&
-          typeof item.createdAtMs === "number",
-        )
-      : [];
+    if (!Array.isArray(parsed)) return [];
+    const widgets: CustomDashboardWidget[] = [];
+    for (const item of parsed) {
+      if (
+        !isJsonObject(item) ||
+        typeof item.id !== "string" ||
+        typeof item.title !== "string" ||
+        typeof item.prompt !== "string" ||
+        typeof item.createdAtMs !== "number"
+      ) {
+        continue;
+      }
+      const spec = isDashboardViewSpec(item.spec)
+        ? item.spec
+        : buildDashboardViewSpec(item.prompt, item.title);
+      widgets.push({
+        id: item.id,
+        title: item.title,
+        prompt: item.prompt,
+        createdAtMs: item.createdAtMs,
+        spec,
+      });
+    }
+    return widgets;
   } catch {
     return [];
   }
@@ -5028,6 +5058,243 @@ function dashboardTokens(input: string): string[] {
   );
 }
 
+const DASHBOARD_STOP_TOKENS = new Set([
+  "a",
+  "an",
+  "and",
+  "as",
+  "for",
+  "from",
+  "in",
+  "into",
+  "me",
+  "my",
+  "of",
+  "on",
+  "please",
+  "show",
+  "that",
+  "the",
+  "this",
+  "to",
+  "what",
+  "widget",
+  "with",
+  "виджет",
+  "для",
+  "как",
+  "мне",
+  "надо",
+  "нужно",
+  "покажи",
+  "показать",
+  "про",
+  "что",
+  "хочу",
+]);
+
+const DASHBOARD_TOKEN_SYNONYMS: Record<string, string[]> = {
+  active: ["enabled", "running", "live"],
+  count: ["number", "total", "size", "length"],
+  current: ["latest", "last", "selected", "active"],
+  error: ["errors", "failed", "failure", "last_error"],
+  event: ["events", "log", "logs"],
+  health: ["status", "state"],
+  item: ["items", "list"],
+  job: ["jobs", "task", "tasks"],
+  latest: ["last", "current", "recent"],
+  list: ["items", "rows"],
+  login: ["auth", "authenticated"],
+  source: ["provider", "origin"],
+  status: ["state", "health"],
+};
+
+const DASHBOARD_RU_TOKEN_SYNONYMS: Array<[string, string[]]> = [
+  ["авториз", ["auth", "authenticated", "login"]],
+  ["доступ", ["available", "enabled", "ready"]],
+  ["задач", ["task", "tasks", "job", "jobs"]],
+  ["колич", ["count", "total", "number"]],
+  ["кеш", ["cache", "cached"]],
+  ["лог", ["log", "logs", "events"]],
+  ["метрик", ["metric", "metrics", "stats"]],
+  ["ошиб", ["error", "errors", "failed", "failure"]],
+  ["послед", ["latest", "last", "current", "recent"]],
+  ["разреш", ["permission", "permissions"]],
+  ["свод", ["summary", "overview"]],
+  ["сесс", ["session", "sessions"]],
+  ["событ", ["event", "events"]],
+  ["состоян", ["status", "state", "health"]],
+  ["спис", ["list", "items"]],
+  ["статус", ["status", "state", "health"]],
+  ["табли", ["table", "rows", "columns"]],
+  ["токен", ["token"]],
+  ["числ", ["count", "total", "number"]],
+];
+
+const DASHBOARD_META_KEY_PATTERNS = [
+  /^auth$/i,
+  /^cache($|[_-])/i,
+  /^credentials?$/i,
+  /^debug$/i,
+  /^expires($|[_-])/i,
+  /^last[_-]?error$/i,
+  /^metadata$/i,
+  /^permission[_-]?requests?$/i,
+  /^raw$/i,
+  /^source$/i,
+  /^trace$/i,
+];
+
+const DASHBOARD_SECRET_KEY_PATTERNS = [
+  /api[_-]?key/i,
+  /authorization/i,
+  /cookie/i,
+  /password/i,
+  /refresh[_-]?token/i,
+  /secret/i,
+  /token/i,
+];
+
+type DashboardFlatField = {
+  path: string;
+  key: string;
+  label: string;
+  raw: unknown;
+  value: string;
+  score: number;
+  priority: number;
+};
+
+type DashboardListSummary = {
+  path: string;
+  key: string;
+  label: string;
+  count: number;
+  items: string[];
+  sample: unknown[];
+  score: number;
+  priority: number;
+};
+
+type DashboardProjectedMetric = {
+  label: string;
+  value: string;
+};
+
+type DashboardProjectedTable = {
+  label: string;
+  count: number;
+  columns: Array<{ key: string; label: string }>;
+  rows: Array<Record<string, string>>;
+};
+
+type DashboardProjectedView = {
+  layout: DashboardViewLayout;
+  metrics: DashboardProjectedMetric[];
+  rows: DashboardFlatField[];
+  lists: DashboardListSummary[];
+  table?: DashboardProjectedTable;
+  text?: string;
+};
+
+function isDashboardViewLayout(value: unknown): value is DashboardViewLayout {
+  return (
+    value === "summary" ||
+    value === "list" ||
+    value === "table" ||
+    value === "metric"
+  );
+}
+
+function isDashboardViewSpec(value: unknown): value is DashboardViewSpec {
+  return (
+    isJsonObject(value) &&
+    value.version === 1 &&
+    typeof value.title === "string" &&
+    typeof value.query === "string" &&
+    Array.isArray(value.tokens) &&
+    value.tokens.every((item) => typeof item === "string") &&
+    Array.isArray(value.includeTokens) &&
+    value.includeTokens.every((item) => typeof item === "string") &&
+    Array.isArray(value.excludeKeys) &&
+    value.excludeKeys.every((item) => typeof item === "string") &&
+    isDashboardViewLayout(value.layout) &&
+    typeof value.maxItems === "number" &&
+    typeof value.showMeta === "boolean"
+  );
+}
+
+function expandDashboardTokens(tokens: string[]): string[] {
+  const out = new Set<string>();
+  for (const token of tokens) {
+    out.add(token);
+    for (const synonym of DASHBOARD_TOKEN_SYNONYMS[token] ?? []) out.add(synonym);
+    for (const [prefix, synonyms] of DASHBOARD_RU_TOKEN_SYNONYMS) {
+      if (token.startsWith(prefix)) {
+        for (const synonym of synonyms) out.add(synonym);
+      }
+    }
+  }
+  return Array.from(out);
+}
+
+function inferDashboardLayout(prompt: string): DashboardViewLayout {
+  const lower = prompt.toLowerCase();
+  if (/\b(table|grid|columns?|rows?)\b|табли/u.test(lower)) return "table";
+  if (/\b(count|how many|number|total|metric|kpi)\b|скольк|колич|числ|метрик/u.test(lower)) {
+    return "metric";
+  }
+  if (/\b(list|items?|events?|logs?|sessions?|tasks?|issues?|jobs?)\b|спис|сесс|событ|лог|задач/u.test(lower)) {
+    return "list";
+  }
+  return "summary";
+}
+
+function shouldShowDashboardMeta(prompt: string, tokens: string[]): boolean {
+  const lower = prompt.toLowerCase();
+  return (
+    /\b(auth|authentication|cache|credential|debug|expires|metadata|permission|source|token)\b/i.test(lower) ||
+    tokens.some((token) =>
+      ["авториз", "кеш", "разреш", "токен", "источник"].some((prefix) =>
+        token.startsWith(prefix),
+      ),
+    )
+  );
+}
+
+function buildDashboardViewSpec(
+  prompt: string,
+  fallbackTitle?: string,
+): DashboardViewSpec {
+  const tokens = dashboardTokens(prompt);
+  const includeTokens = expandDashboardTokens(
+    tokens.filter((token) => !DASHBOARD_STOP_TOKENS.has(token)),
+  );
+  return {
+    version: 1,
+    title: fallbackTitle || titleFromWidgetPrompt(prompt),
+    query: prompt,
+    tokens,
+    includeTokens,
+    excludeKeys: [],
+    layout: inferDashboardLayout(prompt),
+    maxItems: 5,
+    showMeta: shouldShowDashboardMeta(prompt, tokens),
+  };
+}
+
+function dashboardSpecForSource(source: DashboardActionSource): DashboardViewSpec {
+  return buildDashboardViewSpec(
+    [
+      source.appName,
+      source.action.name || source.action.id,
+      source.action.description ?? "",
+      source.action.id,
+    ].join(" "),
+    source.action.name || source.action.id,
+  );
+}
+
 function dashboardSourceSearchText(source: DashboardActionSource): string {
   return [
     source.appId,
@@ -5054,7 +5321,7 @@ function customWidgetSourceScore(
   source: DashboardActionSource,
   record?: DashboardRecord,
 ): number {
-  const tokens = dashboardTokens(widget.prompt);
+  const tokens = widget.spec?.includeTokens ?? buildDashboardViewSpec(widget.prompt).includeTokens;
   if (tokens.length === 0) return 0;
   const haystack = `${dashboardSourceSearchText(source)} ${dashboardRecordSearchText(record)}`;
   return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
@@ -5082,6 +5349,7 @@ function titleFromWidgetPrompt(prompt: string): string {
 
 function formatDashboardLabel(key: string): string {
   const spaced = key
+    .replace(/\[\]/g, "")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
     .trim();
@@ -5101,76 +5369,389 @@ function formatDashboardScalar(key: string, value: unknown): string {
   return String(value);
 }
 
+function dashboardKeyFromPath(path: string): string {
+  const parts = path.split(".");
+  return parts[parts.length - 1]?.replace(/\[\]/g, "") || path;
+}
+
+function dashboardPathLabel(path: string): string {
+  const key = dashboardKeyFromPath(path);
+  if (!key || key === "items" || key === "data" || key === "value") {
+    return formatDashboardLabel(path.replace(/\./g, " "));
+  }
+  return formatDashboardLabel(key);
+}
+
+function dashboardKeyMatches(key: string, patterns: RegExp[]): boolean {
+  const normalized = key.replace(/\[\]/g, "");
+  return patterns.some((pattern) => pattern.test(normalized));
+}
+
+function isDashboardPathExcluded(path: string, spec: DashboardViewSpec): boolean {
+  const parts = path.split(".").map((part) => part.replace(/\[\]/g, ""));
+  if (parts.some((part) => dashboardKeyMatches(part, DASHBOARD_SECRET_KEY_PATTERNS))) {
+    return true;
+  }
+  if (spec.excludeKeys.some((key) => parts.includes(key))) return true;
+  if (spec.showMeta) return false;
+  return parts.some((part) => dashboardKeyMatches(part, DASHBOARD_META_KEY_PATTERNS));
+}
+
+function dashboardTextScore(text: string, tokens: string[]): number {
+  if (tokens.length === 0) return 0;
+  const lower = text.toLowerCase();
+  return tokens.reduce((score, token) => score + (lower.includes(token) ? 1 : 0), 0);
+}
+
+function dashboardFieldPriority(path: string, value: unknown): number {
+  const key = dashboardKeyFromPath(path);
+  let priority = 0;
+  if (/(^|_)(status|state|health|summary|message|title|name|label)$/i.test(key)) {
+    priority += 7;
+  }
+  if (/(^|_)(active|available|count|current|enabled|failed|latest|live|open|ready|running|selected|success|total)$/i.test(key)) {
+    priority += 5;
+  }
+  if (/(^|_)(created|updated|time|at|date)(_at|_ms)?$/i.test(key)) priority += 2;
+  if (/(^|_)id$|_id$|key$/i.test(key)) priority -= 1;
+  if (typeof value === "string" && value.trim()) priority += 1;
+  if (typeof value === "number" || typeof value === "boolean") priority += 1;
+  return priority;
+}
+
 function displayNameForDashboardItem(value: unknown): string {
   if (isJsonObject(value)) {
-    for (const key of ["name", "title", "country_name", "circuit_short_name", "session_name", "meeting_name"]) {
-      if (typeof value[key] === "string" && value[key].trim()) return value[key];
+    const entries = Object.entries(value);
+    const named = entries.find(([key, item]) => {
+      const cleanKey = key.toLowerCase();
+      return (
+        typeof item === "string" &&
+        item.trim().length > 0 &&
+        (cleanKey === "name" ||
+          cleanKey === "title" ||
+          cleanKey === "label" ||
+          cleanKey.endsWith("_name") ||
+          cleanKey.endsWith("_title"))
+      );
+    });
+    if (named) return named[1];
+
+    const summary = entries.find(([key, item]) => {
+      const cleanKey = key.toLowerCase();
+      return (
+        (typeof item === "string" || typeof item === "number") &&
+        /summary|message|description|status|state|id|key/.test(cleanKey)
+      );
+    });
+    if (summary) {
+      return `${formatDashboardLabel(summary[0])}: ${formatDashboardScalar(summary[0], summary[1])}`;
     }
-    const first = Object.entries(value).find(([, item]) => item != null);
+
+    const first = entries.find(([, item]) => item != null && typeof item !== "object");
     if (first) return `${formatDashboardLabel(first[0])}: ${formatDashboardScalar(first[0], first[1])}`;
   }
   return formatDashboardScalar("", value);
 }
 
+function summarizeDashboardArrayItems(items: unknown[], maxItems: number): string[] {
+  const inspected = items.slice(0, 200);
+  const counts = new Map<string, number>();
+  for (const item of inspected) {
+    const label = displayNameForDashboardItem(item).trim();
+    if (!label) continue;
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  const summarized = Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxItems)
+    .map(([label, count]) => (count > 1 ? `${label} (${count})` : label));
+  if (summarized.length === 0 && items.length > 0) {
+    return items.slice(0, maxItems).map((item) => formatDashboardScalar("", item));
+  }
+  return summarized;
+}
+
+function collectDashboardFields(
+  value: unknown,
+  spec: DashboardViewSpec,
+  path: string,
+  fields: DashboardFlatField[],
+  depth = 0,
+) {
+  if (depth > 5 || value == null) return;
+  if (Array.isArray(value)) return;
+  if (!isJsonObject(value)) {
+    if (!path || isDashboardPathExcluded(path, spec)) return;
+    const label = dashboardPathLabel(path);
+    const formatted = formatDashboardScalar(path, value);
+    const score =
+      dashboardTextScore(`${path} ${label}`, spec.includeTokens) * 3 +
+      dashboardTextScore(formatted, spec.includeTokens);
+    fields.push({
+      path,
+      key: dashboardKeyFromPath(path),
+      label,
+      raw: value,
+      value: formatted,
+      score,
+      priority: dashboardFieldPriority(path, value),
+    });
+    return;
+  }
+
+  for (const [key, item] of Object.entries(value).slice(0, 80)) {
+    const nextPath = path ? `${path}.${key}` : key;
+    if (isDashboardPathExcluded(nextPath, spec)) continue;
+    if (Array.isArray(item)) continue;
+    collectDashboardFields(item, spec, nextPath, fields, depth + 1);
+  }
+}
+
+function collectDashboardLists(
+  value: unknown,
+  spec: DashboardViewSpec,
+  path: string,
+  lists: DashboardListSummary[],
+  depth = 0,
+) {
+  if (depth > 5 || value == null) return;
+  if (Array.isArray(value)) {
+    if (!path || isDashboardPathExcluded(path, spec)) return;
+    const label = dashboardPathLabel(path);
+    const items = summarizeDashboardArrayItems(value, spec.maxItems);
+    lists.push({
+      path,
+      key: dashboardKeyFromPath(path),
+      label,
+      count: value.length,
+      items,
+      sample: value.slice(0, Math.max(spec.maxItems, 10)),
+      score: dashboardTextScore(`${path} ${label} ${items.join(" ")}`, spec.includeTokens),
+      priority: value.length > 0 ? 3 : 1,
+    });
+    return;
+  }
+  if (!isJsonObject(value)) return;
+  for (const [key, item] of Object.entries(value).slice(0, 80)) {
+    const nextPath = path ? `${path}.${key}` : key;
+    if (isDashboardPathExcluded(nextPath, spec)) continue;
+    collectDashboardLists(item, spec, nextPath, lists, depth + 1);
+  }
+}
+
+function sortDashboardItems<T extends { score: number; priority: number; label: string }>(
+  items: T[],
+): T[] {
+  return [...items].sort((a, b) => {
+    const scoreDelta = b.score - a.score;
+    if (scoreDelta !== 0) return scoreDelta;
+    const priorityDelta = b.priority - a.priority;
+    if (priorityDelta !== 0) return priorityDelta;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+function buildDashboardTable(
+  lists: DashboardListSummary[],
+  spec: DashboardViewSpec,
+): DashboardProjectedTable | undefined {
+  const source = sortDashboardItems(lists).find((list) =>
+    list.sample.some((item) => isJsonObject(item)),
+  );
+  if (!source) return undefined;
+
+  const objectRows = source.sample.filter(isJsonObject);
+  const columnScores = new Map<string, { label: string; score: number; priority: number }>();
+  for (const row of objectRows) {
+    for (const [key, item] of Object.entries(row)) {
+      const path = `${source.path}[].${key}`;
+      if (item == null || typeof item === "object" || isDashboardPathExcluded(path, spec)) {
+        continue;
+      }
+      const label = formatDashboardLabel(key);
+      const current = columnScores.get(key);
+      const score =
+        dashboardTextScore(`${path} ${label}`, spec.includeTokens) * 3 +
+        dashboardFieldPriority(path, item);
+      if (!current || score > current.score) {
+        columnScores.set(key, {
+          label,
+          score,
+          priority: dashboardFieldPriority(path, item),
+        });
+      }
+    }
+  }
+
+  const columns = Array.from(columnScores.entries())
+    .sort((a, b) => {
+      const scoreDelta = b[1].score - a[1].score;
+      if (scoreDelta !== 0) return scoreDelta;
+      return b[1].priority - a[1].priority;
+    })
+    .slice(0, 4)
+    .map(([key, meta]) => ({ key, label: meta.label }));
+
+  if (columns.length === 0) return undefined;
+
+  return {
+    label: source.label,
+    count: source.count,
+    columns,
+    rows: objectRows.slice(0, spec.maxItems).map((row) => {
+      const out: Record<string, string> = {};
+      for (const column of columns) {
+        out[column.key] = formatDashboardScalar(column.key, row[column.key]);
+      }
+      return out;
+    }),
+  };
+}
+
+function projectDashboardValue(
+  value: unknown,
+  spec: DashboardViewSpec,
+): DashboardProjectedView {
+  const normalized = normalizeDashboardValue(value);
+  if (normalized == null) {
+    return { layout: spec.layout, metrics: [], rows: [], lists: [] };
+  }
+  if (typeof normalized !== "object") {
+    return {
+      layout: spec.layout,
+      metrics: [],
+      rows: [],
+      lists: [],
+      text: formatDashboardScalar("", normalized),
+    };
+  }
+
+  const fields: DashboardFlatField[] = [];
+  const lists: DashboardListSummary[] = [];
+  if (Array.isArray(normalized)) {
+    collectDashboardLists(normalized, spec, "items", lists);
+  } else {
+    collectDashboardFields(normalized, spec, "", fields);
+    collectDashboardLists(normalized, spec, "", lists);
+  }
+
+  const rows = sortDashboardItems(fields).slice(0, spec.layout === "metric" ? 4 : 8);
+  const visibleLists = sortDashboardItems(lists).slice(0, spec.layout === "summary" ? 3 : 5);
+  const metrics: DashboardProjectedMetric[] = [];
+
+  if (spec.layout === "metric") {
+    for (const list of visibleLists.slice(0, 3)) {
+      metrics.push({ label: list.label, value: list.count.toString() });
+    }
+    for (const field of rows) {
+      if (metrics.length >= 4) break;
+      if (
+        typeof field.raw === "number" ||
+        typeof field.raw === "boolean" ||
+        /(status|state|health|count|total|active|enabled|ready|running)/i.test(field.key)
+      ) {
+        metrics.push({ label: field.label, value: field.value });
+      }
+    }
+  }
+
+  return {
+    layout: spec.layout,
+    metrics,
+    rows,
+    lists: visibleLists,
+    table: spec.layout === "table" ? buildDashboardTable(visibleLists, spec) : undefined,
+  };
+}
+
 function DashboardValueView({
   value,
   fallback,
-  depth = 0,
+  spec,
 }: {
   value: unknown;
   fallback?: string;
-  depth?: number;
+  spec?: DashboardViewSpec;
 }) {
-  const normalized = normalizeDashboardValue(value);
-  if (normalized == null) {
-    return <div className="dashboard-value-empty">{fallback ?? "—"}</div>;
-  }
-  if (typeof normalized !== "object") {
+  const { t } = useI18n();
+  const viewSpec = spec ?? buildDashboardViewSpec("summary status overview");
+  const projected = projectDashboardValue(value, viewSpec);
+  if (!projected.text && projected.rows.length === 0 && projected.lists.length === 0) {
     return (
-      <div className="dashboard-value-text">
-        {formatDashboardScalar("", normalized)}
+      <div className="dashboard-value-empty">
+        {fallback ?? t("dashboard.noDisplayableData")}
       </div>
     );
   }
-  if (Array.isArray(normalized)) {
-    if (normalized.length === 0) {
-      return <div className="dashboard-value-empty">[]</div>;
-    }
-    return (
-      <div className="dashboard-value-list">
-        <div className="dashboard-value-count">{normalized.length} items</div>
-        <ul>
-          {normalized.slice(0, 5).map((item, index) => (
-            <li key={index}>{displayNameForDashboardItem(item)}</li>
-          ))}
-        </ul>
-      </div>
-    );
-  }
-  const entries = Object.entries(normalized).slice(0, depth > 0 ? 5 : 8);
-  if (entries.length === 0) {
-    return <div className="dashboard-value-empty">{fallback ?? "{}"}</div>;
+  if (projected.text) {
+    return <div className="dashboard-value-text">{projected.text}</div>;
   }
   return (
-    <div className="dashboard-value-object">
-      {entries.map(([key, item]) => {
-        const complex = item != null && typeof item === "object";
-        return (
-          <div
-            key={key}
-            className={`dashboard-value-row ${complex ? "dashboard-value-row-block" : ""}`}
-          >
-            <span className="dashboard-value-label">{formatDashboardLabel(key)}</span>
-            {complex && depth < 1 ? (
-              <DashboardValueView value={item} depth={depth + 1} />
-            ) : (
-              <span className="dashboard-value-scalar">
-                {complex ? displayNameForDashboardItem(item) : formatDashboardScalar(key, item)}
-              </span>
-            )}
+    <div className={`dashboard-value-object dashboard-value-${projected.layout}`}>
+      {projected.metrics.length > 0 && (
+        <div className="dashboard-value-metrics">
+          {projected.metrics.map((metric) => (
+            <div key={`${metric.label}:${metric.value}`} className="dashboard-value-metric">
+              <span className="dashboard-value-metric-value">{metric.value}</span>
+              <span className="dashboard-value-label">{metric.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {projected.table && (
+        <div className="dashboard-value-table-wrap">
+          <div className="dashboard-value-count">
+            {projected.table.label} ·{" "}
+            {t("dashboard.itemsCount", { count: projected.table.count })}
           </div>
-        );
-      })}
+          <table className="dashboard-value-table">
+            <thead>
+              <tr>
+                {projected.table.columns.map((column) => (
+                  <th key={column.key}>{column.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {projected.table.rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {projected.table?.columns.map((column) => (
+                    <td key={column.key}>{row[column.key]}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {projected.lists.length > 0 && projected.layout !== "table" && (
+        <div className="dashboard-value-lists">
+          {projected.lists.map((list) => (
+            <div key={list.path} className="dashboard-value-list">
+              <div className="dashboard-value-count">
+                {list.label} · {t("dashboard.itemsCount", { count: list.count })}
+              </div>
+              {list.items.length > 0 && (
+                <ul>
+                  {list.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {projected.rows.length > 0 && (
+        <div className="dashboard-value-rows">
+          {projected.rows.map((row) => (
+            <div key={row.path} className="dashboard-value-row">
+              <span className="dashboard-value-label">{row.label}</span>
+              <span className="dashboard-value-scalar">{row.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -5304,6 +5885,7 @@ function ProjectDashboard({
       title: titleFromWidgetPrompt(prompt),
       prompt,
       createdAtMs: Date.now(),
+      spec: buildDashboardViewSpec(prompt),
     };
     setCustomWidgets((prev) => {
       const next = [widget, ...prev];
@@ -5359,6 +5941,7 @@ function ProjectDashboard({
       {customWidgets.length > 0 && (
         <div className="dashboard-custom-grid">
           {customWidgets.map((widget) => {
+            const spec = widget.spec ?? buildDashboardViewSpec(widget.prompt, widget.title);
             const scored = allActionSources
               .map((source) => ({
                 source,
@@ -5417,6 +6000,7 @@ function ProjectDashboard({
                                 ? record.value ?? record.preview
                                 : null
                             }
+                            spec={spec}
                             fallback={
                               record.status === "loading"
                                 ? t("dashboard.loading")
@@ -5442,6 +6026,7 @@ function ProjectDashboard({
           {actionSources.map((source) => {
             const key = dashboardSourceKey(source);
             const record = records[key] ?? { status: "loading", preview: "" };
+            const spec = dashboardSpecForSource(source);
             return (
               <article
                 key={key}
@@ -5475,6 +6060,7 @@ function ProjectDashboard({
                       ? record.value ?? record.preview
                       : null
                   }
+                  spec={spec}
                   fallback={
                     record.status === "loading"
                       ? t("dashboard.loading")
