@@ -572,6 +572,9 @@ fn install_connected_app(
         widgets: Vec::new(),
     };
     manifest.actions.push(connected_app_mcp_query_action(&spec));
+    manifest
+        .actions
+        .extend(connected_app_provider_actions(&spec));
 
     apps::write_manifest(&app, &spec.app_id, &manifest).map_err(|e| e.to_string())?;
     std::fs::write(dir.join("index.html"), connected_app_index_html(&spec)?)
@@ -834,6 +837,43 @@ fn connected_app_mcp_query_action(spec: &ConnectedAppSpec) -> apps::ActionDef {
             }),
             save_as: Some("mcp".into()),
         }],
+    }
+}
+
+fn connected_app_provider_actions(spec: &ConnectedAppSpec) -> Vec<apps::ActionDef> {
+    match spec.provider.as_str() {
+        "telegram" => vec![apps::ActionDef {
+            id: "read_recent_messages".into(),
+            name: "Read recent messages".into(),
+            description: Some(
+                "Read recent Telegram messages available through the configured Telegram MCP server."
+                    .into(),
+            ),
+            params_schema: Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "chat": {
+                        "type": "string",
+                        "description": "Optional chat title, username, or id filter."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of recent messages to return."
+                    }
+                }
+            })),
+            public: true,
+            steps: vec![apps::Step {
+                method: "integration.mcpQuery".into(),
+                params: serde_json::json!({
+                    "provider": "telegram",
+                    "serviceUrl": spec.url.clone(),
+                    "query": "Read recent Telegram messages available through the configured Telegram MCP server. Optional chat filter: {{input.chat}}. Optional limit: {{input.limit}}. Only include chats/messages the MCP server can access. Return concise JSON with chats, messages, summary, warnings, and next_steps."
+                }),
+                save_as: Some("messages".into()),
+            }],
+        }],
+        _ => Vec::new(),
     }
 }
 
@@ -4074,6 +4114,37 @@ mod connected_app_tests {
         assert_eq!(action.steps[0].method, "integration.mcpQuery");
         assert_eq!(action.steps[0].params["provider"], serde_json::json!("telegram"));
         assert!(action.params_schema.is_some());
+    }
+
+    #[test]
+    fn telegram_connected_app_exposes_recent_messages_action() {
+        let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
+        let actions = connected_app_provider_actions(&spec);
+        let action = actions
+            .iter()
+            .find(|action| action.id == "read_recent_messages")
+            .expect("telegram messages action");
+
+        assert!(action.public);
+        assert_eq!(action.steps.len(), 1);
+        assert_eq!(action.steps[0].method, "integration.mcpQuery");
+        assert_eq!(action.steps[0].params["provider"], serde_json::json!("telegram"));
+        assert!(action.steps[0].params["query"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Only include chats/messages the MCP server can access"));
+    }
+
+    #[test]
+    fn generic_connected_app_has_no_provider_specific_actions() {
+        let spec = connected_app_spec(
+            "generic_web".into(),
+            Some("https://service.example.com/app".into()),
+            None,
+        )
+        .expect("generic spec");
+
+        assert!(connected_app_provider_actions(&spec).is_empty());
     }
 
     #[test]

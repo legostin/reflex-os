@@ -196,6 +196,8 @@ also has scoped `mcp.read`/`mcp.write` permission on its own app project and a
 panel form that writes provider MCP server config through `project.mcp.upsert`.
 It publishes a public `query_mcp_data` action so other utilities can call the
 configured MCP bridge through `apps.invoke`.
+The Telegram adapter also publishes `read_recent_messages`, which reads only
+messages available through the configured Telegram MCP server.
 The panel and public `learn_visible_interface` action can read the visible
 Browser outline/text through `integration.learnVisible`, ask the agent for a
 data/workflow profile, and persist it into app storage plus
