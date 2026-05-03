@@ -1101,6 +1101,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexIntegrationLearnVisible = function(params) {
     return reflexInvokeRaw('integration.learnVisible', params || {});
   };
+  window.reflexIntegrationMcpQuery = function(queryOrParams) {
+    var params = (typeof queryOrParams === 'string') ? {query: queryOrParams} : (queryOrParams || {});
+    return reflexInvokeRaw('integration.mcpQuery', params);
+  };
   window.reflexPermissionsList = function() {
     return reflexInvokeRaw('permissions.list', {});
   };

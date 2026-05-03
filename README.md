@@ -63,6 +63,7 @@ The injected runtime overlay provides:
 - `window.reflexIntegrationProfile()`
 - `window.reflexIntegrationUpdate(patchOrParams, external?)`
 - `window.reflexIntegrationLearnVisible(params?)`
+- `window.reflexIntegrationMcpQuery(queryOrParams?)`
 - `window.reflexPermissionsList()`
 - `window.reflexPermissionsEnsure(permissionOrParams)`
 - `window.reflexPermissionsRevoke(permissionOrParams)`
@@ -233,6 +234,9 @@ Core methods:
   -> learn a connected-app adapter profile from visible browser text/outline,
   save it in app storage, emit a connected-app event, and merge the learned
   profile into `manifest.integration.data_model`.
+- `integration.mcpQuery({ query?, serviceUrl? })` -> run an English-wrapped
+  agent query against configured project MCP servers, store the latest MCP
+  result, emit a connected-app event, and update `manifest.integration.mcp`.
 - `permissions.list()`, `permissions.ensure({ permission })` or
   `permissions.ensure({ permissions })`, `permissions.revoke(...)` -> targeted
   updates to this app's manifest permissions.

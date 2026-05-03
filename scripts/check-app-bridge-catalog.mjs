@@ -132,6 +132,7 @@ const dispatchAliasesOrInternal = new Set([
   "apps.commit_partial",
   "events.clearSubscriptions",
   "integration.learn_visible",
+  "integration.mcp_query",
   "mcp.list",
   "memory.forget_path",
   "memory.index_path",
