@@ -403,7 +403,7 @@ fn install_connected_app(
         });
 
     let storage_key = format!("connected.{}.latestVisibleSession", spec.provider);
-    let manifest = apps::AppManifest {
+    let mut manifest = apps::AppManifest {
         id: spec.app_id.clone(),
         name: spec.name.clone(),
         icon: Some(spec.icon.clone()),
@@ -530,7 +530,16 @@ fn install_connected_app(
     apps::write_manifest(&app, &spec.app_id, &manifest).map_err(|e| e.to_string())?;
     std::fs::write(dir.join("index.html"), connected_app_index_html(&spec)?)
         .map_err(|e| e.to_string())?;
-    let _ = ensure_app_project(&app, &spec.app_id)?;
+    let app_project = ensure_app_project(&app, &spec.app_id)?;
+    let mcp_read = format!("mcp.read:{}", app_project.id);
+    let mcp_write = format!("mcp.write:{}", app_project.id);
+    if !manifest.permissions.iter().any(|p| p == &mcp_read) {
+        manifest.permissions.push(mcp_read);
+    }
+    if !manifest.permissions.iter().any(|p| p == &mcp_write) {
+        manifest.permissions.push(mcp_write);
+    }
+    apps::write_manifest(&app, &spec.app_id, &manifest).map_err(|e| e.to_string())?;
 
     if let Some(project_id) = project_id
         .as_deref()
@@ -732,6 +741,7 @@ fn connected_app_index_html(spec: &ConnectedAppSpec) -> Result<String, String> {
         "openUrl": spec.open_url.clone(),
         "capabilities": spec.capabilities.clone(),
         "notes": spec.notes.clone(),
+        "recommendedMcp": spec.mcp.clone(),
         "storageKey": format!("connected.{}.latestVisibleSession", spec.provider),
         "eventTopic": format!("connected.{}.visible_session", spec.provider),
     });
@@ -818,6 +828,27 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       opacity: 0.55;
       cursor: not-allowed;
     }
+    input, textarea {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 7px;
+      background: rgba(0,0,0,0.24);
+      color: #f8fbff;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 12px;
+      outline: none;
+    }
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      line-height: 1.4;
+    }
+    input:focus, textarea:focus {
+      border-color: rgba(80,140,255,0.58);
+    }
     section {
       border: 1px solid rgba(255,255,255,0.09);
       background: rgba(255,255,255,0.035);
@@ -870,6 +901,21 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       overflow-wrap: anywhere;
       font-size: 12px;
     }
+    .form-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+      gap: 8px;
+    }
+    .field {
+      display: grid;
+      gap: 5px;
+    }
+    .field span {
+      font-size: 11px;
+      color: rgba(238,242,255,0.58);
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
   </style>
 </head>
 <body>
@@ -895,6 +941,39 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         <div class="chip"><strong>Provider</strong><span id="provider"></span></div>
         <div class="chip"><strong>Service URL</strong><span id="serviceUrl"></span></div>
         <div class="chip"><strong>Last tab</strong><span id="tabId">none</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>MCP bridge</h2>
+      <div class="form-grid">
+        <label class="field">
+          <span>Server name</span>
+          <input id="mcpName" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Command</span>
+          <input id="mcpCommand" autocomplete="off" />
+        </label>
+      </div>
+      <label class="field">
+        <span>Args JSON array</span>
+        <textarea id="mcpArgs" spellcheck="false"></textarea>
+      </label>
+      <label class="field">
+        <span>Env JSON object</span>
+        <textarea id="mcpEnv" spellcheck="false"></textarea>
+      </label>
+      <div class="actions">
+        <button id="saveMcp">Save MCP config</button>
+        <button id="refreshMcp">Refresh MCP status</button>
+      </div>
+      <label class="field">
+        <span>MCP agent query</span>
+        <textarea id="mcpQuery" spellcheck="false"></textarea>
+      </label>
+      <div class="actions">
+        <button id="runMcpQuery">Run MCP query</button>
       </div>
     </section>
 
@@ -928,6 +1007,106 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       if (Array.isArray(value)) return value;
       if (value && Array.isArray(value.tabs)) return value.tabs;
       return [];
+    }
+
+    function recommendedMcpShape() {
+      return (config.recommendedMcp && config.recommendedMcp.config_shape) || {
+        command: "node",
+        args: ["path/to/provider-mcp-server.js"],
+        env: {}
+      };
+    }
+
+    function initializeMcpForm() {
+      const shape = recommendedMcpShape();
+      el("mcpName").value = (config.recommendedMcp && config.recommendedMcp.server_name) || config.provider;
+      el("mcpCommand").value = shape.command || "node";
+      el("mcpArgs").value = JSON.stringify(shape.args || [], null, 2);
+      el("mcpEnv").value = JSON.stringify(shape.env || {}, null, 2);
+      el("mcpQuery").value = config.provider === "telegram"
+        ? "Use the configured Telegram MCP server to list recent visible/available chats and summarize the latest messages. Do not claim access to chats or messages the MCP server cannot access. Return concise JSON with chats, latest_messages, summary, and warnings."
+        : "Use the configured provider MCP server for this connected app to inspect available recent data. Do not claim access to data the MCP server cannot access. Return concise JSON with items, summary, and warnings.";
+    }
+
+    function parseJsonField(id, fallback) {
+      const raw = el(id).value.trim();
+      if (!raw) return fallback;
+      return JSON.parse(raw);
+    }
+
+    async function saveMcpConfig() {
+      setBusy(true);
+      setStatus("Saving MCP config...");
+      try {
+        const name = el("mcpName").value.trim() || config.provider;
+        const command = el("mcpCommand").value.trim();
+        if (!command) throw new Error("MCP command is required");
+        const args = parseJsonField("mcpArgs", []);
+        const env = parseJsonField("mcpEnv", {});
+        if (!Array.isArray(args)) throw new Error("Args must be a JSON array");
+        if (!env || Array.isArray(env) || typeof env !== "object") {
+          throw new Error("Env must be a JSON object");
+        }
+        const result = await window.reflexProjectMcpUpsert({
+          name,
+          config: { command, args, env }
+        });
+        await window.reflexIntegrationUpdate({
+          provider: config.provider,
+          display_name: config.displayName,
+          capabilities: Array.from(new Set([...(config.capabilities || []), "mcp.configured"])),
+          mcp: {
+            ...(config.recommendedMcp || {}),
+            configured: true,
+            server_name: name,
+            saved_at_ms: Date.now()
+          },
+          notes: config.notes
+        });
+        setOutput(result);
+        setStatus("MCP config saved");
+      } catch (error) {
+        setStatus("MCP save failed");
+        setOutput(String(error));
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function refreshMcpStatus() {
+      setBusy(true);
+      setStatus("Reading MCP status...");
+      try {
+        const result = await window.reflexMcpServers({ includeConfig: true });
+        setOutput(result);
+        setStatus("MCP status loaded");
+      } catch (error) {
+        setStatus("MCP status failed");
+        setOutput(String(error));
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function runMcpAgentQuery() {
+      setBusy(true);
+      setStatus("Running MCP query...");
+      try {
+        const query = el("mcpQuery").value.trim();
+        if (!query) throw new Error("MCP query is required");
+        const result = await window.reflexAgentTask({
+          sandbox: "read-only",
+          includeContext: true,
+          prompt: query
+        });
+        setOutput(result);
+        setStatus("MCP query finished");
+      } catch (error) {
+        setStatus("MCP query failed");
+        setOutput(String(error));
+      } finally {
+        setBusy(false);
+      }
     }
 
     async function refreshProfile() {
@@ -1059,6 +1238,10 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
     el("read").addEventListener("click", () => void readVisibleText());
     el("summarize").addEventListener("click", summarizeVisibleText);
     el("external").addEventListener("click", () => window.reflexSystemOpenUrl(config.openUrl || config.serviceUrl));
+    el("saveMcp").addEventListener("click", saveMcpConfig);
+    el("refreshMcp").addEventListener("click", refreshMcpStatus);
+    el("runMcpQuery").addEventListener("click", runMcpAgentQuery);
+    initializeMcpForm();
     refreshProfile();
   </script>
 </body>

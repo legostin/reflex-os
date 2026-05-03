@@ -189,7 +189,9 @@ The Apps screen also has a `Connected app` installer for Telegram and generic
 web services. It creates a local utility with `manifest.integration`, Browser
 bridge permissions, and callable actions for summarizing visible web-session
 text. Raw visible text is exposed only through the non-public
-`read_visible_session` action or an explicit panel click.
+`read_visible_session` action or an explicit panel click. The installed utility
+also has scoped `mcp.read`/`mcp.write` permission on its own app project and a
+panel form that writes provider MCP server config through `project.mcp.upsert`.
 
 ## App Bridge API
 
