@@ -12,6 +12,9 @@ export const BRIDGE_API_GROUPS = [
       "logs.list",
       "manifest.get",
       "manifest.update",
+      "integration.catalog",
+      "integration.profile",
+      "integration.update",
       "permissions.list",
       "permissions.ensure",
       "permissions.revoke",
@@ -195,6 +198,9 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexLogList",
       "reflexManifestGet",
       "reflexManifestUpdate",
+      "reflexIntegrationCatalog",
+      "reflexIntegrationProfile",
+      "reflexIntegrationUpdate",
       "reflexPermissionsList",
       "reflexPermissionsEnsure",
       "reflexPermissionsRevoke",
@@ -365,6 +371,13 @@ export const BRIDGE_RECIPE_CARDS = [
     body: "Publish actions/widgets, create utilities, export bundles, and manage server runtime.",
     calls: ["actions.upsert", "apps.create", "apps.export", "apps.server.status"],
     example: 'await reflexAppsCreate("A utility for a daily report");',
+  },
+  {
+    title: "Connected app adapter",
+    body: "Wrap an external service with a visible panel, learned data profile, actions, and optional MCP bridge.",
+    calls: ["integration.catalog", "integration.profile", "project.mcp.upsert"],
+    example:
+      'const { recipes } = await reflexIntegrationCatalog("telegram");',
   },
   {
     title: "Automation",

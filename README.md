@@ -37,12 +37,14 @@ preferred skills, and long-term memory in one context block.
 
 ## Generated App Runtime
 
-Every generated app has a `manifest.json` and one of two runtimes:
+Every generated app has a `manifest.json` and one of three runtimes:
 
 - `static`: Reflex serves app files through `reflexapp://`.
 - `server`: Reflex starts `manifest.server.command`, passes `PORT` and
   `REFLEX_PORT`, then embeds it through `reflexserver://<app-id>/` so HTML
   still receives the runtime overlay.
+- `external`: Reflex embeds `manifest.external.url` as a connected service
+  panel and can store an `integration` profile/MCP plan in the manifest.
 
 The injected runtime overlay provides:
 
@@ -57,6 +59,9 @@ The injected runtime overlay provides:
 - `window.reflexLogList(params)`
 - `window.reflexManifestGet()`
 - `window.reflexManifestUpdate(patch)`
+- `window.reflexIntegrationCatalog(providerOrParams?)`
+- `window.reflexIntegrationProfile()`
+- `window.reflexIntegrationUpdate(patchOrParams, external?)`
 - `window.reflexPermissionsList()`
 - `window.reflexPermissionsEnsure(permissionOrParams)`
 - `window.reflexPermissionsRevoke(permissionOrParams)`
@@ -204,6 +209,13 @@ Core methods:
 - `manifest.get()` -> current `manifest.json`.
 - `manifest.update({ patch })` -> merge-update this app's manifest; useful for
   adding `actions`, `widgets`, `schedules`, permissions, or network hosts.
+- `integration.catalog({ provider? })` -> built-in connected-app recipes,
+  including expected display, data, auth, and MCP bridge shape.
+- `integration.profile()` -> this app's `integration`/`external` profile plus
+  linked project/app context.
+- `integration.update({ integration?, external? })` or
+  `integration.update({ patch })` -> merge-update connected-app manifest
+  fields.
 - `permissions.list()`, `permissions.ensure({ permission })` or
   `permissions.ensure({ permissions })`, `permissions.revoke(...)` -> targeted
   updates to this app's manifest permissions.
@@ -318,7 +330,8 @@ Core methods:
 - `apps.create({ description, template?, projectId? })`; requires `apps.create`
   or `apps:*`. Passing `projectId` also requires `projects.write:<project>` or
   `projects.write:*`. Built-in templates: `blank`, `chat`, `dashboard`,
-  `health-dashboard`, `form`, `api-client`, `automation`, and `node-server`.
+  `health-dashboard`, `form`, `api-client`, `connected-app`, `automation`, and
+  `node-server`.
 - `apps.export({ app_id, targetPath })` and `apps.import({ zipPath })`;
   require `apps.manage` or `apps:*`. Exports omit app storage, project metadata,
   `.git`, and dependency folders from the `.reflexapp` bundle.

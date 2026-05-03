@@ -200,7 +200,7 @@ type Route =
   | { kind: "app"; app_id: string }
   | { kind: "memory"; project_id?: string; thread_id?: string }
   | { kind: "automations" }
-  | { kind: "browser" }
+  | { kind: "browser"; project_id?: string }
   | { kind: "settings" };
 
 function routeKey(r: Route): string {
@@ -224,7 +224,7 @@ function routeKey(r: Route): string {
     case "automations":
       return "automations";
     case "browser":
-      return "browser";
+      return r.project_id ? `browser:${r.project_id}` : "browser";
     case "settings":
       return "settings";
   }
@@ -243,7 +243,7 @@ function routeForSystemPanel(payload: AppOpenRequestPayload): Route | null {
     case "automations":
       return { kind: "automations" };
     case "browser":
-      return { kind: "browser" };
+      return { kind: "browser", project_id: payload.project_id };
     case "settings":
       return { kind: "settings" };
     default:
@@ -308,10 +308,39 @@ function tabLabel(
     }
     case "automations":
       return t("nav.automations");
-    case "browser":
-      return t("nav.browser");
+    case "browser": {
+      if (!r.project_id) return t("nav.browser");
+      const p = projects.find((x) => x.id === r.project_id);
+      return `${t("nav.browser")} · ${p?.name ?? r.project_id}`;
+    }
     case "settings":
       return t("nav.settings");
+  }
+}
+
+function projectIdFromRoute(
+  route: Route,
+  threads: Thread[],
+): string | undefined {
+  switch (route.kind) {
+    case "project":
+      return route.project_id;
+    case "topic":
+      return threads.find((thread) => thread.id === route.thread_id)
+        ?.project_id;
+    case "apps":
+    case "browser":
+      return route.project_id;
+    case "memory":
+      return (
+        route.project_id ??
+        (route.thread_id
+          ? threads.find((thread) => thread.id === route.thread_id)
+              ?.project_id
+          : undefined)
+      );
+    default:
+      return undefined;
   }
 }
 
@@ -421,8 +450,22 @@ type AppManifest = {
   kind: string;
   created_at_ms: number;
   ready?: boolean;
-  runtime?: string | null;
+  runtime?: "static" | "server" | "external" | string | null;
   server?: { command: string[]; ready_timeout_ms?: number | null } | null;
+  external?: {
+    url?: string | null;
+    title?: string | null;
+    open_url?: string | null;
+  } | null;
+  integration?: {
+    provider?: string | null;
+    display_name?: string | null;
+    capabilities?: string[];
+    data_model?: any;
+    auth?: any;
+    mcp?: any;
+    notes?: string | null;
+  } | null;
   network?: AppNetworkPolicy | null;
   schedules?: AppSchedule[];
   actions?: AppAction[];
@@ -522,7 +565,12 @@ function buildAppCapabilityFacts(
 ): AppCapabilityFact[] {
   if (!manifest) return [];
 
-  const runtime = manifest.runtime === "server" ? "server" : "static";
+  const runtime =
+    manifest.runtime === "server"
+      ? "server"
+      : manifest.runtime === "external"
+        ? "external"
+        : "static";
   const permissions = manifest.permissions ?? [];
   const allowedHosts = manifest.network?.allowed_hosts ?? [];
   const actions = manifest.actions ?? [];
@@ -530,19 +578,38 @@ function buildAppCapabilityFacts(
   const widgets = manifest.widgets ?? [];
   const enabledSchedules = schedules.filter((s) => s.enabled !== false).length;
   const serverCommand = manifest.server?.command?.join(" ");
+  const integrationProvider = manifest.integration?.provider?.trim();
+  const externalUrl = manifest.external?.url?.trim();
+  const integrationCapabilities = manifest.integration?.capabilities ?? [];
 
   return [
     {
       key: "runtime",
       label: "runtime",
-      value: runtime === "server" && serverPort ? `server :${serverPort}` : runtime,
+      value:
+        runtime === "server" && serverPort ? `server :${serverPort}` : runtime,
       title:
         runtime === "server"
           ? serverCommand
             ? `server command: ${serverCommand}`
             : "server runtime"
-          : `entry: ${manifest.entry}`,
+          : runtime === "external"
+            ? externalUrl || "external web app"
+            : `entry: ${manifest.entry}`,
     },
+    ...(runtime === "external" || integrationProvider
+      ? [
+          {
+            key: "integration",
+            label: "integration",
+            value: integrationProvider || "external",
+            title:
+              integrationCapabilities.length > 0
+                ? integrationCapabilities.join(", ")
+                : manifest.integration?.notes || "connected app profile",
+          },
+        ]
+      : []),
     {
       key: "permissions",
       label: "permissions",
@@ -725,22 +792,8 @@ export default function ChatThread() {
   const [installedAppsLite, setInstalledAppsLite] = useState<
     { id: string; name: string; icon?: string | null }[]
   >([]);
-  const [activeProjectId, setActiveProjectIdState] = useState<string | null>(
-    null,
-  );
   const containerRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
-
-  const setActiveProject = async (id: string | null) => {
-    setActiveProjectIdState(id);
-    try {
-      await invoke("set_active_project", { projectId: id });
-    } catch (e) {
-      console.error("[reflex] set_active_project failed", e);
-    }
-    // Browser session is re-bound when BrowserScreen remounts on key change —
-    // no need to eagerly start the sidecar here.
-  };
 
   const focusPane = (paneId: PaneId) =>
     setLayout((prev) =>
@@ -795,7 +848,6 @@ export default function ChatThread() {
   };
 
   const openProjectRoute = (projectId: string) => {
-    void setActiveProject(projectId);
     navigate({ kind: "project", project_id: projectId });
   };
 
@@ -996,7 +1048,6 @@ export default function ChatThread() {
       setNewProjectPath(null);
       setNewProjectDescription("");
       navigate({ kind: "project", project_id: p.id });
-      void setActiveProject(p.id);
       if (description) {
         try {
           const apps = await invoke<
@@ -1015,27 +1066,47 @@ export default function ChatThread() {
     }
   };
 
-  const openInSidePane = (url: string) => {
+  const openInSidePane = (url: string, projectId?: string) => {
+    const browserRoute: Route = { kind: "browser", project_id: projectId };
+    const browserKey = routeKey(browserRoute);
     setLayout((prev) => {
       const browserPane = prev.panes.find((p) =>
-        p.tabs.some((t) => t.kind === "browser"),
+        p.tabs.some((t) => routeKey(t) === browserKey),
       );
       if (browserPane) {
         return {
           ...prev,
           panes: prev.panes.map((p) =>
             p.id === browserPane.id
-              ? { ...p, activeKey: "browser" }
+              ? { ...p, activeKey: browserKey }
               : p,
           ),
           focusedPaneId: browserPane.id,
+        };
+      }
+      const reusablePane = prev.panes.find((p) =>
+        p.tabs.some((t) => t.kind === "browser"),
+      );
+      if (reusablePane) {
+        return {
+          ...prev,
+          panes: prev.panes.map((p) =>
+            p.id === reusablePane.id
+              ? {
+                  ...p,
+                  tabs: [...p.tabs, browserRoute],
+                  activeKey: browserKey,
+                }
+              : p,
+          ),
+          focusedPaneId: reusablePane.id,
         };
       }
       const id = nextPaneId();
       return {
         panes: [
           ...prev.panes,
-          { id, tabs: [{ kind: "browser" } as Route], activeKey: "browser" },
+          { id, tabs: [browserRoute], activeKey: browserKey },
         ],
         paneSizes: { ...prev.paneSizes, [id]: 1 },
         focusedPaneId: id,
@@ -1044,23 +1115,6 @@ export default function ChatThread() {
     void invoke("browser_tab_open", { url }).catch((e) =>
       console.error("[reflex] browser_tab_open from link failed", e),
     );
-  };
-
-  const openLinkFromThread = (
-    threadId: string,
-    url: string,
-    _ev: React.MouseEvent<HTMLAnchorElement>,
-  ) => {
-    const thread = threads.find((t) => t.id === threadId);
-    if (
-      !thread ||
-      !activeProjectId ||
-      thread.project_id !== activeProjectId
-    ) {
-      window.open(url, "_blank", "noopener,noreferrer");
-      return;
-    }
-    openInSidePane(url);
   };
 
   const createNewTopic = async (
@@ -1098,6 +1152,20 @@ export default function ChatThread() {
     focusedPane.tabs.find((r) => routeKey(r) === focusedPane.activeKey) ??
     focusedPane.tabs[0] ?? { kind: "home" };
 
+  const openLinkFromThread = (
+    threadId: string,
+    url: string,
+    _ev: React.MouseEvent<HTMLAnchorElement>,
+  ) => {
+    const thread = threads.find((t) => t.id === threadId);
+    const routeProjectId = projectIdFromRoute(currentRoute, threads);
+    if (!thread || !routeProjectId || thread.project_id !== routeProjectId) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    openInSidePane(url, routeProjectId);
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -1110,13 +1178,6 @@ export default function ChatThread() {
     };
 
     refreshProjects();
-
-    invoke<string | null>("get_active_project")
-      .then((id) => {
-        if (!mounted) return;
-        setActiveProjectIdState(id ?? null);
-      })
-      .catch((e) => console.warn("[reflex] get_active_project failed", e));
 
     invoke<ProjectThread[]>("list_threads")
       .then((stored) => {
@@ -1295,20 +1356,6 @@ export default function ChatThread() {
       return copy;
     });
 
-  useEffect(() => {
-    if (projects.length === 0) {
-      if (activeProjectId !== null) setActiveProjectIdState(null);
-      return;
-    }
-    if (
-      activeProjectId &&
-      projects.some((p) => p.id === activeProjectId)
-    ) {
-      return;
-    }
-    void setActiveProject(projects[0].id);
-  }, [projects, activeProjectId]);
-
   const projectsLoadedRef = useRef(false);
   const firstRunPromptedRef = useRef(false);
   useEffect(() => {
@@ -1439,23 +1486,27 @@ export default function ChatThread() {
             }
           />
         );
-      case "browser":
+      case "browser": {
+        const browserProjectId = r.project_id ?? null;
         return (
           <BrowserScreen
-            key={activeProjectId ?? "_none"}
-            projectId={activeProjectId}
+            key={browserProjectId ?? "_global"}
+            projectId={browserProjectId}
             projectName={
-              projects.find((p) => p.id === activeProjectId)?.name ?? null
+              browserProjectId
+                ? projects.find((p) => p.id === browserProjectId)?.name ?? null
+                : null
             }
             onStartChat={async (prompt, browserTabs) => {
-              if (!activeProjectId) return;
-              await createNewTopic(activeProjectId, prompt, false, {
+              if (!browserProjectId) return;
+              await createNewTopic(browserProjectId, prompt, false, {
                 source: "browser",
                 browserTabs,
               });
             }}
           />
         );
+      }
       case "settings":
         return <SettingsScreen />;
     }
@@ -1661,6 +1712,12 @@ function Header({
       thread_id: activeThread?.id,
     });
   };
+  const openBrowserRoute = () => {
+    onNavigate({
+      kind: "browser",
+      project_id: projectIdFromRoute(route, threads),
+    });
+  };
 
   return (
     <header className="chat-header">
@@ -1731,7 +1788,7 @@ function Header({
           </button>
           <button
             className={`header-tab ${route.kind === "browser" ? "active" : ""}`}
-            onClick={() => onNavigate({ kind: "browser" })}
+            onClick={openBrowserRoute}
             title={t("nav.browser")}
           >
             {t("nav.browser")}
@@ -2014,6 +2071,14 @@ const TEMPLATES: {
     descriptionKey: "template.apiClient.description",
     placeholderKey: "template.apiClient.placeholder",
     badges: ["net.fetch", "network"],
+  },
+  {
+    id: "connected-app",
+    icon: "🔌",
+    nameKey: "template.connectedApp.name",
+    descriptionKey: "template.connectedApp.description",
+    placeholderKey: "template.connectedApp.placeholder",
+    badges: ["external", "bridge", "mcp"],
   },
   {
     id: "automation",
@@ -2620,6 +2685,7 @@ function AppViewer({
   const [reviseBusy, setReviseBusy] = useState(false);
 
   const isServerRuntime = manifest?.runtime === "server";
+  const isExternalRuntime = manifest?.runtime === "external";
   isServerRuntimeRef.current = isServerRuntime;
   const normalizedBridgeQuery = bridgeQuery.trim().toLowerCase();
   const visibleBridgeApiGroups = useMemo(() => {
@@ -3174,14 +3240,19 @@ function AppViewer({
   }
 
   const entry = manifest?.entry ?? "index.html";
-  const src = isServerRuntime
-    ? serverPort
-      ? `reflexserver://${encodeURIComponent(appId)}/`
-      : null
-    : `reflexapp://localhost/${encodeURIComponent(appId)}/${entry}`;
-  const sandbox = isServerRuntime
-    ? "allow-scripts allow-forms allow-same-origin"
-    : "allow-scripts allow-forms";
+  const externalUrl = manifest?.external?.url?.trim() || null;
+  const src = isExternalRuntime
+    ? externalUrl
+    : isServerRuntime
+      ? serverPort
+        ? `reflexserver://${encodeURIComponent(appId)}/`
+        : null
+      : `reflexapp://localhost/${encodeURIComponent(appId)}/${entry}`;
+  const sandbox = isExternalRuntime
+    ? "allow-scripts allow-forms allow-same-origin allow-popups allow-downloads"
+    : isServerRuntime
+      ? "allow-scripts allow-forms allow-same-origin"
+      : "allow-scripts allow-forms";
   const manifestFacts = useMemo(
     () => buildAppCapabilityFacts(manifest, serverPort),
     [manifest, serverPort],
@@ -3236,7 +3307,22 @@ function AppViewer({
           >
             {bridgeOpen ? "▾ Bridge" : "▸ Bridge"}
           </button>
-          {!isServerRuntime && (
+          {isExternalRuntime && externalUrl && (
+            <button
+              className="appviewer-btn"
+              onClick={() =>
+                window.open(
+                  manifest?.external?.open_url ?? externalUrl,
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+              title={t("appViewer.openExternalTitle")}
+            >
+              ↗ {t("appViewer.openExternal")}
+            </button>
+          )}
+          {!isServerRuntime && !isExternalRuntime && (
             <button
               className={`appviewer-btn ${inspecting ? "appviewer-btn-primary" : ""}`}
               onClick={toggleInspecting}
@@ -3709,7 +3795,7 @@ function AppViewer({
         </div>
       )}
 
-      {!isServerRuntime && status && !status.entry_exists ? (
+      {!isServerRuntime && !isExternalRuntime && status && !status.entry_exists ? (
         <div className="appviewer-stuck">
           <h3>{t("appViewer.generationIncomplete")}</h3>
           <p>
@@ -3750,7 +3836,7 @@ function AppViewer({
       ) : src ? (
         <iframe
           ref={iframeRef}
-          key={`${reloadKey}:${serverPort ?? "static"}`}
+          key={`${reloadKey}:${serverPort ?? externalUrl ?? "static"}`}
           className="app-iframe"
           src={src}
           sandbox={sandbox}

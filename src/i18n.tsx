@@ -108,6 +108,8 @@ const dictionaries: Record<Locale, Dictionary> = {
     "appViewer.serverLogsTitle": "Show server logs",
     "appViewer.logs": "Logs",
     "appViewer.runtimeHelpersTitle": "Show runtime overlay helpers",
+    "appViewer.openExternalTitle": "Open external service in the system browser",
+    "appViewer.openExternal": "Open",
     "appViewer.inspectorTitle":
       "Click an element in the utility and describe what to change",
     "appViewer.inspector": "Inspector",
@@ -593,7 +595,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "memory.search.noResults": "Nothing found.",
     "memory.search.score": "score {score}",
     "browser.noActiveProject":
-      "To open the browser, choose an active project in the header.",
+      "Open the browser from a project to start a project chat.",
+    "browser.scopeLabel": "Scope:",
+    "browser.globalScope": "Global",
     "browser.projectLabel": "Project:",
     "browser.emptyTab": "empty",
     "browser.newTab": "New tab",
@@ -605,6 +609,8 @@ const dictionaries: Record<Locale, Dictionary> = {
     "browser.startingChromium": "Starting Chromium...",
     "browser.noImage": "No image. Open a page.",
     "browser.openPagePrompt": "Open a page and start a chat with the agent...",
+    "browser.startChatNeedsProject":
+      "Open a project to start a browser chat...",
     "browser.startChatTabs": "Start chat over {count} tabs...",
     "browser.startChatOneTab": "Start chat over 1 tab...",
     "browser.startChatTitle": "Create chat with current tab context",
@@ -647,6 +653,11 @@ const dictionaries: Record<Locale, Dictionary> = {
     "template.apiClient.description": "External API requests through net.fetch",
     "template.apiClient.placeholder":
       "Example: show issues from github.com/owner/repo; currency converter through open.er-api.com; ...",
+    "template.connectedApp.name": "Connected app",
+    "template.connectedApp.description":
+      "Embed an external service and build a bridge/MCP data adapter",
+    "template.connectedApp.placeholder":
+      "Example: Telegram message reader with Telegram Web panel, auth notes, public actions for recent chats, and an MCP plan; ...",
     "template.automation.name": "Automation",
     "template.automation.description":
       "Schedule, action, and widget for a background task",
@@ -710,6 +721,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "recipe.utilityService.title": "Utility as a service",
     "recipe.utilityService.body":
       "Publish actions/widgets, create utilities, export bundles, and manage server runtime.",
+    "recipe.connectedApp.title": "Connected app adapter",
+    "recipe.connectedApp.body":
+      "Wrap an external service with a visible panel, learned data profile, actions, and optional MCP bridge.",
     "recipe.automation.title": "Automation",
     "recipe.automation.body":
       "Schedule steps use the same bridge, except UI-only methods.",
@@ -813,6 +827,8 @@ const dictionaries: Record<Locale, Dictionary> = {
     "appViewer.serverLogsTitle": "Показать логи сервера",
     "appViewer.logs": "Логи",
     "appViewer.runtimeHelpersTitle": "Показать runtime overlay helpers",
+    "appViewer.openExternalTitle": "Открыть внешний сервис в системном браузере",
+    "appViewer.openExternal": "Открыть",
     "appViewer.inspectorTitle":
       "Кликни по элементу в утилите и опиши, что изменить",
     "appViewer.inspector": "Инспектор",
@@ -1303,7 +1319,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "memory.search.noResults": "Ничего не найдено.",
     "memory.search.score": "оценка {score}",
     "browser.noActiveProject":
-      "Чтобы открыть браузер, выбери активный проект в шапке.",
+      "Открой браузер из проекта, чтобы запустить проектный чат.",
+    "browser.scopeLabel": "Область:",
+    "browser.globalScope": "Глобально",
     "browser.projectLabel": "Проект:",
     "browser.emptyTab": "пусто",
     "browser.newTab": "Новая вкладка",
@@ -1315,6 +1333,8 @@ const dictionaries: Record<Locale, Dictionary> = {
     "browser.startingChromium": "Запускаю Chromium...",
     "browser.noImage": "Нет картинки. Открой страницу.",
     "browser.openPagePrompt": "Открой страницу и начни чат с агентом...",
+    "browser.startChatNeedsProject":
+      "Открой проект, чтобы запустить чат по браузеру...",
     "browser.startChatTabs": "Запустить чат по {count} вкладкам...",
     "browser.startChatOneTab": "Запустить чат по 1 вкладке...",
     "browser.startChatTitle": "Создать чат с контекстом текущих вкладок",
@@ -1357,6 +1377,11 @@ const dictionaries: Record<Locale, Dictionary> = {
     "template.apiClient.description": "Запросы к внешнему API через net.fetch",
     "template.apiClient.placeholder":
       "Например: показать issues из github.com/owner/repo; конвертер валют через open.er-api.com; ...",
+    "template.connectedApp.name": "Подключённое приложение",
+    "template.connectedApp.description":
+      "Встроить внешний сервис и собрать bridge/MCP-адаптер данных",
+    "template.connectedApp.placeholder":
+      "Например: Telegram reader с панелью Telegram Web, заметками авторизации, public actions для последних чатов и MCP-планом; ...",
     "template.automation.name": "Автоматизация",
     "template.automation.description":
       "Расписание, action и виджет для фоновой задачи",
@@ -1420,6 +1445,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "recipe.utilityService.title": "Утилита как сервис",
     "recipe.utilityService.body":
       "Публикуй actions/widgets, создавай утилиты, экспортируй bundles и управляй server runtime.",
+    "recipe.connectedApp.title": "Адаптер подключённого приложения",
+    "recipe.connectedApp.body":
+      "Оберни внешний сервис видимой панелью, изученным профилем данных, actions и опциональным MCP bridge.",
     "recipe.automation.title": "Автоматизация",
     "recipe.automation.body":
       "Schedule steps используют тот же bridge, кроме UI-only методов.",

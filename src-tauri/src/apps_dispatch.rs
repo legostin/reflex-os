@@ -34,6 +34,9 @@ pub async fn dispatch_app_method(
         }
         "manifest.get" => manifest_get(app, app_id),
         "manifest.update" => manifest_update(app, app_id, params),
+        "integration.catalog" => integration_catalog(params),
+        "integration.profile" => integration_profile(app, app_id),
+        "integration.update" => integration_update(app, app_id, params),
         "permissions.list" => permissions_list_for_app(app, app_id),
         "permissions.ensure" => permissions_ensure_for_app(app, app_id, params),
         "permissions.revoke" => permissions_revoke_for_app(app, app_id, params),
@@ -794,6 +797,142 @@ fn manifest_update(
     }))
 }
 
+fn integration_catalog(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    let provider = string_param(&params, "provider", "provider").map(|s| s.to_lowercase());
+    let mut recipes = vec![
+        serde_json::json!({
+            "provider": "generic_web",
+            "display_name": "Generic web app",
+            "external": {
+                "url": "",
+                "open_url": "",
+            },
+            "capabilities": ["visible_session.read", "browser.control", "mcp.optional"],
+            "data_strategy": [
+                "Use runtime=external only when the service can be framed.",
+                "Use the Browser bridge to inspect a visible user session when embedding is blocked.",
+                "Publish normalized manifest.actions for any data the utility exposes to other apps.",
+            ],
+            "mcp": {
+                "recommended": false,
+                "notes": "Add a provider-specific MCP server when durable authenticated data access is required."
+            }
+        }),
+        serde_json::json!({
+            "provider": "telegram",
+            "display_name": "Telegram",
+            "external": {
+                "url": "https://web.telegram.org/a/",
+                "open_url": "https://web.telegram.org/a/"
+            },
+            "capabilities": [
+                "messages.visible_session.read",
+                "messages.search",
+                "chats.list",
+                "summaries.write"
+            ],
+            "data_strategy": [
+                "Show Telegram Web when it can be framed; otherwise provide an Open button and use the Browser bridge after the user logs in.",
+                "For personal chats, use user-approved Telegram client access such as MTProto/TDLib or a dedicated MCP server.",
+                "Do not use a bot-token-only flow to claim access to arbitrary personal messages; bots only see chats where they are present and allowed.",
+                "Store derived summaries by default. Store raw messages only when the user explicitly enables it."
+            ],
+            "mcp": {
+                "recommended": true,
+                "server_name": "telegram",
+                "config_shape": {
+                    "command": "node",
+                    "args": ["path/to/telegram-mcp-server.js"],
+                    "env": {
+                        "TELEGRAM_API_ID": "<from user>",
+                        "TELEGRAM_API_HASH": "<from user>",
+                        "TELEGRAM_SESSION": "<stored outside manifest>"
+                    }
+                },
+                "notes": "This is a shape for a user-provided MCP bridge. Reflex does not ship Telegram credentials or a Telegram client."
+            }
+        }),
+    ];
+    if let Some(provider) = provider {
+        recipes.retain(|item| {
+            item.get("provider")
+                .and_then(|v| v.as_str())
+                .map(|p| p.eq_ignore_ascii_case(&provider))
+                .unwrap_or(false)
+        });
+    }
+    Ok(serde_json::json!({ "recipes": recipes }))
+}
+
+fn integration_profile(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let context = system_context(app, app_id).unwrap_or_else(|_| serde_json::json!({}));
+    Ok(serde_json::json!({
+        "app_id": app_id,
+        "provider": manifest.integration.as_ref().map(|i| i.provider.clone()).unwrap_or_default(),
+        "integration": manifest.integration,
+        "external": manifest.external,
+        "runtime": manifest.runtime.unwrap_or_else(|| "static".into()),
+        "linked_projects": context.get("linked_projects").cloned().unwrap_or_else(|| serde_json::json!([])),
+        "app_project": context.get("app_project").cloned().unwrap_or(serde_json::Value::Null),
+    }))
+}
+
+fn integration_update(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let current = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let mut value = serde_json::to_value(current).map_err(|e| e.to_string())?;
+    let direct_integration_patch =
+        if params.get("integration").is_none() && params.get("patch").is_none() && params.get("external").is_none() {
+            Some(params.clone())
+        } else {
+            None
+        };
+
+    if let Some(patch) = params
+        .get("integration")
+        .or_else(|| params.get("patch"))
+        .cloned()
+        .or(direct_integration_patch)
+    {
+        if !patch.is_object() {
+            return Err("integration patch must be a JSON object".into());
+        }
+        if !value
+            .get("integration")
+            .map(|v| v.is_object())
+            .unwrap_or(false)
+        {
+            value["integration"] = serde_json::json!({});
+        }
+        merge_json(&mut value["integration"], patch);
+    }
+
+    if let Some(patch) = params.get("external") {
+        if !patch.is_object() {
+            return Err("external patch must be a JSON object".into());
+        }
+        if !value.get("external").map(|v| v.is_object()).unwrap_or(false) {
+            value["external"] = serde_json::json!({});
+        }
+        merge_json(&mut value["external"], patch.clone());
+    }
+
+    value["id"] = serde_json::Value::String(app_id.to_string());
+    let mut manifest: apps::AppManifest =
+        serde_json::from_value(value).map_err(|e| format!("invalid manifest: {e}"))?;
+    manifest.id = app_id.to_string();
+    write_manifest_and_emit(app, app_id, &manifest)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "integration": manifest.integration,
+        "external": manifest.external,
+    }))
+}
+
 fn write_manifest_and_emit(
     app: &AppHandle,
     app_id: &str,
@@ -1252,6 +1391,9 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "logs.list",
                 "manifest.get",
                 "manifest.update",
+                "integration.catalog",
+                "integration.profile",
+                "integration.update",
                 "permissions.list",
                 "permissions.ensure",
                 "permissions.revoke",
@@ -1431,6 +1573,9 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexLogList",
                 "reflexManifestGet",
                 "reflexManifestUpdate",
+                "reflexIntegrationCatalog",
+                "reflexIntegrationProfile",
+                "reflexIntegrationUpdate",
                 "reflexPermissionsList",
                 "reflexPermissionsEnsure",
                 "reflexPermissionsRevoke",
@@ -2919,6 +3064,16 @@ fn app_summary_from_manifest(manifest: apps::AppManifest, ready: bool) -> serde_
         "description": manifest.description,
         "kind": manifest.kind,
         "runtime": manifest.runtime.unwrap_or_else(|| "static".into()),
+        "external": manifest.external.as_ref().map(|external| serde_json::json!({
+            "url": external.url.clone(),
+            "title": external.title.clone(),
+            "open_url": external.open_url.clone(),
+        })),
+        "integration": manifest.integration.as_ref().map(|integration| serde_json::json!({
+            "provider": integration.provider.clone(),
+            "display_name": integration.display_name.clone(),
+            "capabilities": integration.capabilities.clone(),
+        })),
         "ready": ready,
         "capabilities": {
             "permissions": manifest.permissions.len(),

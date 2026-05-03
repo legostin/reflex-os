@@ -437,23 +437,15 @@ export function BrowserScreen({
     }
   }
 
-  if (!projectId) {
-    return (
-      <div className="browser-root">
-        <div className="browser-empty">
-          {t("browser.noActiveProject")}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="browser-root">
       <header className="browser-header">
         <div className="browser-project-line">
-          <span className="browser-project-label">{t("browser.projectLabel")}</span>
+          <span className="browser-project-label">
+            {projectId ? t("browser.projectLabel") : t("browser.scopeLabel")}
+          </span>
           <span className="browser-project-name">
-            {projectName ?? projectId}
+            {projectId ? projectName ?? projectId : t("browser.globalScope")}
           </span>
         </div>
         <div className="browser-tab-bar">
@@ -554,7 +546,9 @@ export function BrowserScreen({
           className="browser-chat-input"
           value={chatDraft}
           placeholder={
-            tabs.length === 0
+            !projectId
+              ? t("browser.startChatNeedsProject")
+              : tabs.length === 0
               ? t("browser.openPagePrompt")
               : tabs.length === 1
                 ? t("browser.startChatOneTab")
@@ -567,13 +561,13 @@ export function BrowserScreen({
               void submitChat();
             }
           }}
-          disabled={chatSubmitting}
+          disabled={chatSubmitting || !projectId}
         />
         <button
           className="browser-chat-send"
           onClick={() => void submitChat()}
-          disabled={chatSubmitting || !chatDraft.trim()}
-          title={t("browser.startChatTitle")}
+          disabled={chatSubmitting || !projectId || !chatDraft.trim()}
+          title={projectId ? t("browser.startChatTitle") : t("browser.noActiveProject")}
         >
           {chatSubmitting ? "..." : t("browser.chat")}
         </button>

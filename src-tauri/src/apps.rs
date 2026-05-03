@@ -23,10 +23,15 @@ pub struct AppManifest {
     pub created_at_ms: u128,
     /// "static" (default) — отдаём файлы через reflexapp:// URI scheme.
     /// "server" — запускаем manifest.server.command, iframe смотрит на reflexserver://<app-id>/
+    /// "external" — iframe смотрит на manifest.external.url; overlay is unavailable inside cross-origin content.
     #[serde(default)]
     pub runtime: Option<String>,
     #[serde(default)]
     pub server: Option<ServerConfig>,
+    #[serde(default)]
+    pub external: Option<ExternalConfig>,
+    #[serde(default)]
+    pub integration: Option<IntegrationConfig>,
     #[serde(default)]
     pub network: Option<NetworkPolicy>,
     #[serde(default)]
@@ -35,6 +40,37 @@ pub struct AppManifest {
     pub actions: Vec<ActionDef>,
     #[serde(default)]
     pub widgets: Vec<WidgetDef>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ExternalConfig {
+    /// https URL shown in the app iframe when runtime="external".
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Optional system URL to open when embedding is blocked or login needs a full browser.
+    #[serde(default)]
+    pub open_url: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct IntegrationConfig {
+    /// Stable provider id such as "telegram", "slack", "gmail", or "custom".
+    #[serde(default)]
+    pub provider: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub data_model: serde_json::Value,
+    #[serde(default)]
+    pub auth: serde_json::Value,
+    #[serde(default)]
+    pub mcp: serde_json::Value,
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -1051,6 +1087,17 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexManifestUpdate = function(patch) {
     return reflexInvokeRaw('manifest.update', {patch: patch || {}});
   };
+  window.reflexIntegrationCatalog = function(providerOrParams) {
+    var params = (typeof providerOrParams === 'string') ? {provider: providerOrParams} : (providerOrParams || {});
+    return reflexInvokeRaw('integration.catalog', params);
+  };
+  window.reflexIntegrationProfile = function() {
+    return reflexInvokeRaw('integration.profile', {});
+  };
+  window.reflexIntegrationUpdate = function(patchOrParams, external) {
+    var params = external ? {integration: patchOrParams || {}, external: external} : (patchOrParams || {});
+    return reflexInvokeRaw('integration.update', params);
+  };
   window.reflexPermissionsList = function() {
     return reflexInvokeRaw('permissions.list', {});
   };
@@ -1132,8 +1179,10 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var widgets = reflexArray(m.widgets);
     return {
       manifest: m,
-      runtime: m.runtime === 'server' ? 'server' : 'static',
+      runtime: m.runtime === 'server' ? 'server' : (m.runtime === 'external' ? 'external' : 'static'),
       entry: m.entry || 'index.html',
+      external: m.external || null,
+      integration: m.integration || null,
       permissions: permissions,
       allowedHosts: hosts,
       schedules: schedules,
@@ -1929,6 +1978,8 @@ pub fn ensure_sample_app(app: &AppHandle) -> io::Result<()> {
         created_at_ms: now_ms,
         runtime: None,
         server: None,
+        external: None,
+        integration: None,
         network: None,
         schedules: Vec::new(),
         actions: Vec::new(),
@@ -1961,6 +2012,8 @@ fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
         created_at_ms: now_ms,
         runtime: None,
         server: None,
+        external: None,
+        integration: None,
         network: None,
         schedules: vec![ScheduleDef {
             id: "heartbeat".into(),

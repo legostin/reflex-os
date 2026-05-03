@@ -69,6 +69,10 @@ const RECIPE_TEXT_KEYS: Record<string, { title: string; body: string }> = {
     title: "recipe.utilityService.title",
     body: "recipe.utilityService.body",
   },
+  "Connected app adapter": {
+    title: "recipe.connectedApp.title",
+    body: "recipe.connectedApp.body",
+  },
   "Автоматизация": {
     title: "recipe.automation.title",
     body: "recipe.automation.body",
