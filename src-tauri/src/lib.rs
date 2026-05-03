@@ -1773,6 +1773,7 @@ CURRENT BRIDGE / RUNTIME NOTES:\n\
 - You may use any structure: index.html + style.css + app.js + assets/. Reflex serves files through the reflexapp:// scheme with the correct MIME type.\n\
 - Runtime options: static (default), server (manifest.runtime=\"server\" + manifest.server.command; use Node/Python stdlib and listen on process.env.PORT), or external (manifest.runtime=\"external\" + manifest.external.url for embeddable external web apps).\n\
 - The runtime overlay is already injected into HTML. Prefer window.reflex* helpers; use raw postMessage only for unusual bridge calls.\n\
+- Do not use browser localStorage/sessionStorage directly for app state; sandboxed iframes can throw SecurityError. Use window.reflexStorageGet/Set/List/Delete. If a synchronous startup fallback is unavoidable, wrap browser storage access in try/catch and default cleanly.\n\
 - Keep or add multilingual user-facing UI when appropriate. Do not force Russian or English as the only UI language. Keep API names, permissions, ids, paths, and manifest keys as technical tokens.\n\
 - Any prompt strings sent to agent.ask/agent.task/agent.stream must be written in English. If user input is in another language, pass it as data inside an English instruction.\n\
 - Server-runtime apps require manifest permission `runtime.server.listen`; add it to manifest.permissions or request it with `window.reflexPermissionsRequest({{permissions:[\"runtime.server.listen\"], serverListen:true, reason}})` and show setup-required until approved.\n\
@@ -2371,6 +2372,7 @@ fn build_app_creation_prompt(
     p.push_str("UI/UX:\n");
     p.push_str("- User-facing UI must be multilingual-ready when the app has meaningful labels, states, or messages. At minimum, keep labels centralized so Russian and English can be supported without rewriting business logic.\n");
     p.push_str("- Choose the initial visible language from an explicit user request when provided; otherwise use the host/browser language when detectable. Do not hardcode Russian or English as the only UI language. Keep API names, permissions, paths, ids, and manifest keys as technical tokens.\n");
+    p.push_str("- Do not use browser localStorage/sessionStorage directly for app state or language settings. Sandboxed Reflex iframes may throw SecurityError on access. Use reflexStorageGet/reflexStorageSet for persistence; if a synchronous startup fallback is unavoidable, wrap browser storage in try/catch and continue with a safe default.\n");
     p.push_str("- Prompts sent through agent.ask, agent.task, or agent.stream must be written in English. If user-provided content is in another language, include it as data inside an English instruction.\n");
     p.push_str("- The first screen must be a working utility, not a landing page: immediately show data, a form, a dashboard, or action controls.\n");
     p.push_str("- Add clear controls and states: disabled, loading, empty, error, retry/refresh, and last synchronization when relevant.\n");
@@ -2632,6 +2634,7 @@ fn build_app_creation_prompt(
 
     p.push_str("LIMITATIONS:\n");
     p.push_str("- iframe sandbox=\"allow-scripts allow-forms\"; server runtime also gets allow-same-origin. Arbitrary external fetch may not work from the iframe, so use agent.ask or your own server runtime for dynamic data.\n");
+    p.push_str("- Browser localStorage/sessionStorage can be unavailable or throw SecurityError in static sandboxed iframes. Use Reflex storage bridge helpers for persistent state.\n");
     p.push_str("- schedule.steps cannot use dialog.*, clipboard.*, system.openPanel/openUrl/openPath/revealPath, apps.create/import/commit/commitPartial/delete/restore/revert/purge, apps.open, projects.open, or topics.open because these steps run without UI. apps.diff/status/server.status/server.logs/export are allowed for monitoring/backup automations when targetPath is explicit.\n\n");
     if let Some(skeleton) = template_skeleton(template) {
         p.push_str("TEMPLATE:\n");

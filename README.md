@@ -291,6 +291,8 @@ Core methods:
 - `storage.get({ key })`, `storage.set({ key, value })`.
 - `storage.list({ prefix? })` -> `{ keys, entries }`.
 - `storage.delete({ key })` or `storage.delete({ keys })` -> `{ ok, deleted, missing }`.
+  Prefer these bridge methods over browser `localStorage`/`sessionStorage`;
+  static sandboxed iframes can block browser storage.
 - `fs.read({ path })`, `fs.write({ path, content })` inside the app folder.
 - `fs.list({ path?, recursive?, includeHidden? })` -> `{ entries }`.
 - `fs.delete({ path, recursive? })` -> `{ ok, path, kind }`; deleting the app

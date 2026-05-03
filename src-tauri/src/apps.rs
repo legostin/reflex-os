@@ -998,6 +998,61 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   if (window.__reflexOverlay) return;
   window.__reflexOverlay = true;
 
+  // ---- browser storage guard ----
+  // Static sandboxed iframes may have an opaque origin where localStorage/sessionStorage
+  // throw SecurityError on access. Install a synchronous in-memory fallback so legacy
+  // generated apps do not crash before they can use the Reflex storage bridge.
+  function makeMemoryStorage() {
+    var data = Object.create(null);
+    return {
+      get length() { return Object.keys(data).length; },
+      key: function(index) {
+        var keys = Object.keys(data);
+        return keys[index] || null;
+      },
+      getItem: function(key) {
+        key = String(key);
+        return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null;
+      },
+      setItem: function(key, value) {
+        data[String(key)] = String(value);
+      },
+      removeItem: function(key) {
+        delete data[String(key)];
+      },
+      clear: function() {
+        data = Object.create(null);
+      }
+    };
+  }
+  function storageWorks(name) {
+    try {
+      var storage = window[name];
+      if (!storage) return false;
+      var probe = '__reflex_storage_probe__';
+      storage.setItem(probe, '1');
+      storage.removeItem(probe);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  function installStorageFallback(name) {
+    if (storageWorks(name)) return;
+    try {
+      Object.defineProperty(window, name, {
+        configurable: true,
+        enumerable: true,
+        value: makeMemoryStorage()
+      });
+      window['__reflex_' + name + '_fallback'] = true;
+    } catch (_) {
+      try { window['__reflex_' + name + '_fallback'] = true; } catch (_) {}
+    }
+  }
+  installStorageFallback('localStorage');
+  installStorageFallback('sessionStorage');
+
   // ---- runtime error capture ----
   function postError(payload) {
     try {
@@ -1735,7 +1790,7 @@ pub fn is_html_entry(path: &str, entry: &str) -> bool {
         || (p.is_empty() && (e == "index.html" || e.ends_with(".html")))
 }
 
-/// Inject the overlay script before </body>, or append at the end as a fallback.
+/// Inject the overlay script before app scripts so guards are active for top-level code.
 pub fn inject_overlay_into_html(html: &[u8]) -> Vec<u8> {
     let s = match std::str::from_utf8(html) {
         Ok(s) => s,
@@ -1745,7 +1800,11 @@ pub fn inject_overlay_into_html(html: &[u8]) -> Vec<u8> {
     if lower.contains("__reflexoverlay") {
         return s.as_bytes().to_vec();
     }
-    if let Some(pos) = lower.rfind("</body>") {
+    if let Some(pos) = lower
+        .find("<script")
+        .or_else(|| lower.find("</head>"))
+        .or_else(|| lower.rfind("</body>"))
+    {
         let mut out = String::with_capacity(s.len() + RUNTIME_OVERLAY_JS.len());
         out.push_str(&s[..pos]);
         out.push_str(RUNTIME_OVERLAY_JS);
@@ -1945,7 +2004,18 @@ mod proxy_tests {
         let body = String::from_utf8(parsed.body).expect("utf8");
         assert_eq!(parsed.status, 200);
         assert!(body.contains("__reflexOverlay"));
+        assert!(body.contains("installStorageFallback('localStorage')"));
         assert!(body.contains("<body>ok"));
+    }
+
+    #[test]
+    fn overlay_injects_before_app_scripts() {
+        let html = br#"<html><head></head><body><script src="app.js"></script></body></html>"#;
+        let body = String::from_utf8(inject_overlay_into_html(html)).expect("utf8");
+        let overlay_pos = body.find("__reflexOverlay").expect("overlay");
+        let script_pos = body.find(r#"<script src="app.js">"#).expect("app script");
+
+        assert!(overlay_pos < script_pos);
     }
 
     #[test]
