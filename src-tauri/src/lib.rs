@@ -1081,90 +1081,240 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         <h1 id="title">Connected app</h1>
         <p id="notes"></p>
       </div>
-      <div id="status" class="status">Ready</div>
+      <div id="status" class="status" data-i18n="ready">Ready</div>
     </header>
 
     <div class="actions">
-      <button class="primary" id="open">Open in Reflex Browser</button>
-      <button id="read">Read visible text</button>
-      <button id="summarize">Summarize visible text</button>
-      <button id="learn">Learn interface</button>
-      <button id="external">Open system browser</button>
+      <button class="primary" id="open" data-i18n="openReflexBrowser">Open in Reflex Browser</button>
+      <button id="read" data-i18n="readVisibleText">Read visible text</button>
+      <button id="summarize" data-i18n="summarizeVisibleText">Summarize visible text</button>
+      <button id="learn" data-i18n="learnInterface">Learn interface</button>
+      <button id="external" data-i18n="openSystemBrowser">Open system browser</button>
     </div>
 
     <section>
-      <h2>Bridge profile</h2>
+      <h2 data-i18n="bridgeProfile">Bridge profile</h2>
       <div class="meta">
-        <div class="chip"><strong>Provider</strong><span id="provider"></span></div>
-        <div class="chip"><strong>Service URL</strong><span id="serviceUrl"></span></div>
-        <div class="chip"><strong>Last tab</strong><span id="tabId">none</span></div>
+        <div class="chip"><strong data-i18n="provider">Provider</strong><span id="provider"></span></div>
+        <div class="chip"><strong data-i18n="serviceUrl">Service URL</strong><span id="serviceUrl"></span></div>
+        <div class="chip"><strong data-i18n="lastTab">Last tab</strong><span id="tabId" data-i18n="none">none</span></div>
       </div>
     </section>
 
     <section>
-      <h2>MCP bridge</h2>
+      <h2 data-i18n="mcpBridge">MCP bridge</h2>
       <div class="form-grid">
         <label class="field">
-          <span>Server name</span>
+          <span data-i18n="serverName">Server name</span>
           <input id="mcpName" autocomplete="off" />
         </label>
         <label class="field">
-          <span>Command</span>
+          <span data-i18n="command">Command</span>
           <input id="mcpCommand" autocomplete="off" />
         </label>
       </div>
       <label class="field">
-        <span>Args JSON array</span>
+        <span data-i18n="argsJsonArray">Args JSON array</span>
         <textarea id="mcpArgs" spellcheck="false"></textarea>
       </label>
       <label class="field">
-        <span>Env JSON object</span>
+        <span data-i18n="envJsonObject">Env JSON object</span>
         <textarea id="mcpEnv" spellcheck="false"></textarea>
       </label>
       <div class="actions">
-        <button id="saveMcp">Save MCP config</button>
-        <button id="refreshMcp">Refresh MCP status</button>
-        <button id="checkMcp">Check MCP connection</button>
+        <button id="saveMcp" data-i18n="saveMcpConfig">Save MCP config</button>
+        <button id="refreshMcp" data-i18n="refreshMcpStatus">Refresh MCP status</button>
+        <button id="checkMcp" data-i18n="checkMcpConnection">Check MCP connection</button>
       </div>
       <label class="field">
-        <span>MCP agent query</span>
+        <span data-i18n="mcpAgentQuery">MCP agent query</span>
         <textarea id="mcpQuery" spellcheck="false"></textarea>
       </label>
       <div class="actions">
-        <button id="runMcpQuery">Run MCP query</button>
+        <button id="runMcpQuery" data-i18n="runMcpQuery">Run MCP query</button>
       </div>
     </section>
 
     <section id="telegramMessagesSection" hidden>
-      <h2>Telegram messages</h2>
-      <p>Reads only messages available through the configured Telegram MCP server.</p>
+      <h2 data-i18n="telegramMessages">Telegram messages</h2>
+      <p data-i18n="telegramMessagesHint">Reads only messages available through the configured Telegram MCP server.</p>
       <div class="form-grid">
         <label class="field">
-          <span>Chat filter</span>
-          <input id="telegramChat" autocomplete="off" placeholder="optional chat title, username, or id" />
+          <span data-i18n="chatFilter">Chat filter</span>
+          <input id="telegramChat" autocomplete="off" placeholder="optional chat title, username, or id" data-i18n-placeholder="chatFilterPlaceholder" />
         </label>
         <label class="field">
-          <span>Limit</span>
+          <span data-i18n="limit">Limit</span>
           <input id="telegramLimit" autocomplete="off" inputmode="numeric" placeholder="20" />
         </label>
       </div>
       <div class="actions">
-        <button class="primary" id="readTelegramMessages">Read recent messages</button>
+        <button class="primary" id="readTelegramMessages" data-i18n="readRecentMessages">Read recent messages</button>
       </div>
     </section>
 
     <section>
-      <h2>Latest output</h2>
-      <pre id="output">Open the service, log in if needed, then read or summarize the visible session.</pre>
+      <h2 data-i18n="latestOutput">Latest output</h2>
+      <pre id="output" data-i18n="initialOutput">Open the service, log in if needed, then read or summarize the visible session.</pre>
     </section>
   </main>
 
   <script>
     const config = __CONNECTED_APP_CONFIG__;
     const state = { tabId: null, busy: false };
+    const dictionaries = {
+      en: {
+        connectedApp: "Connected app",
+        ready: "Ready",
+        openReflexBrowser: "Open in Reflex Browser",
+        readVisibleText: "Read visible text",
+        summarizeVisibleText: "Summarize visible text",
+        learnInterface: "Learn interface",
+        openSystemBrowser: "Open system browser",
+        bridgeProfile: "Bridge profile",
+        provider: "Provider",
+        serviceUrl: "Service URL",
+        lastTab: "Last tab",
+        none: "none",
+        opened: "opened",
+        unknown: "unknown",
+        mcpBridge: "MCP bridge",
+        serverName: "Server name",
+        command: "Command",
+        argsJsonArray: "Args JSON array",
+        envJsonObject: "Env JSON object",
+        saveMcpConfig: "Save MCP config",
+        refreshMcpStatus: "Refresh MCP status",
+        checkMcpConnection: "Check MCP connection",
+        mcpAgentQuery: "MCP agent query",
+        runMcpQuery: "Run MCP query",
+        telegramMessages: "Telegram messages",
+        telegramMessagesHint: "Reads only messages available through the configured Telegram MCP server.",
+        chatFilter: "Chat filter",
+        chatFilterPlaceholder: "optional chat title, username, or id",
+        limit: "Limit",
+        readRecentMessages: "Read recent messages",
+        latestOutput: "Latest output",
+        initialOutput: "Open the service, log in if needed, then read or summarize the visible session.",
+        savingMcpConfig: "Saving MCP config...",
+        mcpCommandRequired: "MCP command is required",
+        argsMustBeArray: "Args must be a JSON array",
+        envMustBeObject: "Env must be a JSON object",
+        mcpConfigSaved: "MCP config saved",
+        mcpSaveFailed: "MCP save failed",
+        readingMcpStatus: "Reading MCP status...",
+        mcpConfigFound: "MCP config found",
+        mcpConfigMissing: "MCP config missing",
+        mcpStatusFailed: "MCP status failed",
+        checkingMcpConnection: "Checking MCP connection...",
+        mcpCheckFinished: "MCP check finished",
+        mcpCheckFailed: "MCP check failed",
+        runningMcpQuery: "Running MCP query...",
+        mcpQueryRequired: "MCP query is required",
+        mcpQueryFinished: "MCP query finished",
+        mcpQueryFailed: "MCP query failed",
+        readingTelegramMessages: "Reading Telegram messages...",
+        limitPositiveInteger: "Limit must be a positive integer",
+        telegramMessagesLoaded: "Telegram messages loaded",
+        telegramReadFailed: "Telegram read failed",
+        openingService: "Opening service...",
+        serviceOpened: "Service opened",
+        openFailed: "Open failed",
+        readingVisibleText: "Reading visible text...",
+        noBrowserTab: "No browser tab available",
+        visibleTextCaptured: "Visible text captured",
+        readFailed: "Read failed",
+        summarizing: "Summarizing...",
+        summaryReady: "Summary ready",
+        summaryFailed: "Summary failed",
+        learningInterface: "Learning interface...",
+        interfaceProfileSaved: "Interface profile saved",
+        learningFailed: "Learning failed"
+      },
+      ru: {
+        connectedApp: "Подключённое приложение",
+        ready: "Готово",
+        openReflexBrowser: "Открыть в браузере Reflex",
+        readVisibleText: "Считать видимый текст",
+        summarizeVisibleText: "Суммировать видимый текст",
+        learnInterface: "Изучить интерфейс",
+        openSystemBrowser: "Открыть системный браузер",
+        bridgeProfile: "Профиль bridge",
+        provider: "Провайдер",
+        serviceUrl: "URL сервиса",
+        lastTab: "Последняя вкладка",
+        none: "нет",
+        opened: "открыто",
+        unknown: "неизвестно",
+        mcpBridge: "MCP bridge",
+        serverName: "Имя сервера",
+        command: "Команда",
+        argsJsonArray: "Args как JSON-массив",
+        envJsonObject: "Env как JSON-объект",
+        saveMcpConfig: "Сохранить MCP",
+        refreshMcpStatus: "Обновить статус MCP",
+        checkMcpConnection: "Проверить MCP",
+        mcpAgentQuery: "MCP-запрос агента",
+        runMcpQuery: "Запустить MCP-запрос",
+        telegramMessages: "Сообщения Telegram",
+        telegramMessagesHint: "Читает только сообщения, доступные через настроенный Telegram MCP server.",
+        chatFilter: "Фильтр чата",
+        chatFilterPlaceholder: "необязательное название, username или id чата",
+        limit: "Лимит",
+        readRecentMessages: "Считать последние сообщения",
+        latestOutput: "Последний вывод",
+        initialOutput: "Открой сервис, войди при необходимости, затем считай или суммируй видимую сессию.",
+        savingMcpConfig: "Сохраняю MCP...",
+        mcpCommandRequired: "Команда MCP обязательна",
+        argsMustBeArray: "Args должен быть JSON-массивом",
+        envMustBeObject: "Env должен быть JSON-объектом",
+        mcpConfigSaved: "MCP сохранён",
+        mcpSaveFailed: "Не удалось сохранить MCP",
+        readingMcpStatus: "Читаю статус MCP...",
+        mcpConfigFound: "MCP настроен",
+        mcpConfigMissing: "MCP не настроен",
+        mcpStatusFailed: "Не удалось прочитать статус MCP",
+        checkingMcpConnection: "Проверяю MCP...",
+        mcpCheckFinished: "Проверка MCP завершена",
+        mcpCheckFailed: "Проверка MCP не удалась",
+        runningMcpQuery: "Запускаю MCP-запрос...",
+        mcpQueryRequired: "MCP-запрос обязателен",
+        mcpQueryFinished: "MCP-запрос завершён",
+        mcpQueryFailed: "MCP-запрос не удался",
+        readingTelegramMessages: "Читаю сообщения Telegram...",
+        limitPositiveInteger: "Лимит должен быть положительным целым числом",
+        telegramMessagesLoaded: "Сообщения Telegram загружены",
+        telegramReadFailed: "Чтение Telegram не удалось",
+        openingService: "Открываю сервис...",
+        serviceOpened: "Сервис открыт",
+        openFailed: "Открыть не удалось",
+        readingVisibleText: "Читаю видимый текст...",
+        noBrowserTab: "Нет доступной вкладки браузера",
+        visibleTextCaptured: "Видимый текст сохранён",
+        readFailed: "Чтение не удалось",
+        summarizing: "Суммирую...",
+        summaryReady: "Сводка готова",
+        summaryFailed: "Сводка не удалась",
+        learningInterface: "Изучаю интерфейс...",
+        interfaceProfileSaved: "Профиль интерфейса сохранён",
+        learningFailed: "Изучение не удалось"
+      }
+    };
+    function detectLocale() {
+      let setting = "auto";
+      try {
+        setting = window.localStorage.getItem("reflex-ui-language") || "auto";
+      } catch {}
+      if (setting === "en" || setting === "ru") return setting;
+      const preferred = (navigator.languages && navigator.languages[0]) || navigator.language || "";
+      return preferred.toLowerCase().startsWith("ru") ? "ru" : "en";
+    }
+    const locale = detectLocale();
+    const t = (key) => (dictionaries[locale] && dictionaries[locale][key]) || dictionaries.en[key] || key;
 
     const el = (id) => document.getElementById(id);
     const setStatus = (text) => { el("status").textContent = text; };
+    const setStatusKey = (key) => setStatus(t(key));
     const setOutput = (value) => {
       el("output").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
     };
@@ -1172,6 +1322,16 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       state.busy = busy;
       for (const button of document.querySelectorAll("button")) button.disabled = busy;
     };
+    function applyI18n() {
+      document.documentElement.lang = locale;
+      document.title = t("connectedApp");
+      for (const node of document.querySelectorAll("[data-i18n]")) {
+        node.textContent = t(node.dataset.i18n);
+      }
+      for (const node of document.querySelectorAll("[data-i18n-placeholder]")) {
+        node.setAttribute("placeholder", t(node.dataset.i18nPlaceholder));
+      }
+    }
 
     function textFromReadResult(value) {
       if (typeof value === "string") return value;
@@ -1218,16 +1378,16 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
 
     async function saveMcpConfig() {
       setBusy(true);
-      setStatus("Saving MCP config...");
+      setStatusKey("savingMcpConfig");
       try {
         const name = el("mcpName").value.trim() || config.provider;
         const command = el("mcpCommand").value.trim();
-        if (!command) throw new Error("MCP command is required");
+        if (!command) throw new Error(t("mcpCommandRequired"));
         const args = parseJsonField("mcpArgs", []);
         const env = parseJsonField("mcpEnv", {});
-        if (!Array.isArray(args)) throw new Error("Args must be a JSON array");
+        if (!Array.isArray(args)) throw new Error(t("argsMustBeArray"));
         if (!env || Array.isArray(env) || typeof env !== "object") {
-          throw new Error("Env must be a JSON object");
+          throw new Error(t("envMustBeObject"));
         }
         const result = await window.reflexProjectMcpUpsert({
           name,
@@ -1246,9 +1406,9 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
           notes: config.notes
         });
         setOutput(result);
-        setStatus("MCP config saved");
+        setStatusKey("mcpConfigSaved");
       } catch (error) {
-        setStatus("MCP save failed");
+        setStatusKey("mcpSaveFailed");
         setOutput(String(error));
       } finally {
         setBusy(false);
@@ -1257,13 +1417,13 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
 
     async function refreshMcpStatus() {
       setBusy(true);
-      setStatus("Reading MCP status...");
+      setStatusKey("readingMcpStatus");
       try {
         const result = await window.reflexIntegrationMcpStatus({ includeConfig: true });
         setOutput(result);
-        setStatus(result.configured ? "MCP config found" : "MCP config missing");
+        setStatusKey(result.configured ? "mcpConfigFound" : "mcpConfigMissing");
       } catch (error) {
-        setStatus("MCP status failed");
+        setStatusKey("mcpStatusFailed");
         setOutput(String(error));
       } finally {
         setBusy(false);
@@ -1272,7 +1432,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
 
     async function checkMcpConnection() {
       setBusy(true);
-      setStatus("Checking MCP connection...");
+      setStatusKey("checkingMcpConnection");
       try {
         const result = await window.reflexAppsInvoke(
           config.appId,
@@ -1280,9 +1440,9 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
           {}
         );
         setOutput(result);
-        setStatus("MCP check finished");
+        setStatusKey("mcpCheckFinished");
       } catch (error) {
-        setStatus("MCP check failed");
+        setStatusKey("mcpCheckFailed");
         setOutput(String(error));
       } finally {
         setBusy(false);
@@ -1291,18 +1451,18 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
 
     async function runMcpAgentQuery() {
       setBusy(true);
-      setStatus("Running MCP query...");
+      setStatusKey("runningMcpQuery");
       try {
         const query = el("mcpQuery").value.trim();
-        if (!query) throw new Error("MCP query is required");
+        if (!query) throw new Error(t("mcpQueryRequired"));
         const result = await window.reflexIntegrationMcpQuery({
           query,
           serviceUrl: config.serviceUrl
         });
         setOutput(result);
-        setStatus("MCP query finished");
+        setStatusKey("mcpQueryFinished");
       } catch (error) {
-        setStatus("MCP query failed");
+        setStatusKey("mcpQueryFailed");
         setOutput(String(error));
       } finally {
         setBusy(false);
@@ -1311,7 +1471,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
 
     async function readTelegramMessages() {
       setBusy(true);
-      setStatus("Reading Telegram messages...");
+      setStatusKey("readingTelegramMessages");
       try {
         const chat = el("telegramChat").value.trim();
         const rawLimit = el("telegramLimit").value.trim();
@@ -1320,7 +1480,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         if (rawLimit) {
           const limit = Number.parseInt(rawLimit, 10);
           if (!Number.isFinite(limit) || limit <= 0) {
-            throw new Error("Limit must be a positive integer");
+            throw new Error(t("limitPositiveInteger"));
           }
           params.limit = limit;
         }
@@ -1330,9 +1490,9 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
           params
         );
         setOutput(result);
-        setStatus("Telegram messages loaded");
+        setStatusKey("telegramMessagesLoaded");
       } catch (error) {
-        setStatus("Telegram read failed");
+        setStatusKey("telegramReadFailed");
         setOutput(String(error));
       } finally {
         setBusy(false);
@@ -1370,18 +1530,18 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
 
     async function openService() {
       setBusy(true);
-      setStatus("Opening service...");
+      setStatusKey("openingService");
       try {
         await window.reflexBrowserInit({ headless: true });
         await window.reflexSystemOpenPanel({ panel: "browser" });
         const opened = await window.reflexBrowserOpen(config.serviceUrl);
         state.tabId = opened.tab_id || opened.tabId || null;
-        el("tabId").textContent = state.tabId || "opened";
+        el("tabId").textContent = state.tabId || t("opened");
         if (state.tabId) await window.reflexStorageSet("lastTabId", state.tabId);
         setOutput(opened);
-        setStatus("Service opened");
+        setStatusKey("serviceOpened");
       } catch (error) {
-        setStatus("Open failed");
+        setStatusKey("openFailed");
         setOutput(String(error));
       } finally {
         setBusy(false);
@@ -1397,7 +1557,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       }) || tabs[0];
       if (match) {
         state.tabId = match.tab_id || match.tabId;
-        el("tabId").textContent = state.tabId || "unknown";
+        el("tabId").textContent = state.tabId || t("unknown");
         if (state.tabId) await window.reflexStorageSet("lastTabId", state.tabId);
       }
       return state.tabId;
@@ -1405,7 +1565,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
 
     async function readVisibleText() {
       setBusy(true);
-      setStatus("Reading visible text...");
+      setStatusKey("readingVisibleText");
       try {
         await window.reflexBrowserInit({ headless: true });
         let tabId = await resolveTabId();
@@ -1413,7 +1573,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
           await openService();
           tabId = await resolveTabId();
         }
-        if (!tabId) throw new Error("No browser tab available");
+        if (!tabId) throw new Error(t("noBrowserTab"));
         try {
           await window.reflexBrowserWaitFor({ tabId, selector: "body", timeoutMs: 15000 });
         } catch (error) {
@@ -1435,10 +1595,10 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
           text_length: text.length
         });
         setOutput(text || result);
-        setStatus("Visible text captured");
+        setStatusKey("visibleTextCaptured");
         return snapshot;
       } catch (error) {
-        setStatus("Read failed");
+        setStatusKey("readFailed");
         setOutput(String(error));
         throw error;
       } finally {
@@ -1448,16 +1608,16 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
 
     async function summarizeVisibleText() {
       setBusy(true);
-      setStatus("Summarizing...");
+      setStatusKey("summarizing");
       try {
         const snapshot = await readVisibleText();
         setBusy(true);
         const prompt = "Summarize the visible web-session text below. Only use visible content. If it appears to be a chat app, extract visible chats/messages and names when present. Do not claim access to hidden messages. Return concise JSON with summary, visible_items, and warnings.\n\nVISIBLE_TEXT:\n" + snapshot.text;
         const result = await window.reflexAgentTask({ prompt, includeContext: false });
         setOutput(result);
-        setStatus("Summary ready");
+        setStatusKey("summaryReady");
       } catch (error) {
-        setStatus("Summary failed");
+        setStatusKey("summaryFailed");
         setOutput(String(error));
       } finally {
         setBusy(false);
@@ -1466,7 +1626,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
 
     async function learnInterface() {
       setBusy(true);
-      setStatus("Learning interface...");
+      setStatusKey("learningInterface");
       try {
         await window.reflexBrowserInit({ headless: true });
         let tabId = await resolveTabId();
@@ -1475,7 +1635,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
           setBusy(true);
           tabId = await resolveTabId();
         }
-        if (!tabId) throw new Error("No browser tab available");
+        if (!tabId) throw new Error(t("noBrowserTab"));
         try {
           await window.reflexBrowserWaitFor({ tabId, selector: "body", timeoutMs: 15000 });
         } catch (error) {
@@ -1486,15 +1646,16 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
           serviceUrl: config.serviceUrl
         });
         setOutput(profile);
-        setStatus("Interface profile saved");
+        setStatusKey("interfaceProfileSaved");
       } catch (error) {
-        setStatus("Learning failed");
+        setStatusKey("learningFailed");
         setOutput(String(error));
       } finally {
         setBusy(false);
       }
     }
 
+    applyI18n();
     el("open").addEventListener("click", openService);
     el("read").addEventListener("click", () => void readVisibleText());
     el("summarize").addEventListener("click", summarizeVisibleText);
@@ -4281,6 +4442,8 @@ mod connected_app_tests {
         assert!(html.contains("Check MCP connection"));
         assert!(html.contains("Read recent messages"));
         assert!(html.contains("Learn interface"));
+        assert!(html.contains("reflex-ui-language"));
+        assert!(html.contains("Считать последние сообщения"));
         assert!(html.contains("reflexProjectMcpUpsert"));
         assert!(html.contains("reflexIntegrationMcpStatus"));
         assert!(html.contains("reflexIntegrationMcpQuery"));
