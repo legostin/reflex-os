@@ -192,6 +192,9 @@ text. Raw visible text is exposed only through the non-public
 `read_visible_session` action or an explicit panel click. The installed utility
 also has scoped `mcp.read`/`mcp.write` permission on its own app project and a
 panel form that writes provider MCP server config through `project.mcp.upsert`.
+The panel and public `learn_visible_interface` action can read the visible
+Browser outline/text, ask the agent for a data/workflow profile, and persist it
+into app storage plus `manifest.integration.data_model.learned_profile`.
 
 ## App Bridge API
 

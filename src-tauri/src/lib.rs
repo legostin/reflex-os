@@ -403,6 +403,14 @@ fn install_connected_app(
         });
 
     let storage_key = format!("connected.{}.latestVisibleSession", spec.provider);
+    let learned_key = format!("connected.{}.learnedInterface", spec.provider);
+    let mut learned_capabilities = spec.capabilities.clone();
+    if !learned_capabilities
+        .iter()
+        .any(|capability| capability == "interface.visible_session.learn")
+    {
+        learned_capabilities.push("interface.visible_session.learn".into());
+    }
     let mut manifest = apps::AppManifest {
         id: spec.app_id.clone(),
         name: spec.name.clone(),
@@ -522,6 +530,78 @@ fn install_connected_app(
                     params: serde_json::json!({ "key": storage_key }),
                     save_as: Some("snapshot".into()),
                 }],
+            },
+            apps::ActionDef {
+                id: "learn_visible_interface".into(),
+                name: "Learn visible interface".into(),
+                description: Some(
+                    "Inspect visible page text/outline and save a learned adapter profile.".into(),
+                ),
+                params_schema: None,
+                public: true,
+                steps: vec![
+                    apps::Step {
+                        method: "browser.init".into(),
+                        params: serde_json::json!({ "headless": true }),
+                        save_as: Some("browser".into()),
+                    },
+                    apps::Step {
+                        method: "browser.open".into(),
+                        params: serde_json::json!({ "url": spec.url.clone() }),
+                        save_as: Some("opened".into()),
+                    },
+                    apps::Step {
+                        method: "browser.waitFor".into(),
+                        params: serde_json::json!({
+                            "tabId": "{{steps.opened.tab_id}}",
+                            "selector": "body",
+                            "timeoutMs": 15000
+                        }),
+                        save_as: Some("page_ready".into()),
+                    },
+                    apps::Step {
+                        method: "browser.readText".into(),
+                        params: serde_json::json!({ "tabId": "{{steps.opened.tab_id}}" }),
+                        save_as: Some("visible_text".into()),
+                    },
+                    apps::Step {
+                        method: "browser.readOutline".into(),
+                        params: serde_json::json!({ "tabId": "{{steps.opened.tab_id}}" }),
+                        save_as: Some("outline".into()),
+                    },
+                    apps::Step {
+                        method: "agent.task".into(),
+                        params: serde_json::json!({
+                            "includeContext": false,
+                            "prompt": "Build a connected-app adapter profile from the visible web UI below. Use only visible text and outline. Infer data entities, user actions, likely selectors or text anchors, safe automation workflows, and MCP opportunities. Do not claim access to hidden data. Return concise JSON with provider, entities, actions, workflows, selectors, data_access, mcp_bridge, risks, and next_steps.\n\nVISIBLE_TEXT:\n{{steps.visible_text}}\n\nOUTLINE:\n{{steps.outline}}"
+                        }),
+                        save_as: Some("learned".into()),
+                    },
+                    apps::Step {
+                        method: "storage.set".into(),
+                        params: serde_json::json!({
+                            "key": learned_key,
+                            "value": {
+                                "provider": spec.provider.clone(),
+                                "service_url": spec.url.clone(),
+                                "profile": "{{steps.learned.result}}"
+                            }
+                        }),
+                        save_as: Some("stored".into()),
+                    },
+                    apps::Step {
+                        method: "integration.update".into(),
+                        params: serde_json::json!({
+                            "integration": {
+                                "capabilities": learned_capabilities,
+                                "data_model": {
+                                    "learned_profile": "{{steps.learned.result}}"
+                                }
+                            }
+                        }),
+                        save_as: Some("integration".into()),
+                    },
+                ],
             },
         ],
         widgets: Vec::new(),
@@ -743,6 +823,7 @@ fn connected_app_index_html(spec: &ConnectedAppSpec) -> Result<String, String> {
         "notes": spec.notes.clone(),
         "recommendedMcp": spec.mcp.clone(),
         "storageKey": format!("connected.{}.latestVisibleSession", spec.provider),
+        "learnedKey": format!("connected.{}.learnedInterface", spec.provider),
         "eventTopic": format!("connected.{}.visible_session", spec.provider),
     });
     let config_json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
@@ -932,6 +1013,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       <button class="primary" id="open">Open in Reflex Browser</button>
       <button id="read">Read visible text</button>
       <button id="summarize">Summarize visible text</button>
+      <button id="learn">Learn interface</button>
       <button id="external">Open system browser</button>
     </div>
 
@@ -1234,9 +1316,44 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       }
     }
 
+    async function learnInterface() {
+      setBusy(true);
+      setStatus("Learning interface...");
+      try {
+        const snapshot = await readVisibleText();
+        setBusy(true);
+        const tabId = snapshot.tab_id || state.tabId;
+        const outline = tabId ? await window.reflexBrowserReadOutline(tabId) : null;
+        const prompt = "Build a connected-app adapter profile from the visible web UI below. Use only visible text and outline. Infer data entities, user actions, likely selectors or text anchors, safe automation workflows, and MCP opportunities. Do not claim access to hidden data. Return concise JSON with provider, entities, actions, workflows, selectors, data_access, mcp_bridge, risks, and next_steps.\n\nPROVIDER:\n" + config.provider + "\n\nSERVICE_URL:\n" + config.serviceUrl + "\n\nVISIBLE_TEXT:\n" + snapshot.text + "\n\nOUTLINE:\n" + JSON.stringify(outline);
+        const learned = await window.reflexAgentTask({ prompt, includeContext: false });
+        const profile = {
+          provider: config.provider,
+          service_url: config.serviceUrl,
+          learned_at_ms: Date.now(),
+          profile: learned.result || learned
+        };
+        await window.reflexStorageSet(config.learnedKey, profile);
+        await window.reflexIntegrationUpdate({
+          provider: config.provider,
+          display_name: config.displayName,
+          capabilities: Array.from(new Set([...(config.capabilities || []), "interface.visible_session.learn"])),
+          data_model: { learned_profile: profile },
+          notes: config.notes
+        });
+        setOutput(profile);
+        setStatus("Interface profile saved");
+      } catch (error) {
+        setStatus("Learning failed");
+        setOutput(String(error));
+      } finally {
+        setBusy(false);
+      }
+    }
+
     el("open").addEventListener("click", openService);
     el("read").addEventListener("click", () => void readVisibleText());
     el("summarize").addEventListener("click", summarizeVisibleText);
+    el("learn").addEventListener("click", learnInterface);
     el("external").addEventListener("click", () => window.reflexSystemOpenUrl(config.openUrl || config.serviceUrl));
     el("saveMcp").addEventListener("click", saveMcpConfig);
     el("refreshMcp").addEventListener("click", refreshMcpStatus);
