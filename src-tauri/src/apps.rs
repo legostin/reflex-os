@@ -583,6 +583,21 @@ pub fn resolve_permission_request_in_manifest(
     Ok(())
 }
 
+pub fn manifest_has_permission(manifest: &AppManifest, needed: &str) -> bool {
+    manifest.permissions.iter().any(|grant| {
+        grant == "*"
+            || grant == needed
+            || grant
+                .strip_suffix(":*")
+                .map(|base| {
+                    needed == base
+                        || needed.starts_with(&format!("{base}:"))
+                        || needed.starts_with(&format!("{base}."))
+                })
+                .unwrap_or(false)
+    })
+}
+
 fn permission_request_matches(existing: &PermissionRequest, request: &PermissionRequest) -> bool {
     existing.status == "pending"
         && same_string_set(&existing.permissions, &request.permissions)
@@ -2015,6 +2030,19 @@ mod proxy_tests {
         assert!(created_first);
         assert!(!created_second);
         assert_eq!(manifest.permission_requests.len(), 1);
+    }
+
+    #[test]
+    fn manifest_permission_matching_supports_runtime_wildcards() {
+        let mut manifest = test_manifest();
+        manifest.permissions = vec!["runtime.server:*".into()];
+        assert!(manifest_has_permission(&manifest, "runtime.server.listen"));
+
+        manifest.permissions = vec!["runtime:*".into()];
+        assert!(manifest_has_permission(&manifest, "runtime.server.listen"));
+
+        manifest.permissions = vec!["network.allow".into()];
+        assert!(!manifest_has_permission(&manifest, "runtime.server.listen"));
     }
 }
 

@@ -184,6 +184,18 @@ async fn spawn_child(
     app_id: &str,
 ) -> Result<ServerEntry, String> {
     let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    if !apps::manifest_has_permission(&manifest, "runtime.server.listen") {
+        record_server_permission_request(
+            app,
+            app_id,
+            "This server-runtime utility needs permission to listen on a local development port."
+                .into(),
+        );
+        return Err(
+            "runtime.server.listen permission is required; approve the pending permission request and restart the utility"
+                .into(),
+        );
+    }
     let server_cfg = manifest
         .server
         .ok_or_else(|| "manifest.server is missing".to_string())?;
@@ -193,13 +205,12 @@ async fn spawn_child(
     let dir = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
     let port = pick_free_port().map_err(|e| {
         if e.kind() == std::io::ErrorKind::PermissionDenied {
-            record_server_permission_request(
-                app,
-                app_id,
-                format!("Local server runtime could not bind a development port: {e}"),
-            );
+            format!(
+                "pick_free_port: {e}; host sandbox still denies local listen even though manifest grants runtime.server.listen"
+            )
+        } else {
+            format!("pick_free_port: {e}")
         }
-        format!("pick_free_port: {e}; a runtime permission request was added if local listen access is blocked")
     })?;
 
     let mut cmd = Command::new(&server_cfg.command[0]);
@@ -240,16 +251,7 @@ async fn spawn_child(
     // Note: on failure here, ServerEntry is dropped → child dropped → kill_on_drop kicks in.
     let timeout = server_cfg.ready_timeout_ms.unwrap_or(15_000);
     if let Err(e) = wait_port_open(port, timeout).await {
-        record_server_permission_request(
-            app,
-            app_id,
-            format!(
-                "Local server runtime did not become reachable on 127.0.0.1:{port}: {e}"
-            ),
-        );
-        return Err(format!(
-            "{e}; a runtime permission request was added if local listen access is blocked"
-        ));
+        return Err(e);
     }
 
     Ok(ServerEntry {

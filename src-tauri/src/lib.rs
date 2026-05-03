@@ -1775,6 +1775,7 @@ CURRENT BRIDGE / RUNTIME NOTES:\n\
 - The runtime overlay is already injected into HTML. Prefer window.reflex* helpers; use raw postMessage only for unusual bridge calls.\n\
 - Keep or add multilingual user-facing UI when appropriate. Do not force Russian or English as the only UI language. Keep API names, permissions, ids, paths, and manifest keys as technical tokens.\n\
 - Any prompt strings sent to agent.ask/agent.task/agent.stream must be written in English. If user input is in another language, pass it as data inside an English instruction.\n\
+- Server-runtime apps require manifest permission `runtime.server.listen`; add it to manifest.permissions or request it with `window.reflexPermissionsRequest({{permissions:[\"runtime.server.listen\"], serverListen:true, reason}})` and show setup-required until approved.\n\
 - After revising, check empty/loading/error/success states and main control accessibility. The first screen must remain a real usable tool, not a feature description.\n\
 - Available bridge methods: bridge.catalog, system.context, system.openPanel, system.openUrl/openPath/revealPath, logs.write/list, manifest.get/update, integration.catalog/profile/update/learnVisible/mcpStatus/mcpQuery, permissions.*, network.*, widgets.*, actions.*, agent.*, storage.*, fs.*, clipboard.*, projects.*, topics.*, skills.*, mcp.*, project.files.*, browser.*, memory.*, scheduler.*, dialog.*, notify.show, net.fetch, events.*, apps.*.\n\
 - Overlay helpers include reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexIntegrationCatalog/Profile/Update/LearnVisible/McpStatus/McpQuery, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjects*, reflexTopics*, reflexSkills*, reflexMcp*, reflexProjectFiles*, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexApps*, reflexEvent*.\n\
@@ -2300,6 +2301,7 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
         "node-server" => Some(
             "NODE-SERVER TEMPLATE:\n\
 - Use runtime=server with command=[\"node\", \"server.js\"].\n\
+- Add `runtime.server.listen` to manifest.permissions, or render setup-required and request it through `window.reflexPermissionsRequest` before expecting the host to start the server.\n\
 - In server.js, use Node.js stdlib `http` and listen on `process.env.PORT`.\n\
 - Basic routes: GET / -> index.html via fs.readFileSync, GET /api/... -> JSON.\n\
 - index.html calls /api through fetch; same-origin works because server runtime gets allow-same-origin sandbox.\n",
@@ -2343,6 +2345,7 @@ fn build_app_creation_prompt(
     p.push_str("2) server: when opened, Reflex starts a local web server from manifest.server.command and passes the port through REFLEX_PORT and PORT. The iframe points to reflexserver://<app-id>/, which proxies the local server and injects the overlay.\n");
     p.push_str("   - manifest: { runtime: \"server\", server: { command: [\"node\", \"server.js\"], ready_timeout_ms: 15000 } }\n");
     p.push_str("   - Process cwd is the app directory. The server MUST listen on process.env.PORT or REFLEX_PORT.\n");
+    p.push_str("   - Server runtime requires manifest.permissions entry \"runtime.server.listen\". If it is missing, call permissions.request({permissions:[\"runtime.server.listen\"], serverListen:true, reason}) and show setup-required until approved.\n");
     p.push_str("   - Dependencies must be vendored into the app directory or be stdlib. Do not assume global npm install. Prefer plain Node.js stdlib (http/fs/path) or Python stdlib (http.server/socketserver).\n");
     p.push_str("   - entry can be omitted for server runtime because it is not used.\n\n");
     p.push_str("3) external: the iframe points directly to manifest.external.url. Use this only when the external web app can be framed. The Reflex overlay is not injected into cross-origin pages, so data operations must live in a companion UI, manifest.actions, Browser bridge workflows, or MCP.\n");

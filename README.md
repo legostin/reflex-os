@@ -394,7 +394,9 @@ Core methods:
 - `apps.server.status({ app_id })`, `apps.server.logs({ app_id })`,
   `apps.server.start({ app_id })`, `apps.server.stop({ app_id })`, and
   `apps.server.restart({ app_id })`; require `apps.manage` or `apps:*` and
-  control server-runtime apps.
+  control server-runtime apps. Server-runtime apps must grant
+  `runtime.server.listen`; if absent, the host creates a pending permission
+  request before binding a local development port.
 - `apps.open({ app_id })` -> asks Reflex to open that app in the main UI.
 - `apps.invoke({ app_id, action_id, params })`.
 - `apps.list_actions({ app_id?, include_steps? })`.
