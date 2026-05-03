@@ -1098,6 +1098,9 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = external ? {integration: patchOrParams || {}, external: external} : (patchOrParams || {});
     return reflexInvokeRaw('integration.update', params);
   };
+  window.reflexIntegrationLearnVisible = function(params) {
+    return reflexInvokeRaw('integration.learnVisible', params || {});
+  };
   window.reflexPermissionsList = function() {
     return reflexInvokeRaw('permissions.list', {});
   };

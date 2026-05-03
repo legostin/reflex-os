@@ -403,7 +403,6 @@ fn install_connected_app(
         });
 
     let storage_key = format!("connected.{}.latestVisibleSession", spec.provider);
-    let learned_key = format!("connected.{}.learnedInterface", spec.provider);
     let mut learned_capabilities = spec.capabilities.clone();
     if !learned_capabilities
         .iter()
@@ -430,7 +429,7 @@ fn install_connected_app(
         integration: Some(apps::IntegrationConfig {
             provider: spec.provider.clone(),
             display_name: Some(spec.name.clone()),
-            capabilities: spec.capabilities.clone(),
+            capabilities: learned_capabilities.clone(),
             data_model: spec.data_model.clone(),
             auth: spec.auth.clone(),
             mcp: spec.mcp.clone(),
@@ -560,46 +559,12 @@ fn install_connected_app(
                         save_as: Some("page_ready".into()),
                     },
                     apps::Step {
-                        method: "browser.readText".into(),
-                        params: serde_json::json!({ "tabId": "{{steps.opened.tab_id}}" }),
-                        save_as: Some("visible_text".into()),
-                    },
-                    apps::Step {
-                        method: "browser.readOutline".into(),
-                        params: serde_json::json!({ "tabId": "{{steps.opened.tab_id}}" }),
-                        save_as: Some("outline".into()),
-                    },
-                    apps::Step {
-                        method: "agent.task".into(),
+                        method: "integration.learnVisible".into(),
                         params: serde_json::json!({
-                            "includeContext": false,
-                            "prompt": "Build a connected-app adapter profile from the visible web UI below. Use only visible text and outline. Infer data entities, user actions, likely selectors or text anchors, safe automation workflows, and MCP opportunities. Do not claim access to hidden data. Return concise JSON with provider, entities, actions, workflows, selectors, data_access, mcp_bridge, risks, and next_steps.\n\nVISIBLE_TEXT:\n{{steps.visible_text}}\n\nOUTLINE:\n{{steps.outline}}"
+                            "tabId": "{{steps.opened.tab_id}}",
+                            "serviceUrl": spec.url.clone()
                         }),
                         save_as: Some("learned".into()),
-                    },
-                    apps::Step {
-                        method: "storage.set".into(),
-                        params: serde_json::json!({
-                            "key": learned_key,
-                            "value": {
-                                "provider": spec.provider.clone(),
-                                "service_url": spec.url.clone(),
-                                "profile": "{{steps.learned.result}}"
-                            }
-                        }),
-                        save_as: Some("stored".into()),
-                    },
-                    apps::Step {
-                        method: "integration.update".into(),
-                        params: serde_json::json!({
-                            "integration": {
-                                "capabilities": learned_capabilities,
-                                "data_model": {
-                                    "learned_profile": "{{steps.learned.result}}"
-                                }
-                            }
-                        }),
-                        save_as: Some("integration".into()),
                     },
                 ],
             },
@@ -814,12 +779,19 @@ fn url_host(url: &str) -> Option<&str> {
 }
 
 fn connected_app_index_html(spec: &ConnectedAppSpec) -> Result<String, String> {
+    let mut capabilities = spec.capabilities.clone();
+    if !capabilities
+        .iter()
+        .any(|capability| capability == "interface.visible_session.learn")
+    {
+        capabilities.push("interface.visible_session.learn".into());
+    }
     let config = serde_json::json!({
         "provider": spec.provider.clone(),
         "displayName": spec.name.clone(),
         "serviceUrl": spec.url.clone(),
         "openUrl": spec.open_url.clone(),
-        "capabilities": spec.capabilities.clone(),
+        "capabilities": capabilities,
         "notes": spec.notes.clone(),
         "recommendedMcp": spec.mcp.clone(),
         "storageKey": format!("connected.{}.latestVisibleSession", spec.provider),
@@ -1320,25 +1292,22 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       setBusy(true);
       setStatus("Learning interface...");
       try {
-        const snapshot = await readVisibleText();
-        setBusy(true);
-        const tabId = snapshot.tab_id || state.tabId;
-        const outline = tabId ? await window.reflexBrowserReadOutline(tabId) : null;
-        const prompt = "Build a connected-app adapter profile from the visible web UI below. Use only visible text and outline. Infer data entities, user actions, likely selectors or text anchors, safe automation workflows, and MCP opportunities. Do not claim access to hidden data. Return concise JSON with provider, entities, actions, workflows, selectors, data_access, mcp_bridge, risks, and next_steps.\n\nPROVIDER:\n" + config.provider + "\n\nSERVICE_URL:\n" + config.serviceUrl + "\n\nVISIBLE_TEXT:\n" + snapshot.text + "\n\nOUTLINE:\n" + JSON.stringify(outline);
-        const learned = await window.reflexAgentTask({ prompt, includeContext: false });
-        const profile = {
-          provider: config.provider,
-          service_url: config.serviceUrl,
-          learned_at_ms: Date.now(),
-          profile: learned.result || learned
-        };
-        await window.reflexStorageSet(config.learnedKey, profile);
-        await window.reflexIntegrationUpdate({
-          provider: config.provider,
-          display_name: config.displayName,
-          capabilities: Array.from(new Set([...(config.capabilities || []), "interface.visible_session.learn"])),
-          data_model: { learned_profile: profile },
-          notes: config.notes
+        await window.reflexBrowserInit({ headless: true });
+        let tabId = await resolveTabId();
+        if (!tabId) {
+          await openService();
+          setBusy(true);
+          tabId = await resolveTabId();
+        }
+        if (!tabId) throw new Error("No browser tab available");
+        try {
+          await window.reflexBrowserWaitFor({ tabId, selector: "body", timeoutMs: 15000 });
+        } catch (error) {
+          console.warn("[connected-app] wait for body failed", error);
+        }
+        const profile = await window.reflexIntegrationLearnVisible({
+          tabId,
+          serviceUrl: config.serviceUrl
         });
         setOutput(profile);
         setStatus("Interface profile saved");
@@ -1544,8 +1513,8 @@ CURRENT BRIDGE / RUNTIME NOTES:\n\
 - Keep or add multilingual user-facing UI when appropriate. Do not force Russian or English as the only UI language. Keep API names, permissions, ids, paths, and manifest keys as technical tokens.\n\
 - Any prompt strings sent to agent.ask/agent.task/agent.stream must be written in English. If user input is in another language, pass it as data inside an English instruction.\n\
 - After revising, check empty/loading/error/success states and main control accessibility. The first screen must remain a real usable tool, not a feature description.\n\
-- Available bridge methods: bridge.catalog, system.context, system.openPanel, system.openUrl/openPath/revealPath, logs.write/list, manifest.get/update, integration.catalog/profile/update, permissions.*, network.*, widgets.*, actions.*, agent.*, storage.*, fs.*, clipboard.*, projects.*, topics.*, skills.*, mcp.*, project.files.*, browser.*, memory.*, scheduler.*, dialog.*, notify.show, net.fetch, events.*, apps.*.\n\
-- Overlay helpers include reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexIntegrationCatalog/Profile/Update, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjects*, reflexTopics*, reflexSkills*, reflexMcp*, reflexProjectFiles*, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexApps*, reflexEvent*.\n\
+- Available bridge methods: bridge.catalog, system.context, system.openPanel, system.openUrl/openPath/revealPath, logs.write/list, manifest.get/update, integration.catalog/profile/update/learnVisible, permissions.*, network.*, widgets.*, actions.*, agent.*, storage.*, fs.*, clipboard.*, projects.*, topics.*, skills.*, mcp.*, project.files.*, browser.*, memory.*, scheduler.*, dialog.*, notify.show, net.fetch, events.*, apps.*.\n\
+- Overlay helpers include reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexIntegrationCatalog/Profile/Update/LearnVisible, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjects*, reflexTopics*, reflexSkills*, reflexMcp*, reflexProjectFiles*, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexApps*, reflexEvent*.\n\
 - iframe sandbox=\"allow-scripts allow-forms\"; server runtime also gets allow-same-origin. No external CDNs: use inline or local files.\n\
 - Reflex injects an overlay script that captures window.onerror/unhandledrejection for Fix and supports Inspector pick events. Do not override those same event types with your own global handler.\n\
 - After edits, the iframe reloads automatically; server runtime processes restart automatically. Do not ask for manual reload.\n\
@@ -1939,9 +1908,9 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
 - Choose the display layer deliberately:\n\
   1) `runtime: \"external\"` with `manifest.external.url` when a web app can be framed and the user benefits from seeing it directly.\n\
   2) `runtime: \"static\"` or `runtime: \"server\"` when the external app blocks framing, needs a local companion UI, or needs a backend adapter.\n\
-- Fill `manifest.integration` with provider, display_name, capabilities, auth, data_model, mcp, and notes. Use `integration.catalog`, `integration.profile`, and `integration.update` from the bridge to keep it current.\n\
+- Fill `manifest.integration` with provider, display_name, capabilities, auth, data_model, mcp, and notes. Use `integration.catalog`, `integration.profile`, `integration.update`, and `integration.learnVisible` from the bridge to keep it current.\n\
 - Add at least one public manifest.action that exposes normalized data to other Reflex apps, even if the first version returns an empty/auth-required state.\n\
-- If the service has a web UI, use the Browser bridge for visible-session workflows: `browser.init`, `browser.open`, `browser.readText`, `browser.readOutline`, and `browser.click/fill` where permitted.\n\
+- If the service has a web UI, use `integration.learnVisible` for system-level visible-session learning, and use the Browser bridge for lower-level workflows: `browser.init`, `browser.open`, `browser.readText`, `browser.readOutline`, and `browser.click/fill` where permitted.\n\
 - If durable data access needs credentials or a local protocol, write a clear MCP plan in `manifest.integration.mcp` and expose UI fields/checks for the user to configure it later.\n\
 - For Telegram-like apps: do not claim arbitrary personal message access through the Bot API. Personal chats require user-approved Telegram client access such as MTProto/TDLib/MCP, or reading a visible Telegram Web session after the user logs in. Store only derived summaries by default unless the user explicitly chooses raw message storage.\n",
         ),
@@ -2052,6 +2021,7 @@ fn build_app_creation_prompt(
     p.push_str("  integration.catalog({provider?}) -> {recipes}; built-in connected-app recipes such as generic_web and telegram, including display URL, data strategy, and MCP config shape.\n");
     p.push_str("  integration.profile() -> {app_id, provider, integration, external, runtime, linked_projects, app_project}; current connected-app profile for external services and MCP/data adapters.\n");
     p.push_str("  integration.update({integration?|patch?, external?}) -> {ok, integration, external}; merge-update only manifest.integration and/or manifest.external without hand-editing the whole manifest.\n");
+    p.push_str("  integration.learnVisible({tabId?, serviceUrl?, visibleText?, outline?}) -> {ok, profile, storageKey, learnedKey, event}; learn a connected-app adapter profile from visible browser text/outline, save it in storage, and merge it into manifest.integration.data_model.learned_profile.\n");
     p.push_str("  permissions.list() -> {permissions}; permissions.ensure({permission}) or ensure({permissions}) -> {ok, added, permissions}; permissions.revoke(...) -> {ok, removed, permissions}; targeted manifest.permissions updates without manual merging\n");
     p.push_str("  network.hosts() -> {allowed_hosts}; network.allowHost({host}) or allowHost({hosts}) -> {ok, added, allowed_hosts}; network.revokeHost(...) -> {ok, removed, allowed_hosts}; targeted manifest.network.allowed_hosts updates for net.fetch\n");
     p.push_str("  widgets.list() -> {widgets}; widgets.upsert({id, name?, entry?, size?, description?, html?}) or widgets.upsert({widget, html?}) -> {ok, created, widget}; widgets.delete({widgetId, deleteEntry?}) -> {ok, deleted}; manage dashboard widgets without manual manifest merging\n");
@@ -2118,7 +2088,7 @@ fn build_app_creation_prompt(
     p.push_str("  memory.indexPath({path, projectId?}) -> {indexed, skipped}; memory.pathStatus({path, projectId?}); memory.pathStatusBatch({paths, projectId?}); memory.forgetPath({path, projectId?})\n");
     p.push_str("- scope defaults to \"project\". If the app is linked to exactly one project, project scope targets that project memory; otherwise it targets the app's own memory.\n");
     p.push_str("- To choose a project, call system.context() and pass a projectId from linked_projects. For global scope, add permission \"memory.global.read\" or \"memory.global.write\".\n");
-    p.push_str("- The overlay already provides helpers: reflexInvoke(method, params), reflexBridgeCatalog(), reflexSystemContext(), reflexSystemOpenPanel(panelOrParams, projectId?, threadId?), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexLogList(params), reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexPermissionsList(), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexSchedulerList(params), reflexSchedulerUpsert(scheduleOrParams), reflexSchedulerDelete(scheduleIdOrParams), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerStats(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions.\n");
+    p.push_str("- The overlay already provides helpers: reflexInvoke(method, params), reflexBridgeCatalog(), reflexSystemContext(), reflexSystemOpenPanel(panelOrParams, projectId?, threadId?), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexLogList(params), reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexIntegrationLearnVisible(params?), reflexPermissionsList(), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexSchedulerList(params), reflexSchedulerUpsert(scheduleOrParams), reflexSchedulerDelete(scheduleIdOrParams), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerStats(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions.\n");
     p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set/List/Delete(...), reflexFsRead/List/Write/Delete(...), reflexClipboardReadText(), reflexClipboardWriteText(textOrParams), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
     p.push_str("  Browser helpers: reflexBrowserInit(params), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserClose(tabIdOrParams), reflexBrowserSetActive(tabIdOrParams), reflexBrowserNavigate(tabId, url), reflexBrowserBack(tabIdOrParams), reflexBrowserForward(tabIdOrParams), reflexBrowserReload(tabIdOrParams), reflexBrowserCurrentUrl(tabIdOrParams), reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?), reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?), reflexBrowserScroll(tabIdOrParams, dx?, dy?), reflexBrowserWaitFor(tabIdOrParams, selector?, timeoutMs?).\n");
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryUpdate(relPathOrParams, patch?), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryStats(params), reflexMemoryReindex(params), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryPathStatusBatch(pathsOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
@@ -2173,7 +2143,7 @@ fn build_app_creation_prompt(
     p.push_str("  }\n");
     p.push_str("- Each widget.entry is a separate HTML file in the app directory, usually `widgets/<id>.html`.\n");
     p.push_str("- You can create/update a widget in one call: reflexWidgetsUpsert({id:\"today\", name:\"Today\", size:\"small\", html:\"<html>...</html>\"}); by default, entry becomes widgets/<id>.html.\n");
-    p.push_str("- Widgets have access to the same bridge and runtime overlay (reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexIntegrationCatalog/Profile/Update, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjectsList/Open, reflexProjectProfileUpdate, reflexProjectSandboxSet, reflexProjectAppsLink/Unlink, reflexTopicsList/Open, reflexSkillsList, reflexProjectSkillsEnsure/Revoke, reflexMcpServers, reflexProjectMcpUpsert/Delete, reflexProjectFilesList/Read/Search/Write/Mkdir/Move/Copy/Delete, reflexProjectBrowserSetEnabled, reflexBrowser*, reflexScheduler*, reflexMemory*, reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions, reflexAppsList/Create/Export/Import/Delete/TrashList/Restore/Purge/Open/Invoke/ListActions).\n");
+    p.push_str("- Widgets have access to the same bridge and runtime overlay (reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexIntegrationCatalog/Profile/Update/LearnVisible, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjectsList/Open, reflexProjectProfileUpdate, reflexProjectSandboxSet, reflexProjectAppsLink/Unlink, reflexTopicsList/Open, reflexSkillsList, reflexProjectSkillsEnsure/Revoke, reflexMcpServers, reflexProjectMcpUpsert/Delete, reflexProjectFilesList/Read/Search/Write/Mkdir/Move/Copy/Delete, reflexProjectBrowserSetEnabled, reflexBrowser*, reflexScheduler*, reflexMemory*, reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions, reflexAppsList/Create/Export/Import/Delete/TrashList/Restore/Purge/Open/Invoke/ListActions).\n");
     p.push_str("- Keep widgets compact: dark transparent background, background:transparent, html/body height 100%, padding 12-14px, and no own frame because the dashboard grid draws it.\n");
     p.push_str("- If data updates often, add setInterval yourself with a 5-30 second interval.\n");
     p.push_str("- If the widget reads data from another utility, use reflexAppsInvoke('<app>','<action>',{...}); do NOT duplicate data collection.\n\n");
@@ -2207,7 +2177,7 @@ fn build_app_creation_prompt(
     p.push_str("  window.reflexSystemOpenPanel(panelOrParams, projectId?, threadId?)\n");
     p.push_str("  window.reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams)\n");
     p.push_str("  window.reflexLog(levelOrParams, message?), reflexLogList(params)\n");
-    p.push_str("  window.reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexPermissionsList(), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities() // manifest summary + hasPermission()/hasNetworkHost()\n");
+    p.push_str("  window.reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexIntegrationLearnVisible(params?), reflexPermissionsList(), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities() // manifest summary + hasPermission()/hasNetworkHost()\n");
     p.push_str("  window.reflexAgentAsk(promptOrParams), reflexAgentStartTopic(promptOrParams, projectId?), reflexAgentTask(promptOrParams), reflexAgentStream(promptOrParams), reflexAgentStreamAbort(threadIdOrParams)\n");
     p.push_str("  window.reflexStorageGet(keyOrParams), reflexStorageSet(keyOrParams, value?), reflexStorageList(params), reflexStorageDelete(keyOrParams)\n");
     p.push_str("  window.reflexFsRead(pathOrParams), reflexFsList(pathOrParams, recursive?), reflexFsWrite(pathOrParams, content?), reflexFsDelete(pathOrParams, recursive?)\n");
@@ -4068,7 +4038,7 @@ mod connected_app_tests {
         assert!(html.contains("Run MCP query"));
         assert!(html.contains("Learn interface"));
         assert!(html.contains("reflexProjectMcpUpsert"));
-        assert!(html.contains("reflexBrowserReadOutline"));
+        assert!(html.contains("reflexIntegrationLearnVisible"));
         assert!(html.contains("interface.visible_session.learn"));
     }
 }

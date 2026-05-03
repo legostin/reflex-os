@@ -15,6 +15,7 @@ export const BRIDGE_API_GROUPS = [
       "integration.catalog",
       "integration.profile",
       "integration.update",
+      "integration.learnVisible",
       "permissions.list",
       "permissions.ensure",
       "permissions.revoke",
@@ -201,6 +202,7 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexIntegrationCatalog",
       "reflexIntegrationProfile",
       "reflexIntegrationUpdate",
+      "reflexIntegrationLearnVisible",
       "reflexPermissionsList",
       "reflexPermissionsEnsure",
       "reflexPermissionsRevoke",
@@ -375,9 +377,9 @@ export const BRIDGE_RECIPE_CARDS = [
   {
     title: "Connected app adapter",
     body: "Wrap an external service with a visible panel, learned data profile, actions, and optional MCP bridge.",
-    calls: ["integration.catalog", "integration.profile", "project.mcp.upsert"],
+    calls: ["integration.catalog", "integration.learnVisible", "project.mcp.upsert"],
     example:
-      'const { recipes } = await reflexIntegrationCatalog("telegram");',
+      'const profile = await reflexIntegrationLearnVisible({ tabId });',
   },
   {
     title: "Automation",

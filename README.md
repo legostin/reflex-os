@@ -62,6 +62,7 @@ The injected runtime overlay provides:
 - `window.reflexIntegrationCatalog(providerOrParams?)`
 - `window.reflexIntegrationProfile()`
 - `window.reflexIntegrationUpdate(patchOrParams, external?)`
+- `window.reflexIntegrationLearnVisible(params?)`
 - `window.reflexPermissionsList()`
 - `window.reflexPermissionsEnsure(permissionOrParams)`
 - `window.reflexPermissionsRevoke(permissionOrParams)`
@@ -193,8 +194,9 @@ text. Raw visible text is exposed only through the non-public
 also has scoped `mcp.read`/`mcp.write` permission on its own app project and a
 panel form that writes provider MCP server config through `project.mcp.upsert`.
 The panel and public `learn_visible_interface` action can read the visible
-Browser outline/text, ask the agent for a data/workflow profile, and persist it
-into app storage plus `manifest.integration.data_model.learned_profile`.
+Browser outline/text through `integration.learnVisible`, ask the agent for a
+data/workflow profile, and persist it into app storage plus
+`manifest.integration.data_model.learned_profile`.
 
 ## App Bridge API
 
@@ -227,6 +229,10 @@ Core methods:
 - `integration.update({ integration?, external? })` or
   `integration.update({ patch })` -> merge-update connected-app manifest
   fields.
+- `integration.learnVisible({ tabId?, serviceUrl?, visibleText?, outline? })`
+  -> learn a connected-app adapter profile from visible browser text/outline,
+  save it in app storage, emit a connected-app event, and merge the learned
+  profile into `manifest.integration.data_model`.
 - `permissions.list()`, `permissions.ensure({ permission })` or
   `permissions.ensure({ permissions })`, `permissions.revoke(...)` -> targeted
   updates to this app's manifest permissions.

@@ -37,6 +37,9 @@ pub async fn dispatch_app_method(
         "integration.catalog" => integration_catalog(params),
         "integration.profile" => integration_profile(app, app_id),
         "integration.update" => integration_update(app, app_id, params),
+        "integration.learnVisible" | "integration.learn_visible" => {
+            integration_learn_visible(app, app_id, params).await
+        }
         "permissions.list" => permissions_list_for_app(app, app_id),
         "permissions.ensure" => permissions_ensure_for_app(app, app_id, params),
         "permissions.revoke" => permissions_revoke_for_app(app, app_id, params),
@@ -422,41 +425,7 @@ pub async fn dispatch_app_method(
             Ok(serde_json::json!({ "ok": true }))
         }
         "agent.task" => {
-            let prompt = params
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .ok_or("missing prompt")?
-                .to_string();
-            let sandbox = params
-                .get("sandbox")
-                .and_then(|v| v.as_str())
-                .unwrap_or("read-only")
-                .to_string();
-            let cwd_target =
-                resolve_agent_cwd_for_app(app, app_id, params.get("cwd").and_then(|v| v.as_str()))?;
-            let prompt = build_app_agent_prompt(app_id, &params, prompt, &cwd_target).await;
-
-            let handle = app.state::<app_server::AppServerHandle>();
-            let server = handle.wait().await;
-            let app_thread_id = server
-                .thread_start(&cwd_target.cwd, &sandbox, cwd_target.mcp_servers.as_ref())
-                .await
-                .map_err(|e| format!("thread_start: {e}"))?;
-            let _ = server.turn_start(&app_thread_id, &prompt).await;
-            let turn = server.wait_for_turn(&app_thread_id).await;
-            let result_text = turn
-                .as_ref()
-                .and_then(|t| {
-                    t.get("lastAgentMessage")
-                        .or_else(|| t.get("last_agent_message"))
-                })
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            Ok(serde_json::json!({
-                "threadId": app_thread_id,
-                "result": result_text,
-            }))
+            agent_task_for_app(app, app_id, params).await
         }
         "net.fetch" => {
             let url_str = params
@@ -933,6 +902,284 @@ fn integration_update(
     }))
 }
 
+async fn integration_learn_visible(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
+    let provider = string_param(&params, "provider", "provider")
+        .or_else(|| manifest.integration.as_ref().map(|i| i.provider.clone()))
+        .filter(|provider| !provider.trim().is_empty())
+        .unwrap_or_else(|| "generic_web".into());
+    let service_url = string_param(&params, "service_url", "serviceUrl")
+        .or_else(|| string_param(&params, "url", "url"))
+        .or_else(|| manifest.external.as_ref().map(|external| external.url.clone()))
+        .or_else(|| {
+            manifest
+                .external
+                .as_ref()
+                .and_then(|external| external.open_url.clone())
+        })
+        .unwrap_or_default();
+    let mut tab_id = string_param(&params, "tab_id", "tabId");
+    let mut current_url = string_param(&params, "current_url", "currentUrl");
+    let mut visible_text = string_param(&params, "visible_text", "visibleText");
+    let mut outline = params
+        .get("outline")
+        .cloned()
+        .filter(|value| !value.is_null())
+        .unwrap_or(serde_json::Value::Null);
+
+    if visible_text.is_none() || outline.is_null() {
+        ensure_browser_permission(app, app_id, "read")?;
+
+        if tab_id.is_none() {
+            if service_url.trim().is_empty() {
+                return Err(
+                    "missing tabId or serviceUrl; integration.learnVisible needs visible text, \
+                     an existing browser tab, or a URL to open"
+                        .into(),
+                );
+            }
+            ensure_browser_permission(app, app_id, "control")?;
+            browser_init_for_app(
+                app,
+                app_id,
+                serde_json::json!({
+                    "headless": bool_param(&params, "headless", "headless").unwrap_or(true),
+                    "projectId": string_param(&params, "project_id", "projectId"),
+                }),
+            )
+            .await?;
+            let opened = browser_open_for_app(
+                app,
+                app_id,
+                serde_json::json!({ "url": service_url.clone() }),
+            )
+            .await?;
+            tab_id = opened
+                .get("tab_id")
+                .or_else(|| opened.get("tabId"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
+            if let Some(tab_id) = tab_id.as_ref() {
+                let _ = browser_wait_for_app(
+                    app,
+                    app_id,
+                    serde_json::json!({
+                        "tabId": tab_id,
+                        "selector": "body",
+                        "timeoutMs": 15000,
+                    }),
+                )
+                .await;
+            }
+        }
+
+        let tab_id_for_read = tab_id
+            .clone()
+            .ok_or_else(|| "missing tabId for visible interface learning".to_string())?;
+
+        if visible_text.is_none() {
+            let read = browser_read_text_for_app(
+                app,
+                app_id,
+                serde_json::json!({ "tabId": tab_id_for_read.clone() }),
+            )
+            .await?;
+            visible_text = Some(browser_text_from_value(&read));
+        }
+
+        if outline.is_null() {
+            outline = browser_read_outline_for_app(
+                app,
+                app_id,
+                serde_json::json!({ "tabId": tab_id_for_read.clone() }),
+            )
+            .await?;
+        }
+
+        if current_url.is_none() {
+            current_url = browser_current_url_for_app(
+                app,
+                app_id,
+                serde_json::json!({ "tabId": tab_id_for_read }),
+            )
+            .await
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("url")
+                    .and_then(|url| url.as_str())
+                    .map(|url| url.to_string())
+            });
+        }
+    }
+
+    let visible_text = visible_text.unwrap_or_default();
+    let prompt =
+        build_connected_app_learn_prompt(&provider, &service_url, &visible_text, &outline);
+    let learned = agent_task_for_app(
+        app,
+        app_id,
+        serde_json::json!({
+            "prompt": prompt,
+            "includeContext": false,
+            "sandbox": "read-only",
+        }),
+    )
+    .await?;
+    let learned_text = learned
+        .get("result")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let learned_at_ms = current_time_ms();
+    let captured_at_ms = learned_at_ms;
+    let storage_key = format!("connected.{provider}.latestVisibleSession");
+    let learned_key = format!("connected.{provider}.learnedInterface");
+    let visible_snapshot = serde_json::json!({
+        "provider": provider,
+        "service_url": service_url,
+        "current_url": current_url,
+        "tab_id": tab_id,
+        "captured_at_ms": captured_at_ms,
+        "text": visible_text,
+    });
+    let profile = serde_json::json!({
+        "provider": provider,
+        "service_url": service_url,
+        "current_url": current_url,
+        "tab_id": tab_id,
+        "learned_at_ms": learned_at_ms,
+        "visible_text_chars": visible_snapshot
+            .get("text")
+            .and_then(|value| value.as_str())
+            .map(|text| text.chars().count())
+            .unwrap_or(0),
+        "outline_items": outline_item_count(&outline),
+        "profile": learned_text,
+        "agent_thread_id": learned
+            .get("threadId")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+    });
+
+    storage_set_value(app, app_id, &storage_key, visible_snapshot.clone())?;
+    storage_set_value(app, app_id, &learned_key, profile.clone())?;
+
+    let bridge: AppBusBridge = app.state::<AppBusBridge>().inner().clone();
+    let event = bridge.record_event(
+        app_id,
+        &format!("connected.{provider}.visible_session"),
+        serde_json::json!({
+            "provider": provider,
+            "captured_at_ms": captured_at_ms,
+            "learned_at_ms": learned_at_ms,
+            "text_length": visible_snapshot
+                .get("text")
+                .and_then(|value| value.as_str())
+                .map(|text| text.len())
+                .unwrap_or(0),
+            "outline_items": outline_item_count(&outline),
+        }),
+    );
+
+    let mut capabilities = manifest
+        .integration
+        .as_ref()
+        .map(|integration| integration.capabilities.clone())
+        .unwrap_or_default();
+    if !capabilities
+        .iter()
+        .any(|capability| capability == "interface.visible_session.learn")
+    {
+        capabilities.push("interface.visible_session.learn".into());
+    }
+    let integration_result = integration_update(
+        app,
+        app_id,
+        serde_json::json!({
+            "integration": {
+                "provider": provider,
+                "capabilities": capabilities,
+                "data_model": {
+                    "learned_profile": profile,
+                },
+            }
+        }),
+    )?;
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "profile": integration_result
+            .get("integration")
+            .and_then(|integration| integration.get("data_model"))
+            .and_then(|data_model| data_model.get("learned_profile"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        "storageKey": storage_key,
+        "learnedKey": learned_key,
+        "event": event,
+    }))
+}
+
+fn build_connected_app_learn_prompt(
+    provider: &str,
+    service_url: &str,
+    visible_text: &str,
+    outline: &serde_json::Value,
+) -> String {
+    let outline_json =
+        serde_json::to_string_pretty(outline).unwrap_or_else(|_| "null".to_string());
+    format!(
+        "Build a connected-app adapter profile from the visible web UI below. Use only visible text and outline. Infer data entities, user actions, likely selectors or text anchors, safe automation workflows, data-access boundaries, and MCP bridge opportunities. Do not claim access to hidden data. Return concise JSON with provider, entities, actions, workflows, selectors, data_access, mcp_bridge, risks, and next_steps.\n\nPROVIDER:\n{provider}\n\nSERVICE_URL:\n{service_url}\n\nVISIBLE_TEXT:\n{visible_text}\n\nOUTLINE:\n{outline_json}"
+    )
+}
+
+fn browser_text_from_value(value: &serde_json::Value) -> String {
+    value
+        .get("text")
+        .and_then(|text| text.as_str())
+        .or_else(|| value.as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn outline_item_count(value: &serde_json::Value) -> usize {
+    value
+        .get("outline")
+        .and_then(|outline| outline.as_array())
+        .or_else(|| value.as_array())
+        .map(|items| items.len())
+        .unwrap_or(0)
+}
+
+fn storage_set_value(
+    app: &AppHandle,
+    app_id: &str,
+    key: &str,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    let mut store = apps::read_storage(app, app_id).map_err(|e| e.to_string())?;
+    if !store.is_object() {
+        store = serde_json::json!({});
+    }
+    store
+        .as_object_mut()
+        .expect("storage object")
+        .insert(key.to_string(), value);
+    apps::write_storage(app, app_id, &store).map_err(|e| e.to_string())
+}
+
+fn current_time_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}
+
 fn write_manifest_and_emit(
     app: &AppHandle,
     app_id: &str,
@@ -1394,6 +1641,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "integration.catalog",
                 "integration.profile",
                 "integration.update",
+                "integration.learnVisible",
                 "permissions.list",
                 "permissions.ensure",
                 "permissions.revoke",
@@ -1576,6 +1824,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexIntegrationCatalog",
                 "reflexIntegrationProfile",
                 "reflexIntegrationUpdate",
+                "reflexIntegrationLearnVisible",
                 "reflexPermissionsList",
                 "reflexPermissionsEnsure",
                 "reflexPermissionsRevoke",
@@ -2313,6 +2562,51 @@ fn resolve_agent_cwd_for_app(
         "permission denied: agent cwd must be this app root, a linked project, or require manifest.permissions entry 'agent.cwd:*'"
             .into(),
     )
+}
+
+async fn agent_task_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let prompt = params
+        .get("prompt")
+        .and_then(|v| v.as_str())
+        .ok_or("missing prompt")?
+        .to_string();
+    let sandbox = params
+        .get("sandbox")
+        .and_then(|v| v.as_str())
+        .unwrap_or("read-only")
+        .to_string();
+    let cwd_target = resolve_agent_cwd_for_app(
+        app,
+        app_id,
+        params.get("cwd").and_then(|v| v.as_str()),
+    )?;
+    let prompt = build_app_agent_prompt(app_id, &params, prompt, &cwd_target).await;
+
+    let handle = app.state::<app_server::AppServerHandle>();
+    let server = handle.wait().await;
+    let app_thread_id = server
+        .thread_start(&cwd_target.cwd, &sandbox, cwd_target.mcp_servers.as_ref())
+        .await
+        .map_err(|e| format!("thread_start: {e}"))?;
+    let _ = server.turn_start(&app_thread_id, &prompt).await;
+    let turn = server.wait_for_turn(&app_thread_id).await;
+    let result_text = turn
+        .as_ref()
+        .and_then(|t| {
+            t.get("lastAgentMessage")
+                .or_else(|| t.get("last_agent_message"))
+        })
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(serde_json::json!({
+        "threadId": app_thread_id,
+        "result": result_text,
+    }))
 }
 
 async fn build_app_agent_prompt(
@@ -5950,6 +6244,47 @@ mod tests {
         assert_eq!(
             summary["skills"],
             serde_json::json!(["build-web-apps:react-best-practices"])
+        );
+    }
+
+    #[test]
+    fn connected_app_learn_prompt_is_grounded_in_visible_ui() {
+        let outline = serde_json::json!({
+            "outline": [
+                { "tag": "button", "text": "Search" },
+                { "tag": "a", "text": "Inbox" }
+            ]
+        });
+        let prompt = build_connected_app_learn_prompt(
+            "generic_web",
+            "https://service.example/app",
+            "Inbox\nSearch\nLatest item",
+            &outline,
+        );
+
+        assert!(prompt.contains("Use only visible text and outline"));
+        assert!(prompt.contains("Do not claim access to hidden data"));
+        assert!(prompt.contains("PROVIDER:\ngeneric_web"));
+        assert!(prompt.contains("SERVICE_URL:\nhttps://service.example/app"));
+        assert!(prompt.contains("Latest item"));
+        assert!(prompt.contains("\"Search\""));
+    }
+
+    #[test]
+    fn connected_app_visible_helpers_accept_browser_shapes() {
+        assert_eq!(
+            browser_text_from_value(&serde_json::json!({ "text": "visible" })),
+            "visible"
+        );
+        assert_eq!(
+            outline_item_count(&serde_json::json!({
+                "outline": [{ "text": "One" }, { "text": "Two" }]
+            })),
+            2
+        );
+        assert_eq!(
+            outline_item_count(&serde_json::json!([{ "text": "One" }])),
+            1
         );
     }
 
