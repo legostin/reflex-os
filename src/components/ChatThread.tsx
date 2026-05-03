@@ -208,7 +208,7 @@ function routeKey(r: Route): string {
     case "home":
       return "home";
     case "apps":
-      return "apps";
+      return r.project_id ? `apps:${r.project_id}` : "apps";
     case "project":
       return `project:${r.project_id}`;
     case "topic":
@@ -284,7 +284,11 @@ function tabLabel(
     case "home":
       return t("nav.home");
     case "apps":
-      return t("nav.apps");
+      if (!r.project_id) return t("nav.apps");
+      {
+        const p = projects.find((x) => x.id === r.project_id);
+        return `${t("nav.apps")} · ${p?.name ?? r.project_id}`;
+      }
     case "project": {
       const p = projects.find((x) => x.id === r.project_id);
       return p?.name ?? r.project_id;
@@ -1667,6 +1671,13 @@ function Header({
       crumbs.push({ label: route.thread_id, route: null });
     }
   } else if (route.kind === "apps") {
+    if (route.project_id) {
+      const p = projects.find((x) => x.id === route.project_id);
+      crumbs.push({
+        label: p?.name ?? route.project_id,
+        route: { kind: "project", project_id: route.project_id },
+      });
+    }
     crumbs.push({ label: t("nav.apps"), route: null });
   } else if (route.kind === "app") {
     crumbs.push({ label: t("nav.apps"), route: { kind: "apps" } });
