@@ -4856,6 +4856,14 @@ type DashboardRecord = {
 };
 
 type DashboardViewLayout = "summary" | "list" | "table" | "metric";
+type DashboardSortMode = "relevance" | "latest" | "oldest" | "largest" | "smallest";
+
+type DashboardValueFilter = {
+  id: string;
+  label: string;
+  tokens: string[];
+  keyHints: string[];
+};
 
 type DashboardViewSpec = {
   version: 1;
@@ -4864,7 +4872,9 @@ type DashboardViewSpec = {
   tokens: string[];
   includeTokens: string[];
   excludeKeys: string[];
+  filters: DashboardValueFilter[];
   layout: DashboardViewLayout;
+  sort: DashboardSortMode;
   maxItems: number;
   showMeta: boolean;
 };
@@ -5095,10 +5105,14 @@ const DASHBOARD_STOP_TOKENS = new Set([
 
 const DASHBOARD_TOKEN_SYNONYMS: Record<string, string[]> = {
   active: ["enabled", "running", "live"],
+  blocked: ["stuck", "waiting"],
+  closed: ["complete", "completed", "done", "resolved"],
   count: ["number", "total", "size", "length"],
   current: ["latest", "last", "selected", "active"],
+  disabled: ["offline", "stopped"],
   error: ["errors", "failed", "failure", "last_error"],
   event: ["events", "log", "logs"],
+  failed: ["error", "errors", "failure"],
   health: ["status", "state"],
   item: ["items", "list"],
   job: ["jobs", "task", "tasks"],
@@ -5108,6 +5122,80 @@ const DASHBOARD_TOKEN_SYNONYMS: Record<string, string[]> = {
   source: ["provider", "origin"],
   status: ["state", "health"],
 };
+
+type DashboardFilterDefinition = {
+  id: string;
+  label: string;
+  triggers: string[];
+  values: string[];
+  keyHints: string[];
+};
+
+const DASHBOARD_FILTER_DEFINITIONS: DashboardFilterDefinition[] = [
+  {
+    id: "failed",
+    label: "Failed",
+    triggers: ["failed", "failure", "error", "errors", "ошиб", "сбой", "неуда"],
+    values: ["failed", "failure", "error", "errors", "errored", "crashed", "unhealthy", "ошибка"],
+    keyHints: ["error", "health", "message", "result", "status", "state"],
+  },
+  {
+    id: "open",
+    label: "Open",
+    triggers: ["open", "opened", "todo", "откры", "незакр"],
+    values: ["open", "opened", "todo", "new", "active", "pending"],
+    keyHints: ["closed", "open", "phase", "status", "state"],
+  },
+  {
+    id: "closed",
+    label: "Closed",
+    triggers: ["closed", "done", "resolved", "complete", "completed", "закры", "готов", "заверш"],
+    values: ["closed", "done", "resolved", "complete", "completed", "success", "succeeded"],
+    keyHints: ["closed", "result", "status", "state"],
+  },
+  {
+    id: "running",
+    label: "Running",
+    triggers: ["running", "live", "active", "started", "выполн", "запущ", "актив"],
+    values: ["running", "live", "active", "started", "enabled", "true"],
+    keyHints: ["active", "enabled", "live", "running", "status", "state"],
+  },
+  {
+    id: "pending",
+    label: "Pending",
+    triggers: ["pending", "waiting", "queued", "ожидан", "очеред"],
+    values: ["pending", "waiting", "queued", "scheduled"],
+    keyHints: ["queue", "status", "state"],
+  },
+  {
+    id: "blocked",
+    label: "Blocked",
+    triggers: ["blocked", "stuck", "заблок", "застр"],
+    values: ["blocked", "stuck", "paused"],
+    keyHints: ["blocked", "status", "state"],
+  },
+  {
+    id: "disabled",
+    label: "Disabled",
+    triggers: ["disabled", "offline", "stopped", "выключ", "отключ"],
+    values: ["disabled", "offline", "stopped", "false"],
+    keyHints: ["active", "enabled", "ready", "status", "state"],
+  },
+  {
+    id: "ready",
+    label: "Ready",
+    triggers: ["ready", "healthy"],
+    values: ["ready", "available", "healthy", "ok", "true"],
+    keyHints: ["available", "health", "ready", "status", "state"],
+  },
+  {
+    id: "stale",
+    label: "Stale",
+    triggers: ["stale", "old", "устар"],
+    values: ["stale", "old", "expired"],
+    keyHints: ["fresh", "status", "state", "stale"],
+  },
+];
 
 const DASHBOARD_RU_TOKEN_SYNONYMS: Array<[string, string[]]> = [
   ["авториз", ["auth", "authenticated", "login"]],
@@ -5170,6 +5258,7 @@ type DashboardListSummary = {
   key: string;
   label: string;
   count: number;
+  totalCount: number;
   items: string[];
   sample: unknown[];
   score: number;
@@ -5184,6 +5273,7 @@ type DashboardProjectedMetric = {
 type DashboardProjectedTable = {
   label: string;
   count: number;
+  totalCount: number;
   columns: Array<{ key: string; label: string }>;
   rows: Array<Record<string, string>>;
 };
@@ -5206,6 +5296,28 @@ function isDashboardViewLayout(value: unknown): value is DashboardViewLayout {
   );
 }
 
+function isDashboardSortMode(value: unknown): value is DashboardSortMode {
+  return (
+    value === "relevance" ||
+    value === "latest" ||
+    value === "oldest" ||
+    value === "largest" ||
+    value === "smallest"
+  );
+}
+
+function isDashboardValueFilter(value: unknown): value is DashboardValueFilter {
+  return (
+    isJsonObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.label === "string" &&
+    Array.isArray(value.tokens) &&
+    value.tokens.every((item) => typeof item === "string") &&
+    Array.isArray(value.keyHints) &&
+    value.keyHints.every((item) => typeof item === "string")
+  );
+}
+
 function isDashboardViewSpec(value: unknown): value is DashboardViewSpec {
   return (
     isJsonObject(value) &&
@@ -5218,7 +5330,10 @@ function isDashboardViewSpec(value: unknown): value is DashboardViewSpec {
     value.includeTokens.every((item) => typeof item === "string") &&
     Array.isArray(value.excludeKeys) &&
     value.excludeKeys.every((item) => typeof item === "string") &&
+    Array.isArray(value.filters) &&
+    value.filters.every(isDashboardValueFilter) &&
     isDashboardViewLayout(value.layout) &&
+    isDashboardSortMode(value.sort) &&
     typeof value.maxItems === "number" &&
     typeof value.showMeta === "boolean"
   );
@@ -5250,6 +5365,61 @@ function inferDashboardLayout(prompt: string): DashboardViewLayout {
   return "summary";
 }
 
+function dashboardPromptHasTerm(prompt: string, tokens: string[], term: string): boolean {
+  const lower = prompt.toLowerCase();
+  if (/^[\p{L}\p{N}_]+$/u.test(term)) {
+    return tokens.some((token) => token === term || token.startsWith(term));
+  }
+  return lower.includes(term);
+}
+
+function inferDashboardFilters(prompt: string, tokens: string[]): DashboardValueFilter[] {
+  const filters: DashboardValueFilter[] = [];
+  for (const definition of DASHBOARD_FILTER_DEFINITIONS) {
+    if (
+      definition.triggers.some((trigger) =>
+        dashboardPromptHasTerm(prompt, tokens, trigger),
+      )
+    ) {
+      filters.push({
+        id: definition.id,
+        label: definition.label,
+        tokens: definition.values,
+        keyHints: definition.keyHints,
+      });
+    }
+  }
+  return filters;
+}
+
+function inferDashboardSort(prompt: string, tokens: string[]): DashboardSortMode {
+  if (
+    /\b(oldest|earliest|first)\b/i.test(prompt) ||
+    tokens.some((token) => ["стар", "перв"].some((prefix) => token.startsWith(prefix)))
+  ) {
+    return "oldest";
+  }
+  if (
+    /\b(biggest|highest|largest|most|top)\b/i.test(prompt) ||
+    tokens.some((token) => ["больш", "макс", "топ"].some((prefix) => token.startsWith(prefix)))
+  ) {
+    return "largest";
+  }
+  if (
+    /\b(lowest|smallest|least)\b/i.test(prompt) ||
+    tokens.some((token) => ["меньш", "миним"].some((prefix) => token.startsWith(prefix)))
+  ) {
+    return "smallest";
+  }
+  if (
+    /\b(latest|last|newest|recent|current)\b/i.test(prompt) ||
+    tokens.some((token) => ["послед", "свеж", "текущ"].some((prefix) => token.startsWith(prefix)))
+  ) {
+    return "latest";
+  }
+  return "relevance";
+}
+
 function shouldShowDashboardMeta(prompt: string, tokens: string[]): boolean {
   const lower = prompt.toLowerCase();
   return (
@@ -5277,7 +5447,9 @@ function buildDashboardViewSpec(
     tokens,
     includeTokens,
     excludeKeys: [],
+    filters: inferDashboardFilters(prompt, tokens),
     layout: inferDashboardLayout(prompt),
+    sort: inferDashboardSort(prompt, tokens),
     maxItems: 5,
     showMeta: shouldShowDashboardMeta(prompt, tokens),
   };
@@ -5471,6 +5643,185 @@ function summarizeDashboardArrayItems(items: unknown[], maxItems: number): strin
   return summarized;
 }
 
+type DashboardPrimitiveEntry = {
+  path: string;
+  key: string;
+  value: unknown;
+  text: string;
+  tokens: string[];
+};
+
+function collectDashboardPrimitiveEntries(
+  value: unknown,
+  spec: DashboardViewSpec,
+  path: string,
+  entries: DashboardPrimitiveEntry[],
+  depth = 0,
+) {
+  if (depth > 4 || entries.length > 80 || value == null) return;
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.slice(0, 10).entries()) {
+      collectDashboardPrimitiveEntries(item, spec, `${path}[${index}]`, entries, depth + 1);
+    }
+    return;
+  }
+  if (!isJsonObject(value)) {
+    const effectivePath = path || "value";
+    if (isDashboardPathExcluded(effectivePath, spec)) return;
+    const text = formatDashboardScalar(effectivePath, value).toLowerCase();
+    entries.push({
+      path: effectivePath,
+      key: dashboardKeyFromPath(effectivePath),
+      value,
+      text,
+      tokens: dashboardTokens(text),
+    });
+    return;
+  }
+  for (const [key, item] of Object.entries(value).slice(0, 40)) {
+    const nextPath = path ? `${path}.${key}` : key;
+    if (isDashboardPathExcluded(nextPath, spec)) continue;
+    collectDashboardPrimitiveEntries(item, spec, nextPath, entries, depth + 1);
+  }
+}
+
+function dashboardTokenMatches(tokens: string[], expected: string): boolean {
+  return tokens.some((token) => token === expected || token.startsWith(expected));
+}
+
+function dashboardEntryMatchesFilter(
+  entry: DashboardPrimitiveEntry,
+  filter: DashboardValueFilter,
+): boolean {
+  const key = entry.key.toLowerCase();
+  const path = entry.path.toLowerCase();
+  const keyMatches = filter.keyHints.some(
+    (hint) => key.includes(hint) || path.includes(hint),
+  );
+  const valueMatches = filter.tokens.some((token) =>
+    dashboardTokenMatches(entry.tokens, token),
+  );
+  if (keyMatches && valueMatches) return true;
+
+  return filter.tokens.some((token) => {
+    if (token.length < 4) return dashboardTokenMatches(entry.tokens, token);
+    return entry.text.includes(token);
+  });
+}
+
+function dashboardItemMatchesFilters(item: unknown, spec: DashboardViewSpec): boolean {
+  if (spec.filters.length === 0) return true;
+  const entries: DashboardPrimitiveEntry[] = [];
+  collectDashboardPrimitiveEntries(item, spec, "", entries);
+  if (entries.length === 0) return false;
+  return spec.filters.every((filter) =>
+    entries.some((entry) => dashboardEntryMatchesFilter(entry, filter)),
+  );
+}
+
+function parseDashboardTimestamp(value: unknown): number | null {
+  if (typeof value === "number") {
+    if (value > 1_000_000_000_000) return value;
+    if (value > 1_000_000_000) return value * 1000;
+    return null;
+  }
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function dashboardItemTimestamp(item: unknown, spec: DashboardViewSpec): number | null {
+  const entries: DashboardPrimitiveEntry[] = [];
+  collectDashboardPrimitiveEntries(item, spec, "", entries);
+  let best: number | null = null;
+  let bestPriority = -Infinity;
+  for (const entry of entries) {
+    const timestamp = parseDashboardTimestamp(entry.value);
+    if (timestamp == null) continue;
+    const priority = /(updated|created|time|date|timestamp|at|ms)$/i.test(entry.key)
+      ? 2
+      : 0;
+    if (priority > bestPriority || (priority === bestPriority && timestamp > (best ?? 0))) {
+      best = timestamp;
+      bestPriority = priority;
+    }
+  }
+  return best;
+}
+
+function dashboardItemNumber(item: unknown, spec: DashboardViewSpec): number | null {
+  const entries: DashboardPrimitiveEntry[] = [];
+  collectDashboardPrimitiveEntries(item, spec, "", entries);
+  let best: number | null = null;
+  let bestPriority = -Infinity;
+  for (const entry of entries) {
+    if (typeof entry.value !== "number") continue;
+    const priority =
+      dashboardTextScore(`${entry.path} ${entry.key}`, spec.includeTokens) +
+      (/(count|total|score|size|amount|value|duration|latency|age)/i.test(entry.key) ? 1 : 0);
+    if (priority > bestPriority) {
+      best = entry.value;
+      bestPriority = priority;
+    }
+  }
+  return best;
+}
+
+function dashboardItemRelevance(item: unknown, spec: DashboardViewSpec): number {
+  const entries: DashboardPrimitiveEntry[] = [];
+  collectDashboardPrimitiveEntries(item, spec, "", entries);
+  return entries.reduce(
+    (score, entry) =>
+      score +
+      dashboardTextScore(`${entry.path} ${entry.text}`, spec.includeTokens) +
+      spec.filters.reduce(
+        (filterScore, filter) =>
+          filterScore + (dashboardEntryMatchesFilter(entry, filter) ? 4 : 0),
+        0,
+      ),
+    0,
+  );
+}
+
+function sortDashboardArrayItems(items: unknown[], spec: DashboardViewSpec): unknown[] {
+  if (items.length <= 1) return items;
+  const needsTimestamp = spec.sort === "latest" || spec.sort === "oldest";
+  const needsNumber = spec.sort === "largest" || spec.sort === "smallest";
+  const decorated = items.map((item, index) => ({
+    item,
+    index,
+    timestamp: needsTimestamp ? dashboardItemTimestamp(item, spec) : null,
+    number: needsNumber ? dashboardItemNumber(item, spec) : null,
+    relevance: dashboardItemRelevance(item, spec),
+  }));
+  decorated.sort((a, b) => {
+    if (spec.sort === "latest" || spec.sort === "oldest") {
+      const aTime = a.timestamp ?? (spec.sort === "latest" ? -Infinity : Infinity);
+      const bTime = b.timestamp ?? (spec.sort === "latest" ? -Infinity : Infinity);
+      const delta = spec.sort === "latest" ? bTime - aTime : aTime - bTime;
+      if (delta !== 0) return delta;
+    }
+    if (spec.sort === "largest" || spec.sort === "smallest") {
+      const aNumber = a.number ?? (spec.sort === "largest" ? -Infinity : Infinity);
+      const bNumber = b.number ?? (spec.sort === "largest" ? -Infinity : Infinity);
+      const delta = spec.sort === "largest" ? bNumber - aNumber : aNumber - bNumber;
+      if (delta !== 0) return delta;
+    }
+    const relevanceDelta = b.relevance - a.relevance;
+    if (relevanceDelta !== 0) return relevanceDelta;
+    return a.index - b.index;
+  });
+  return decorated.map((entry) => entry.item);
+}
+
+function prepareDashboardArrayItems(items: unknown[], spec: DashboardViewSpec): unknown[] {
+  const filtered =
+    spec.filters.length === 0
+      ? items
+      : items.filter((item) => dashboardItemMatchesFilters(item, spec));
+  return sortDashboardArrayItems(filtered, spec);
+}
+
 function collectDashboardFields(
   value: unknown,
   spec: DashboardViewSpec,
@@ -5518,16 +5869,20 @@ function collectDashboardLists(
   if (Array.isArray(value)) {
     if (!path || isDashboardPathExcluded(path, spec)) return;
     const label = dashboardPathLabel(path);
-    const items = summarizeDashboardArrayItems(value, spec.maxItems);
+    const preparedItems = prepareDashboardArrayItems(value, spec);
+    const items = summarizeDashboardArrayItems(preparedItems, spec.maxItems);
     lists.push({
       path,
       key: dashboardKeyFromPath(path),
       label,
-      count: value.length,
+      count: preparedItems.length,
+      totalCount: value.length,
       items,
-      sample: value.slice(0, Math.max(spec.maxItems, 10)),
-      score: dashboardTextScore(`${path} ${label} ${items.join(" ")}`, spec.includeTokens),
-      priority: value.length > 0 ? 3 : 1,
+      sample: preparedItems.slice(0, Math.max(spec.maxItems, 10)),
+      score:
+        dashboardTextScore(`${path} ${label} ${items.join(" ")}`, spec.includeTokens) +
+        (preparedItems.length < value.length ? 2 : 0),
+      priority: preparedItems.length > 0 ? 3 : 1,
     });
     return;
   }
@@ -5597,6 +5952,7 @@ function buildDashboardTable(
   return {
     label: source.label,
     count: source.count,
+    totalCount: source.totalCount,
     columns,
     rows: objectRows.slice(0, spec.maxItems).map((row) => {
       const out: Record<string, string> = {};
@@ -5664,6 +6020,16 @@ function projectDashboardValue(
   };
 }
 
+function dashboardCountLabel(
+  t: Translate,
+  count: number,
+  totalCount: number,
+): string {
+  return count === totalCount
+    ? t("dashboard.itemsCount", { count })
+    : t("dashboard.filteredItemsCount", { count, total: totalCount });
+}
+
 function DashboardValueView({
   value,
   fallback,
@@ -5702,7 +6068,11 @@ function DashboardValueView({
         <div className="dashboard-value-table-wrap">
           <div className="dashboard-value-count">
             {projected.table.label} ·{" "}
-            {t("dashboard.itemsCount", { count: projected.table.count })}
+            {dashboardCountLabel(
+              t,
+              projected.table.count,
+              projected.table.totalCount,
+            )}
           </div>
           <table className="dashboard-value-table">
             <thead>
@@ -5729,7 +6099,7 @@ function DashboardValueView({
           {projected.lists.map((list) => (
             <div key={list.path} className="dashboard-value-list">
               <div className="dashboard-value-count">
-                {list.label} · {t("dashboard.itemsCount", { count: list.count })}
+                {list.label} · {dashboardCountLabel(t, list.count, list.totalCount)}
               </div>
               {list.items.length > 0 && (
                 <ul>
