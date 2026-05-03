@@ -2796,7 +2796,9 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   padding: 20px 22px;
-  width: min(560px, 90vw);
+  width: min(720px, 92vw);
+  max-height: min(760px, 90vh);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2854,6 +2856,14 @@
 
 .modal-select {
   resize: none;
+}
+
+.home-start-dialog-widgets {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px;
 }
 
 .modal-input:focus {

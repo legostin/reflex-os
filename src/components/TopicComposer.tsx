@@ -24,8 +24,13 @@ interface ImageAttachment {
   name: string;
 }
 
+export interface TopicComposerSendMeta {
+  goal?: string | null;
+  planMode?: boolean;
+}
+
 interface TopicComposerProps {
-  threadId: string;
+  threadId?: string | null;
   projectRoot: string | null;
   running: boolean;
   showPlanBanner: boolean;
@@ -33,7 +38,12 @@ interface TopicComposerProps {
   stopping: boolean;
   apps: TopicComposerApp[];
   widgetsVisible: boolean;
-  onSend: (prompt: string, imagePaths: string[]) => Promise<void>;
+  memoryScope?: "topic" | "project";
+  onSend: (
+    prompt: string,
+    imagePaths: string[],
+    meta?: TopicComposerSendMeta,
+  ) => Promise<void>;
   onStop: () => Promise<void>;
   onOpenApp?: (appId: string) => void;
   onToggleWidgets?: () => void;
@@ -43,6 +53,7 @@ type CommandId =
   | "remember"
   | "run"
   | "plan"
+  | "goal"
   | "file"
   | "image"
   | "app"
@@ -74,6 +85,12 @@ function commands(t: Translate): ComposerCommand[] {
       token: "/plan",
       title: t("topicComposer.commandPlan"),
       description: t("topicComposer.commandPlanHint"),
+    },
+    {
+      id: "goal",
+      token: "/goal",
+      title: t("topicComposer.commandGoal"),
+      description: t("topicComposer.commandGoalHint"),
     },
     {
       id: "file",
@@ -130,6 +147,16 @@ function commandPrompt(raw: string): string {
   }
 
   return raw;
+}
+
+function goalPrompt(goal: string): string {
+  return [
+    "Set this as the active goal for the thread and work toward it until it is complete.",
+    "Treat the goal as the user's requested outcome, not as UI copy.",
+    "",
+    "Goal:",
+    goal,
+  ].join("\n");
 }
 
 function displayPath(path: string): string {
@@ -235,6 +262,7 @@ export function TopicComposer({
   stopping,
   apps,
   widgetsVisible,
+  memoryScope,
   onSend,
   onStop,
   onOpenApp,
@@ -249,6 +277,7 @@ export function TopicComposer({
   const [pickingImage, setPickingImage] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const resolvedMemoryScope = memoryScope ?? (threadId ? "topic" : "project");
   const commandQuery = slashQuery(draft);
   const fileQuery = currentFileQuery(draft);
   const activeAppQuery = appQuery(draft);
@@ -302,14 +331,14 @@ export function TopicComposer({
     setStatus(null);
     try {
       await invoke("memory_save", {
-        scope: "topic",
+        scope: resolvedMemoryScope,
         kind: "fact",
         name: memoryTitle(text),
         description: "Saved from topic composer",
         body: text,
         projectRoot,
-        threadId,
-        tags: ["topic", "composer"],
+        threadId: resolvedMemoryScope === "topic" ? threadId : undefined,
+        tags: [resolvedMemoryScope, "composer"],
         source: "topic-composer",
       });
       setStatus(t("topicComposer.memorySaved"));
@@ -390,6 +419,25 @@ export function TopicComposer({
       return;
     }
 
+    const goalMatch = text.match(/^\/goal\s+([\s\S]+)$/i);
+    if (goalMatch) {
+      const goal = goalMatch[1].trim();
+      if (!goal) return;
+      try {
+        const prompt = withContext(goalPrompt(goal), files, images);
+        await onSend(
+          prompt,
+          images.map((image) => image.path),
+          { goal },
+        );
+        setDraft("");
+        setImages([]);
+      } catch (e) {
+        setError(String(e));
+      }
+      return;
+    }
+
     const appMatch = text.match(/^\/app\s+([\s\S]+)$/i);
     if (appMatch) {
       const app = apps.find((item) => appMatches(item, appMatch[1]));
@@ -400,10 +448,12 @@ export function TopicComposer({
     }
 
     try {
+      const planCommand = /^\/plan\s+([\s\S]+)$/i.test(text);
       const prompt = withContext(commandPrompt(text), files, images);
       await onSend(
         prompt,
         images.map((image) => image.path),
+        planCommand ? { planMode: true } : undefined,
       );
       setDraft("");
       setImages([]);
@@ -461,7 +511,12 @@ export function TopicComposer({
           type="button"
           className="topic-composer-tool"
           onClick={() => void saveMemory(draft)}
-          disabled={!draft.trim() || !projectRoot || savingMemory}
+          disabled={
+            !draft.trim() ||
+            !projectRoot ||
+            savingMemory ||
+            (resolvedMemoryScope === "topic" && !threadId)
+          }
           title={t("topicComposer.saveMemoryTitle")}
         >
           mem

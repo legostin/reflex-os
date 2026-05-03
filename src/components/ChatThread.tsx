@@ -16,7 +16,7 @@ import { WidgetGrid, type WidgetSource } from "./widgets/WidgetGrid";
 import { SuggesterModal } from "./projects/SuggesterModal";
 import { BrowserScreen } from "./browser/BrowserScreen";
 import { SettingsScreen } from "./settings/SettingsScreen";
-import { TopicComposer } from "./TopicComposer";
+import { TopicComposer, type TopicComposerSendMeta } from "./TopicComposer";
 import {
   BRIDGE_API_GROUPS,
   BRIDGE_HELPER_GROUPS,
@@ -77,6 +77,7 @@ type ThreadCreated = {
   cwd: string;
   ctx: QuickContext;
   created_at_ms: number;
+  goal?: string | null;
   plan_mode?: boolean;
   source?: string;
   browser_tabs?: BrowserTabSnapshot[];
@@ -1069,6 +1070,8 @@ export default function ChatThread() {
     options?: {
       source?: string;
       browserTabs?: BrowserTabSnapshot[];
+      imagePaths?: string[];
+      goal?: string | null;
     },
   ) => {
     const project = projects.find((p) => p.id === projectId);
@@ -1083,6 +1086,8 @@ export default function ChatThread() {
       planMode,
       source: options?.source,
       browserTabs: options?.browserTabs,
+      imagePaths: options?.imagePaths,
+      goal: options?.goal,
     });
     // backend emits reflex://thread-created which our listener will route into the focused pane.
   };
@@ -1135,7 +1140,7 @@ export default function ChatThread() {
         done: false,
         session_id: null,
         title: null,
-        goal: null,
+        goal: e.payload.goal ?? null,
         pending_questions: [],
         plan_mode: !!e.payload.plan_mode,
         plan_confirmed: false,
@@ -1156,7 +1161,12 @@ export default function ChatThread() {
               ? {
                   ...t,
                   title: e.payload.title ?? t.title,
-                  goal: e.payload.goal ?? t.goal,
+                  goal: Object.prototype.hasOwnProperty.call(
+                    e.payload,
+                    "goal",
+                  )
+                    ? e.payload.goal ?? null
+                    : t.goal,
                   plan_confirmed:
                     e.payload.plan_confirmed ?? t.plan_confirmed,
                 }
@@ -1336,8 +1346,8 @@ export default function ChatThread() {
             onSelectApp={(id) => navigate({ kind: "app", app_id: id })}
             onOpenApps={() => navigate({ kind: "apps" })}
             onOpenMemory={() => navigate({ kind: "memory" })}
-            onCreateTopic={(projectId, prompt, planMode) =>
-              createNewTopic(projectId, prompt, planMode)
+            onCreateTopic={(projectId, prompt, planMode, imagePaths, goal) =>
+              createNewTopic(projectId, prompt, planMode, { imagePaths, goal })
             }
             onCreateProject={() => void createNewProject()}
           />
@@ -3867,6 +3877,8 @@ function HomeScreen({
     projectId: string,
     prompt: string,
     planMode: boolean,
+    imagePaths?: string[],
+    goal?: string | null,
   ) => Promise<void>;
   onCreateProject: () => void;
 }) {
@@ -3876,11 +3888,30 @@ function HomeScreen({
   const [dialogProjectId, setDialogProjectId] = useState(
     () => projects[0]?.id ?? "",
   );
-  const [dialogPrompt, setDialogPrompt] = useState("");
-  const [dialogPlanMode, setDialogPlanMode] = useState(false);
   const [dialogSubmitting, setDialogSubmitting] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [dialogApps, setDialogApps] = useState<AppManifest[]>([]);
+  const [dialogWidgetsVisible, setDialogWidgetsVisible] = useState(false);
   const hasProjects = projects.length > 0;
+  const dialogProject =
+    projects.find((project) => project.id === dialogProjectId) ?? null;
+  const dialogWidgetSources = useMemo<WidgetSource[]>(() => {
+    if (!dialogProject) return [];
+    const linkedIds = new Set(dialogProject.apps ?? []);
+    const out: WidgetSource[] = [];
+    for (const app of dialogApps) {
+      if (!linkedIds.has(app.id) || app.ready === false) continue;
+      for (const widget of app.widgets ?? []) {
+        out.push({
+          appId: app.id,
+          appName: app.name,
+          appIcon: app.icon ?? null,
+          widget,
+        });
+      }
+    }
+    return out;
+  }, [dialogApps, dialogProject]);
   const chooseProject = () => {
     if (!hasProjects) {
       onCreateProject();
@@ -3899,15 +3930,24 @@ function HomeScreen({
     setDialogError(null);
     setShowStartDialog(true);
   };
-  const submitStartDialog = async () => {
-    const text = dialogPrompt.trim();
-    if (!text || !dialogProjectId || dialogSubmitting) return;
+
+  const submitStartDialog = async (
+    prompt: string,
+    imagePaths: string[],
+    meta?: TopicComposerSendMeta,
+  ) => {
+    if (!prompt.trim() || !dialogProjectId || dialogSubmitting) return;
     setDialogSubmitting(true);
     setDialogError(null);
     try {
-      await onCreateTopic(dialogProjectId, text, dialogPlanMode);
-      setDialogPrompt("");
-      setDialogPlanMode(false);
+      await onCreateTopic(
+        dialogProjectId,
+        prompt,
+        meta?.planMode ?? false,
+        imagePaths,
+        meta?.goal ?? null,
+      );
+      setDialogWidgetsVisible(false);
       setShowStartDialog(false);
     } catch (e) {
       setDialogError(String(e));
@@ -3929,6 +3969,32 @@ function HomeScreen({
       setDialogProjectId(projects[0].id);
     }
   }, [projects, dialogProjectId]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const refreshApps = () => {
+      invoke<AppManifest[]>("list_apps")
+        .then((list) => {
+          if (alive) setDialogApps(list);
+        })
+        .catch((e) =>
+          console.warn("[reflex] list_apps for home composer failed", e),
+        );
+    };
+
+    refreshApps();
+    let unlisten: (() => void) | null = null;
+    listen("reflex://apps-changed", refreshApps)
+      .then((u) => {
+        unlisten = u;
+      })
+      .catch((e) => console.warn("[reflex] listen apps-changed home", e));
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, []);
 
   return (
     <div className="home-root">
@@ -4079,27 +4145,33 @@ function HomeScreen({
                 ))}
               </select>
             </label>
-            <textarea
-              className="modal-input"
-              placeholder={t("home.startDialogPlaceholder")}
-              value={dialogPrompt}
-              onChange={(e) => setDialogPrompt(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  void submitStartDialog();
-                }
-              }}
-              rows={5}
-            />
-            <label className="plan-toggle">
-              <input
-                type="checkbox"
-                checked={dialogPlanMode}
-                onChange={(e) => setDialogPlanMode(e.currentTarget.checked)}
-              />
-              <span>📋 {t("project.planFirst")}</span>
-            </label>
+            {dialogProject && (
+              <>
+                <TopicComposer
+                  threadId={null}
+                  projectRoot={dialogProject.root}
+                  running={false}
+                  showPlanBanner={false}
+                  submitting={dialogSubmitting}
+                  stopping={false}
+                  apps={dialogApps}
+                  widgetsVisible={dialogWidgetsVisible}
+                  memoryScope="project"
+                  onSend={submitStartDialog}
+                  onStop={async () => {}}
+                  onOpenApp={onSelectApp}
+                  onToggleWidgets={() => setDialogWidgetsVisible((v) => !v)}
+                />
+                {dialogWidgetsVisible && dialogWidgetSources.length > 0 && (
+                  <div className="home-start-dialog-widgets">
+                    <WidgetGrid
+                      sources={dialogWidgetSources}
+                      onOpenApp={onSelectApp}
+                    />
+                  </div>
+                )}
+              </>
+            )}
             {dialogError && <div className="apps-error">{dialogError}</div>}
             <div className="modal-actions">
               <button
@@ -4108,17 +4180,6 @@ function HomeScreen({
                 onClick={() => setShowStartDialog(false)}
               >
                 {t("apps.cancel")}
-              </button>
-              <button
-                className="modal-btn modal-btn-primary"
-                disabled={
-                  dialogSubmitting || !dialogPrompt.trim() || !dialogProjectId
-                }
-                onClick={() => void submitStartDialog()}
-              >
-                {dialogSubmitting
-                  ? t("project.starting")
-                  : t("home.startDialogSubmit")}
               </button>
             </div>
           </div>
@@ -5648,7 +5709,11 @@ function ThreadCard({
 
   const running = !thread.done;
 
-  async function sendFollowupText(prompt: string, imagePaths: string[] = []) {
+  async function sendFollowupText(
+    prompt: string,
+    imagePaths: string[] = [],
+    meta?: TopicComposerSendMeta,
+  ) {
     const text = prompt.trim();
     if (!text || submitting) return;
     setError(null);
@@ -5660,6 +5725,13 @@ function ThreadCard({
         } catch (e) {
           console.warn("[reflex] stop before send failed", e);
         }
+      }
+      if (meta?.goal) {
+        await invoke("set_thread_goal", {
+          projectId: thread.project_id,
+          threadId: thread.id,
+          goal: meta.goal,
+        });
       }
       const confirmsPlan = showPlanBanner && isPlanApprovalText(text);
       const args: Record<string, unknown> = {

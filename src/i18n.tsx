@@ -361,6 +361,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "topicComposer.commandPlan": "Plan first",
     "topicComposer.commandPlanHint":
       "Ask Codex to inspect and produce a plan before edits.",
+    "topicComposer.commandGoal": "Set goal",
+    "topicComposer.commandGoalHint":
+      "Use /goal text to pin the thread outcome.",
     "topicComposer.commandFile": "Mention file",
     "topicComposer.commandFileHint": "Insert a project file reference with @file.",
     "topicComposer.commandImage": "Attach image",
@@ -1064,6 +1067,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "topicComposer.commandPlan": "Сначала план",
     "topicComposer.commandPlanHint":
       "Попросить Codex изучить контекст и составить план перед правками.",
+    "topicComposer.commandGoal": "Задать goal",
+    "topicComposer.commandGoalHint":
+      "Используй /goal текст, чтобы закрепить цель треда.",
     "topicComposer.commandFile": "Упомянуть файл",
     "topicComposer.commandFileHint": "Вставить ссылку на файл проекта через @file.",
     "topicComposer.commandImage": "Прикрепить фото",

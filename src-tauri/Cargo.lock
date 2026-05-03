@@ -3388,6 +3388,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "cron",
+ "mac-notification-sys",
  "notify",
  "notify-debouncer-mini",
  "reqwest 0.12.28",

@@ -74,6 +74,8 @@ pub async fn dispatch_app_method(
                 None,
                 None,
                 None,
+                None,
+                None,
             )?;
             Ok(serde_json::json!({ "threadId": thread_id }))
         }

@@ -49,6 +49,8 @@ struct ThreadCreated {
     ctx: QuickContext,
     created_at_ms: u128,
     #[serde(default)]
+    goal: Option<String>,
+    #[serde(default)]
     plan_mode: bool,
     #[serde(default)]
     source: String,
@@ -421,6 +423,7 @@ fn build_empty_app_thread(
         cwd: project.root.clone(),
         ctx: QuickContext::default(),
         created_at_ms: now_ms,
+        goal: meta.goal.clone(),
         plan_mode: meta.plan_mode,
         source: meta.source.clone(),
         browser_tabs: meta.browser_tabs.clone(),
@@ -577,6 +580,10 @@ async fn create_app(
     if trimmed.is_empty() {
         return Err("empty description".into());
     }
+    let (app_description, explicit_goal) = extract_goal_command(trimmed);
+    if app_description.trim().is_empty() {
+        return Err("empty description".into());
+    }
     let template = template.unwrap_or_else(|| "blank".to_string());
     let target_project = match project_id
         .as_deref()
@@ -601,7 +608,7 @@ async fn create_app(
     let dir = apps_root.join(&app_id);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-    let label = short_label(trimmed);
+    let label = short_label(&app_description);
     let proj_name = format!("App · {label}");
     let project = project::create_project(&app, &dir, Some(proj_name.clone()), None)
         .map_err(|e| e.to_string())?;
@@ -610,7 +617,7 @@ async fn create_app(
         id: app_id.clone(),
         name: label.clone(),
         icon: Some("🧩".into()),
-        description: Some(trimmed.to_string()),
+        description: Some(app_description.clone()),
         entry: "index.html".into(),
         permissions: vec![],
         kind: "panel".into(),
@@ -630,7 +637,10 @@ async fn create_app(
 
     let thread_id = format!("t_{now_ms}");
     let project_root = dir.clone();
-    let prompt = build_app_creation_prompt(trimmed, &template, target_project.as_ref());
+    let prompt = build_app_creation_prompt(&app_description, &template, target_project.as_ref());
+    let goal = explicit_goal
+        .clone()
+        .unwrap_or_else(|| format!("Create a Reflex app: {app_description}"));
 
     let meta = storage::ThreadMeta {
         id: thread_id.clone(),
@@ -644,7 +654,7 @@ async fn create_app(
         done: false,
         session_id: None,
         title: Some(format!("App creation: {label}")),
-        goal: Some(format!("Create a Reflex app: {trimmed}")),
+        goal: Some(goal.clone()),
         plan_mode: true,
         plan_confirmed: false,
         source: "quick".into(),
@@ -660,6 +670,7 @@ async fn create_app(
         cwd: project.root.clone(),
         ctx: QuickContext::default(),
         created_at_ms: now_ms,
+        goal: meta.goal.clone(),
         plan_mode: meta.plan_mode,
         source: meta.source.clone(),
         browser_tabs: meta.browser_tabs.clone(),
@@ -712,6 +723,24 @@ async fn create_app(
         "thread_id": thread_id,
         "project_id": project.id,
     }))
+}
+
+fn extract_goal_command(input: &str) -> (String, Option<String>) {
+    if let Some(rest) = input.strip_prefix("/goal") {
+        let has_command_boundary = rest
+            .chars()
+            .next()
+            .map(char::is_whitespace)
+            .unwrap_or(true);
+        if has_command_boundary {
+            let goal = rest.trim().to_string();
+            return (
+                goal.clone(),
+                if goal.is_empty() { None } else { Some(goal) },
+            );
+        }
+    }
+    (input.trim().to_string(), None)
 }
 
 fn short_label(s: &str) -> String {
@@ -1856,8 +1885,20 @@ fn submit_quick(
     plan_mode: Option<bool>,
     source: Option<String>,
     browser_tabs: Option<Vec<storage::BrowserTab>>,
+    image_paths: Option<Vec<String>>,
+    goal: Option<String>,
 ) -> Result<String, String> {
-    submit_quick_impl(app, prompt, ctx, project_id, plan_mode, source, browser_tabs)
+    submit_quick_impl(
+        app,
+        prompt,
+        ctx,
+        project_id,
+        plan_mode,
+        source,
+        browser_tabs,
+        image_paths,
+        goal,
+    )
 }
 
 pub(crate) fn submit_quick_impl(
@@ -1868,12 +1909,18 @@ pub(crate) fn submit_quick_impl(
     plan_mode: Option<bool>,
     source: Option<String>,
     browser_tabs: Option<Vec<storage::BrowserTab>>,
+    image_paths: Option<Vec<String>>,
+    goal: Option<String>,
 ) -> Result<String, String> {
     let plan_mode = plan_mode.unwrap_or(false);
     let source = source
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "quick".into());
     let browser_tabs = browser_tabs.unwrap_or_default();
+    let image_paths = validate_local_image_paths(image_paths)?;
+    let goal = goal
+        .map(|g| g.trim().to_string())
+        .filter(|g| !g.is_empty());
     eprintln!(
         "[reflex] submit_quick: prompt_len={} project_id={:?} source={} tabs={} ctx={:?}/{:?}",
         prompt.len(),
@@ -1909,7 +1956,7 @@ pub(crate) fn submit_quick_impl(
         done: false,
         session_id: None,
         title: None,
-        goal: None,
+        goal: goal.clone(),
         plan_mode,
         plan_confirmed: false,
         source: source.clone(),
@@ -1936,6 +1983,7 @@ pub(crate) fn submit_quick_impl(
         cwd: project.root.clone(),
         ctx,
         created_at_ms: now_ms,
+        goal: goal.clone(),
         plan_mode,
         source: source.clone(),
         browser_tabs: browser_tabs.clone(),
@@ -1981,6 +2029,7 @@ pub(crate) fn submit_quick_impl(
     let reflex_id = thread_id.clone();
     let root_for_task = project_root.clone();
     let project_id_for_task = project.id.clone();
+    let image_paths_for_task = image_paths.clone();
     tauri::async_runtime::spawn(async move {
         let project_now = project::get_by_id(&app_handle, &project_id_for_task)
             .ok()
@@ -2045,7 +2094,10 @@ pub(crate) fn submit_quick_impl(
             meta.session_id = Some(app_thread_id.clone());
             let _ = storage::write_meta(&root_for_task, &meta);
         }
-        if let Err(e) = server.turn_start(&app_thread_id, &codex_prompt).await {
+        if let Err(e) = server
+            .turn_start_with_local_images(&app_thread_id, &codex_prompt, &image_paths_for_task)
+            .await
+        {
             eprintln!("[reflex] turn_start failed: {e}");
         }
     });
@@ -2083,6 +2135,33 @@ fn validate_local_image_paths(image_paths: Option<Vec<String>>) -> Result<Vec<St
         out.push(trimmed.to_string());
     }
     Ok(out)
+}
+
+#[tauri::command]
+fn set_thread_goal(
+    app: AppHandle,
+    project_id: String,
+    thread_id: String,
+    goal: Option<String>,
+) -> Result<(), String> {
+    let project = project::get_by_id(&app, &project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    let project_root = PathBuf::from(&project.root);
+    let normalized = goal
+        .map(|g| g.trim().to_string())
+        .filter(|g| !g.is_empty());
+    let mut meta = storage::read_meta(&project_root, &thread_id).map_err(|e| e.to_string())?;
+    meta.goal = normalized.clone();
+    storage::write_meta(&project_root, &meta).map_err(|e| e.to_string())?;
+    let _ = app.emit(
+        "reflex://thread-meta-updated",
+        &serde_json::json!({
+            "thread_id": thread_id,
+            "goal": normalized,
+        }),
+    );
+    Ok(())
 }
 
 #[tauri::command]
@@ -2858,6 +2937,7 @@ pub fn run() {
             list_directory,
             list_project_files,
             reveal_in_finder,
+            set_thread_goal,
             continue_thread,
             stop_thread,
             respond_to_question,

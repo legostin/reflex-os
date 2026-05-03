@@ -4,10 +4,12 @@ use serde_json::Value;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tauri::{AppHandle, Emitter};
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
 use tokio::process::Command as TokioCommand;
 
-/// Notify macOS that a thread finished. Public so app-server module can call it.
+/// Notify the user that a thread finished. Public so app-server module can call it.
 pub fn notify_thread_done_external(
     app: &AppHandle,
     project_root: &std::path::Path,
@@ -15,14 +17,28 @@ pub fn notify_thread_done_external(
     exit_code: Option<i32>,
     cancelled: bool,
 ) {
-    let label = match storage::read_meta(project_root, thread_id) {
-        Ok(m) => m
+    let meta = storage::read_meta(project_root, thread_id).ok();
+    let label = match &meta {
+        Some(m) => m
             .title
             .clone()
             .unwrap_or_else(|| m.prompt.chars().take(48).collect::<String>()),
-        Err(_) => format!("Topic {thread_id}"),
+        None => format!("Topic {thread_id}"),
     };
-    let body = if cancelled {
+    let plan_ready = !cancelled
+        && exit_code == Some(0)
+        && meta
+            .as_ref()
+            .map(|m| m.plan_mode && !m.plan_confirmed)
+            .unwrap_or(false);
+    let title = if plan_ready {
+        "Reflex - plan ready"
+    } else {
+        "Reflex"
+    };
+    let body = if plan_ready {
+        format!("Plan ready · {label}")
+    } else if cancelled {
         format!("✗ Cancelled · {label}")
     } else {
         match exit_code {
@@ -31,15 +47,63 @@ pub fn notify_thread_done_external(
             None => format!("? Terminated · {label}"),
         }
     };
+
+    #[cfg(target_os = "macos")]
+    if plan_ready {
+        let app_handle = app.clone();
+        let title_owned = title.to_string();
+        let body_owned = body.clone();
+        let thread_id_owned = thread_id.to_string();
+        let project_id = meta.and_then(|m| m.project_id);
+        std::thread::spawn(move || {
+            let mut notification = mac_notification_sys::Notification::new();
+            let response = notification
+                .title(&title_owned)
+                .message(&body_owned)
+                .wait_for_click(true)
+                .send();
+            match response {
+                Ok(mac_notification_sys::NotificationResponse::Click)
+                | Ok(mac_notification_sys::NotificationResponse::ActionButton(_)) => {
+                    open_thread_from_notification(&app_handle, project_id, thread_id_owned);
+                }
+                Ok(_) => {}
+                Err(e) => eprintln!("[reflex] plan notification failed: {e}"),
+            }
+        });
+        return;
+    }
+
     if let Err(e) = app
         .notification()
         .builder()
-        .title("Reflex")
+        .title(title)
         .body(body)
         .show()
     {
         eprintln!("[reflex] notification failed: {e}");
     }
+}
+
+#[cfg(target_os = "macos")]
+fn open_thread_from_notification(
+    app: &AppHandle,
+    project_id: Option<String>,
+    thread_id: String,
+) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show();
+        let _ = main.unminimize();
+        let _ = main.set_focus();
+    }
+    let _ = app.emit(
+        "reflex://topic-open-request",
+        &serde_json::json!({
+            "project_id": project_id,
+            "thread_id": thread_id,
+            "from_app": "notification",
+        }),
+    );
 }
 
 /// Recursive lookup for codex session id in a parsed JSONL event.
@@ -157,9 +221,13 @@ pub async fn generate_topic_meta(
         }
     };
 
+    let mut emitted_goal = parsed.goal.clone();
     if let Ok(mut meta) = storage::read_meta(&project_root, &thread_id) {
         meta.title = Some(parsed.title.clone());
-        meta.goal = Some(parsed.goal.clone());
+        if meta.goal.is_none() {
+            meta.goal = Some(parsed.goal.clone());
+        }
+        emitted_goal = meta.goal.clone().unwrap_or_else(|| parsed.goal.clone());
         if let Err(e) = storage::write_meta(&project_root, &meta) {
             eprintln!("[reflex] meta write failed: {e}");
         }
@@ -170,7 +238,7 @@ pub async fn generate_topic_meta(
         &serde_json::json!({
             "thread_id": thread_id,
             "title": parsed.title,
-            "goal": parsed.goal,
+            "goal": emitted_goal,
         }),
     );
 
