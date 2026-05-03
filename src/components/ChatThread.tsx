@@ -2152,6 +2152,14 @@ const TEMPLATES: {
     badges: ["external", "bridge", "mcp"],
   },
   {
+    id: "repo-wrapper",
+    icon: "OSS",
+    nameKey: "template.repoWrapper.name",
+    descriptionKey: "template.repoWrapper.description",
+    placeholderKey: "template.repoWrapper.placeholder",
+    badges: ["repo", "wrapper", "mcp"],
+  },
+  {
     id: "automation",
     icon: "⏱",
     nameKey: "template.automation.name",
@@ -2251,6 +2259,7 @@ function AppsScreen({
   const [description, setDescription] = useState("");
   const [connectedUrl, setConnectedUrl] = useState("");
   const [connectedName, setConnectedName] = useState("");
+  const [sourceRepoUrl, setSourceRepoUrl] = useState("");
   const [trash, setTrash] = useState<TrashEntry[]>([]);
   const [showTrash, setShowTrash] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -2387,20 +2396,35 @@ function AppsScreen({
 
   async function submitCreate() {
     const text = description.trim();
-    if (!text || creating) return;
+    const repoUrl = sourceRepoUrl.trim();
+    if (creating) return;
+    if (template === "repo-wrapper" && !repoUrl) return;
+    if (template !== "repo-wrapper" && !text) return;
     setCreating(true);
     setError(null);
     try {
+      const promptText =
+        template === "repo-wrapper"
+          ? [
+              `Open-source repository URL: ${repoUrl}`,
+              "",
+              "Wrapper requirements from the user:",
+              text ||
+                "Create a Reflex wrapper around this open-source app, add a bridge layer, and derive an MCP/data adapter plan from the code.",
+            ].join("\n")
+          : text;
       const res = await invoke<{ app_id: string; thread_id: string }>(
         "create_app",
         {
-          description: text,
+          description: promptText,
           template,
           projectId: targetProject?.id ?? null,
+          sourceRepoUrl: template === "repo-wrapper" ? repoUrl : null,
         },
       );
       setShowModal(false);
       setDescription("");
+      setSourceRepoUrl("");
       setStep("template");
       setTemplate("blank");
       // refresh list a bit later (codex still working)
@@ -2435,6 +2459,7 @@ function AppsScreen({
       setTemplate("blank");
       setConnectedUrl("");
       setConnectedName("");
+      setSourceRepoUrl("");
       await refresh();
       onOpenApp(manifest.id);
     } catch (e) {
@@ -2795,12 +2820,27 @@ function AppsScreen({
                     </div>
                   </div>
                 )}
+                {template === "repo-wrapper" && (
+                  <div className="connected-custom-panel">
+                    <strong>{t("apps.repoWrapperTitle")}</strong>
+                    <span>{t("apps.repoWrapperHint")}</span>
+                    <input
+                      className="modal-input"
+                      value={sourceRepoUrl}
+                      onChange={(e) =>
+                        setSourceRepoUrl(e.currentTarget.value)
+                      }
+                      placeholder={t("apps.repoWrapperUrlPlaceholder")}
+                      autoFocus
+                    />
+                  </div>
+                )}
                 <textarea
                   className="modal-input"
                   placeholder={t(selectedTemplate.placeholderKey)}
                   value={description}
                   onChange={(e) => setDescription(e.currentTarget.value)}
-                  autoFocus
+                  autoFocus={template !== "repo-wrapper"}
                   rows={5}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -2827,7 +2867,11 @@ function AppsScreen({
                   <button
                     className="modal-btn modal-btn-primary"
                     disabled={
-                      creating || installingConnected || !description.trim()
+                      creating ||
+                      installingConnected ||
+                      (template === "repo-wrapper"
+                        ? !sourceRepoUrl.trim()
+                        : !description.trim())
                     }
                     onClick={() => void submitCreate()}
                   >

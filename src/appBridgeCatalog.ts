@@ -374,9 +374,10 @@ export const BRIDGE_RECIPE_CARDS = [
   },
   {
     title: "Utility as a service",
-    body: "Publish actions/widgets, create utilities, export bundles, and manage server runtime.",
+    body: "Publish actions/widgets, create utilities, wrap open-source repos, export bundles, and manage server runtime.",
     calls: ["actions.upsert", "apps.create", "apps.export", "apps.server.status"],
-    example: 'await reflexAppsCreate("A utility for a daily report");',
+    example:
+      'await reflexAppsCreate({ description: "Wrap this repo with Reflex bridge actions", template: "repo-wrapper", sourceRepoUrl: "https://github.com/owner/repo" });',
   },
   {
     title: "Connected app adapter",

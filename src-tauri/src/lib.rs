@@ -662,6 +662,27 @@ fn connected_app_spec(
             mcp: serde_json::json!({
                 "recommended": true,
                 "server_name": "telegram",
+                "required_env": [
+                    "TELEGRAM_API_ID",
+                    "TELEGRAM_API_HASH",
+                    "TELEGRAM_SESSION"
+                ],
+                "expected_operations": [
+                    "list accessible chats",
+                    "read recent messages for an accessible chat",
+                    "report authentication or session errors without guessing"
+                ],
+                "setup_checklist": [
+                    "Use an MTProto or TDLib user-session MCP server; Bot API tokens cannot read arbitrary personal chats.",
+                    "Store the long-lived Telegram session outside the app manifest and pass only an environment variable or path.",
+                    "Save the MCP server config in this panel, then run Check MCP connection.",
+                    "Use Read recent messages only after MCP config is found and the connection check succeeds."
+                ],
+                "security": {
+                    "credential_storage": "outside_manifest",
+                    "personal_chats_require_user_session": true,
+                    "bot_api_personal_chat_access": false
+                },
                 "config_shape": {
                     "command": "node",
                     "args": ["path/to/telegram-mcp-server.js"],
@@ -1072,6 +1093,24 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       text-transform: uppercase;
       letter-spacing: 0;
     }
+    .setup-panel {
+      border-radius: 7px;
+      border: 1px solid rgba(80,140,255,0.2);
+      background: rgba(80,140,255,0.08);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+      color: rgba(238,242,255,0.82);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .setup-panel ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .setup-panel code {
+      color: #dbe7ff;
+    }
   </style>
 </head>
 <body>
@@ -1103,6 +1142,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
 
     <section>
       <h2 data-i18n="mcpBridge">MCP bridge</h2>
+      <div id="mcpSetup" class="setup-panel" hidden></div>
       <div class="form-grid">
         <label class="field">
           <span data-i18n="serverName">Server name</span>
@@ -1179,6 +1219,10 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         opened: "opened",
         unknown: "unknown",
         mcpBridge: "MCP bridge",
+        setupRequirements: "Setup requirements",
+        requiredEnv: "Required env",
+        expectedOperations: "Expected operations",
+        checklist: "Checklist",
         serverName: "Server name",
         command: "Command",
         argsJsonArray: "Args JSON array",
@@ -1247,6 +1291,10 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         opened: "открыто",
         unknown: "неизвестно",
         mcpBridge: "MCP bridge",
+        setupRequirements: "Требования настройки",
+        requiredEnv: "Нужные env",
+        expectedOperations: "Ожидаемые операции",
+        checklist: "Чеклист",
         serverName: "Имя сервера",
         command: "Команда",
         argsJsonArray: "Args как JSON-массив",
@@ -1362,6 +1410,50 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       el("mcpQuery").value = config.provider === "telegram"
         ? "Use the configured Telegram MCP server to list recent visible/available chats and summarize the latest messages. Do not claim access to chats or messages the MCP server cannot access. Return concise JSON with chats, latest_messages, summary, and warnings."
         : "Use the configured provider MCP server for this connected app to inspect available recent data. Do not claim access to data the MCP server cannot access. Return concise JSON with items, summary, and warnings.";
+      renderMcpSetup();
+    }
+
+    function renderMcpSetup() {
+      const mcp = config.recommendedMcp || {};
+      const requiredEnv = Array.isArray(mcp.required_env) ? mcp.required_env : [];
+      const expectedOperations = Array.isArray(mcp.expected_operations) ? mcp.expected_operations : [];
+      const checklist = Array.isArray(mcp.setup_checklist) ? mcp.setup_checklist : [];
+      if (!requiredEnv.length && !expectedOperations.length && !checklist.length && !mcp.notes) return;
+      const blocks = [];
+      if (requiredEnv.length) {
+        blocks.push(
+          "<div><strong>" + t("requiredEnv") + "</strong><ul>" +
+          requiredEnv.map((name) => "<li><code>" + escapeHtml(String(name)) + "</code></li>").join("") +
+          "</ul></div>"
+        );
+      }
+      if (expectedOperations.length) {
+        blocks.push(
+          "<div><strong>" + t("expectedOperations") + "</strong><ul>" +
+          expectedOperations.map((item) => "<li>" + escapeHtml(String(item)) + "</li>").join("") +
+          "</ul></div>"
+        );
+      }
+      if (checklist.length) {
+        blocks.push(
+          "<div><strong>" + t("checklist") + "</strong><ul>" +
+          checklist.map((item) => "<li>" + escapeHtml(String(item)) + "</li>").join("") +
+          "</ul></div>"
+        );
+      }
+      if (mcp.notes) blocks.push("<div>" + escapeHtml(String(mcp.notes)) + "</div>");
+      el("mcpSetup").innerHTML = "<strong>" + t("setupRequirements") + "</strong>" + blocks.join("");
+      el("mcpSetup").hidden = false;
+    }
+
+    function escapeHtml(value) {
+      return value.replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[ch] || ch));
     }
 
     function initializeProviderTools() {
@@ -1870,6 +1962,7 @@ async fn create_app(
     description: String,
     template: Option<String>,
     project_id: Option<String>,
+    source_repo_url: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let trimmed = description.trim();
     if trimmed.is_empty() {
@@ -1880,6 +1973,13 @@ async fn create_app(
         return Err("empty description".into());
     }
     let template = template.unwrap_or_else(|| "blank".to_string());
+    let source_repo_url = source_repo_url
+        .and_then(non_empty_string)
+        .map(|url| normalize_source_repo_url(&url))
+        .transpose()?;
+    if template == "repo-wrapper" && source_repo_url.is_none() {
+        return Err("sourceRepoUrl is required for repo-wrapper apps".into());
+    }
     let target_project = match project_id
         .as_deref()
         .map(str::trim)
@@ -1920,13 +2020,28 @@ async fn create_app(
         runtime: None,
         server: None,
         external: None,
-        integration: None,
+        integration: source_repo_url
+            .as_ref()
+            .filter(|_| template == "repo-wrapper")
+            .map(|repo_url| open_source_repo_integration(&label, repo_url)),
         network: None,
         schedules: Vec::new(),
         actions: Vec::new(),
         widgets: Vec::new(),
     };
     apps::write_manifest(&app, &app_id, &manifest).map_err(|e| e.to_string())?;
+    if let Some(repo_url) = &source_repo_url {
+        let repo_meta = serde_json::json!({
+            "source_repo_url": repo_url,
+            "template": template,
+            "wrapper_status": "planning",
+            "expected_upstream_dir": "upstream",
+            "created_at_ms": now_ms
+        });
+        let repo_meta_json =
+            serde_json::to_string_pretty(&repo_meta).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join("source-repo.json"), repo_meta_json).map_err(|e| e.to_string())?;
+    }
     if let Some(target) = &target_project {
         link_app_to_project_inner(&app, &target.id, &app_id)?;
     }
@@ -1934,7 +2049,12 @@ async fn create_app(
 
     let thread_id = format!("t_{now_ms}");
     let project_root = dir.clone();
-    let prompt = build_app_creation_prompt(&app_description, &template, target_project.as_ref());
+    let prompt = build_app_creation_prompt(
+        &app_description,
+        &template,
+        target_project.as_ref(),
+        source_repo_url.as_deref(),
+    );
     let goal = explicit_goal
         .clone()
         .unwrap_or_else(|| format!("Create a Reflex app: {app_description}"));
@@ -2019,7 +2139,73 @@ async fn create_app(
         "app_id": app_id,
         "thread_id": thread_id,
         "project_id": project.id,
+        "source_repo_url": source_repo_url,
     }))
+}
+
+fn normalize_source_repo_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("sourceRepoUrl is required".into());
+    }
+    if trimmed.chars().any(|ch| ch.is_control()) {
+        return Err("sourceRepoUrl must not contain control characters".into());
+    }
+    let allowed = trimmed.starts_with("https://")
+        || trimmed.starts_with("http://")
+        || trimmed.starts_with("ssh://")
+        || trimmed.starts_with("git@");
+    if !allowed {
+        return Err("sourceRepoUrl must be an http(s), ssh, or git@ repository URL".into());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn open_source_repo_integration(label: &str, repo_url: &str) -> apps::IntegrationConfig {
+    apps::IntegrationConfig {
+        provider: "open_source_repo".into(),
+        display_name: Some(label.to_string()),
+        capabilities: vec![
+            "source.repo.inspect".into(),
+            "source.repo.wrap".into(),
+            "bridge.layer.inject".into(),
+            "mcp.layer.plan".into(),
+        ],
+        data_model: serde_json::json!({
+            "source_repo": {
+                "url": repo_url,
+                "kind": "git",
+                "expected_clone_dir": "upstream"
+            },
+            "adapter": {
+                "strategy": "wrap_or_embed_upstream_with_reflex_bridge",
+                "outputs": ["manifest.integration", "public actions", "bridge helpers", "mcp plan"]
+            },
+            "storage_policy": {
+                "upstream_source": "local clone for inspection and wrapping",
+                "credentials": "never store secrets in the app manifest"
+            }
+        }),
+        auth: serde_json::json!({
+            "type": "repository_access",
+            "public_clone_expected": true,
+            "credential_storage": "Reflex does not store repository credentials in the app manifest."
+        }),
+        mcp: serde_json::json!({
+            "recommended": true,
+            "strategy": "derive MCP/data bridge from upstream code and domain model",
+            "expected_steps": [
+                "inspect upstream architecture and data boundaries",
+                "identify APIs, storage, auth, and domain entities",
+                "create a Reflex bridge surface with public actions",
+                "document required MCP servers or local adapters"
+            ]
+        }),
+        notes: Some(
+            "Wrapper around an open-source repository. The agent should preserve license/attribution, avoid editing vendored upstream unnecessarily, and add Reflex bridge/MCP layers around the app."
+                .into(),
+        ),
+    }
 }
 
 fn extract_goal_command(input: &str) -> (String, Option<String>) {
@@ -2254,6 +2440,21 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
 - If durable data access needs credentials or a local protocol, write a clear MCP plan in `manifest.integration.mcp`, expose UI fields/checks for the user to configure it later, use `integration.mcpStatus` for readiness, and use `integration.mcpQuery` for MCP-backed data reads.\n\
 - For Telegram-like apps: do not claim arbitrary personal message access through the Bot API. Personal chats require user-approved Telegram client access such as MTProto/TDLib/MCP, or reading a visible Telegram Web session after the user logs in. Store only derived summaries by default unless the user explicitly chooses raw message storage.\n",
         ),
+        "repo-wrapper" => Some(
+            "OPEN-SOURCE REPO WRAPPER TEMPLATE:\n\
+- Build a Reflex utility around the provided open-source repository URL. The repo is the upstream product; this app is the Reflex wrapper/adaptation layer.\n\
+- First inspect upstream code, license, build system, runtime assumptions, API/data boundaries, auth model, and extension points before writing wrapper code.\n\
+- Prefer keeping upstream under `upstream/` and adding wrapper files around it. If upstream must be patched, keep changes minimal and document them in `REFLEX_UPSTREAM_PATCHES.md`.\n\
+- Create or update `source-repo.json` with repo URL, detected stack, license summary, chosen integration mode, build/run commands, and adapter status.\n\
+- Choose one integration mode:\n\
+  1) static wrapper when upstream can be consumed as static assets/components;\n\
+  2) server runtime when upstream needs a local backend/dev server;\n\
+  3) external/browser workflow when upstream is primarily a browser automation target.\n\
+- Add `manifest.integration` with provider `open_source_repo`, source_repo metadata, capabilities, data_model entities, auth/storage boundaries, MCP plan, and notes.\n\
+- Add a bridge layer: UI controls plus at least one public manifest.action that returns normalized data or an explicit setup-required response. Other Reflex apps should call the action instead of scraping wrapper internals.\n\
+- Add an MCP/data plan derived from upstream's actual data model: what server/adapter is needed, expected operations, required env, and safety boundaries. Do not invent access that upstream code does not support.\n\
+- Preserve upstream license/attribution and do not commit secrets or generated dependency directories.\n",
+        ),
         "automation" => Some(
             "AUTOMATION TEMPLATE:\n\
 - Add at least one manifest.schedules entry with a 6-field cron expression (sec min hour dom month dow, UTC).\n\
@@ -2278,6 +2479,7 @@ fn build_app_creation_prompt(
     description: &str,
     template: &str,
     target_project: Option<&project::Project>,
+    source_repo_url: Option<&str>,
 ) -> String {
     let mut p = String::new();
     p.push_str("You are creating a Reflex app in the current working directory.\n\n");
@@ -2349,6 +2551,16 @@ fn build_app_creation_prompt(
             ));
         }
         p.push_str("- The runtime app will see this project in system.context().linked_projects and can use it as the default project memory scope.\n\n");
+    }
+    if let Some(repo_url) = source_repo_url {
+        p.push_str("SOURCE REPOSITORY:\n");
+        p.push_str(&format!("- URL: {repo_url}\n"));
+        p.push_str("- Treat the upstream repository as third-party open-source software. Preserve license files, attribution, and notices.\n");
+        p.push_str("- In planning mode, do not clone or modify files. Plan how you will inspect and adapt the repository after confirmation.\n");
+        p.push_str("- After confirmation, clone or copy upstream source into `upstream/` unless it already exists. Keep wrapper code separate when practical.\n");
+        p.push_str("- Inspect package/build configuration, routes/components, APIs, storage/auth boundaries, and domain entities before deciding the wrapper strategy.\n");
+        p.push_str("- Prefer a wrapper/adapter layer around upstream over invasive edits. Patch upstream only where needed to expose stable integration points.\n");
+        p.push_str("- Add Reflex bridge methods/actions/widgets around the upstream behavior, and document any MCP server or local adapter needed for durable data access.\n\n");
     }
     p.push_str("AVAILABLE METHODS:\n");
     p.push_str("  bridge.catalog() -> {methods, helpers, permissions, app, notes}; runtime self-discovery for bridge API, overlay helpers, permission hints, and current grants\n");
@@ -2430,7 +2642,7 @@ fn build_app_creation_prompt(
     p.push_str("  memory.indexPath({path, projectId?}) -> {indexed, skipped}; memory.pathStatus({path, projectId?}); memory.pathStatusBatch({paths, projectId?}); memory.forgetPath({path, projectId?})\n");
     p.push_str("- scope defaults to \"project\". If the app is linked to exactly one project, project scope targets that project memory; otherwise it targets the app's own memory.\n");
     p.push_str("- To choose a project, call system.context() and pass a projectId from linked_projects. For global scope, add permission \"memory.global.read\" or \"memory.global.write\".\n");
-    p.push_str("- The overlay already provides helpers: reflexInvoke(method, params), reflexBridgeCatalog(), reflexSystemContext(), reflexSystemOpenPanel(panelOrParams, projectId?, threadId?), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexLogList(params), reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexIntegrationLearnVisible(params?), reflexIntegrationMcpStatus(params?), reflexIntegrationMcpQuery(queryOrParams?), reflexPermissionsList(), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexSchedulerList(params), reflexSchedulerUpsert(scheduleOrParams), reflexSchedulerDelete(scheduleIdOrParams), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerStats(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions.\n");
+    p.push_str("- The overlay already provides helpers: reflexInvoke(method, params), reflexBridgeCatalog(), reflexSystemContext(), reflexSystemOpenPanel(panelOrParams, projectId?, threadId?), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexLogList(params), reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexIntegrationLearnVisible(params?), reflexIntegrationMcpStatus(params?), reflexIntegrationMcpQuery(queryOrParams?), reflexPermissionsList(), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexSchedulerList(params), reflexSchedulerUpsert(scheduleOrParams), reflexSchedulerDelete(scheduleIdOrParams), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerStats(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions. For open-source wrappers, call reflexAppsCreate({description, template:\"repo-wrapper\", sourceRepoUrl}).\n");
     p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set/List/Delete(...), reflexFsRead/List/Write/Delete(...), reflexClipboardReadText(), reflexClipboardWriteText(textOrParams), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
     p.push_str("  Browser helpers: reflexBrowserInit(params), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserClose(tabIdOrParams), reflexBrowserSetActive(tabIdOrParams), reflexBrowserNavigate(tabId, url), reflexBrowserBack(tabIdOrParams), reflexBrowserForward(tabIdOrParams), reflexBrowserReload(tabIdOrParams), reflexBrowserCurrentUrl(tabIdOrParams), reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?), reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?), reflexBrowserScroll(tabIdOrParams, dx?, dy?), reflexBrowserWaitFor(tabIdOrParams, selector?, timeoutMs?).\n");
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryUpdate(relPathOrParams, patch?), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryStats(params), reflexMemoryReindex(params), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryPathStatusBatch(pathsOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
@@ -2497,7 +2709,7 @@ fn build_app_creation_prompt(
     p.push_str("  events.subscriptions() -> {topics}; events.recent({topic?, limit?}) -> {events}; recent events for this app or subscribed topics\n");
     p.push_str("  events.clearSubscriptions(); clear all subscriptions for this app\n");
     p.push_str("  apps.list() -> AppSummary[]; safe installed app catalog without raw manifest/server command/steps\n");
-    p.push_str("  apps.create({description, template?, projectId?}) -> {app_id, thread_id, project_id}; create a new Reflex app through the agent generator. Requires permission \"apps.create\" or \"apps:*\"; projectId also requires \"projects.write:<project>\" or \"projects.write:*\"\n");
+    p.push_str("  apps.create({description, template?, projectId?, sourceRepoUrl?}) -> {app_id, thread_id, project_id, source_repo_url?}; create a new Reflex app through the agent generator. Template \"repo-wrapper\" requires sourceRepoUrl and plans an open-source wrapper with Reflex bridge/MCP layers. Requires permission \"apps.create\" or \"apps:*\"; projectId also requires \"projects.write:<project>\" or \"projects.write:*\"\n");
     p.push_str("  apps.export({app_id, targetPath}) -> {ok, app_id, path}; apps.import({zipPath}) -> {ok, app}; .reflexapp bundles. Requires \"apps.manage\" or \"apps:*\". Before export, choose a path through dialog.saveFile.\n");
     p.push_str("  apps.delete({app_id}) -> TrashEntry; apps.trashList() -> TrashEntry[]; apps.restore({trash_id}) -> {ok, app_id}; apps.purge({trash_id}) -> {ok}; trash lifecycle. Requires \"apps.manage\" or \"apps:*\". delete cannot delete the current app.\n");
     p.push_str("  apps.status({app_id}) -> {has_changes, revision, last_commit_message, entry_exists}; revision/dirty state. Requires \"apps.manage\" or \"apps:*\"\n");
@@ -2534,7 +2746,7 @@ fn build_app_creation_prompt(
     p.push_str("  window.reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryUpdate(relPathOrParams, patch?), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams)\n");
     p.push_str("  window.reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryStats(params), reflexMemoryReindex(params)\n");
     p.push_str("  window.reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryPathStatusBatch(pathsOrParams), reflexMemoryForgetPath(pathOrParams)\n");
-    p.push_str("  window.reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?)\n");
+    p.push_str("  window.reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?). Use reflexAppsCreate({description, template:\"repo-wrapper\", sourceRepoUrl}) for open-source repository wrappers.\n");
     p.push_str("Permissions for apps.invoke/apps.create/apps.manage are declared in manifest.permissions:\n");
     p.push_str("  [\"apps.create\"]                         -- create new Reflex apps through apps.create\n");
     p.push_str("  [\"apps.manage\"]                         -- export/import/delete/restore/purge/list trash, revision controls, and server runtime ops for installed apps\n");
@@ -4351,6 +4563,36 @@ mod connected_app_tests {
             .as_str()
             .unwrap_or_default()
             .contains("Bot API tokens cannot read arbitrary personal chats"));
+    }
+
+    #[test]
+    fn repo_wrapper_prompt_and_integration_capture_source_repo() {
+        let url = normalize_source_repo_url(" https://github.com/example/tool ")
+            .expect("valid repo url");
+        assert_eq!(url, "https://github.com/example/tool");
+        assert!(normalize_source_repo_url("ftp://example.com/repo").is_err());
+
+        let integration = open_source_repo_integration("Example Tool", &url);
+        assert_eq!(integration.provider, "open_source_repo");
+        assert_eq!(
+            integration.data_model["source_repo"]["url"],
+            serde_json::json!("https://github.com/example/tool")
+        );
+        assert!(integration
+            .capabilities
+            .iter()
+            .any(|capability| capability == "bridge.layer.inject"));
+
+        let prompt = build_app_creation_prompt(
+            "Wrap this tool and expose its data through Reflex actions.",
+            "repo-wrapper",
+            None,
+            Some(&url),
+        );
+        assert!(prompt.contains("SOURCE REPOSITORY"));
+        assert!(prompt.contains("OPEN-SOURCE REPO WRAPPER TEMPLATE"));
+        assert!(prompt.contains("Preserve license files, attribution, and notices"));
+        assert!(prompt.contains("provider `open_source_repo`"));
     }
 
     #[test]

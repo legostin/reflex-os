@@ -200,6 +200,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.installCustomNamePlaceholder": "Display name",
     "apps.installCustomUrlPlaceholder": "https://service.example.com",
     "apps.installCustom": "Install custom adapter",
+    "apps.repoWrapperTitle": "Open-source repository wrapper",
+    "apps.repoWrapperHint":
+      "Paste a public repository URL. Codex will inspect the source and plan a Reflex bridge/MCP wrapper around it.",
+    "apps.repoWrapperUrlPlaceholder": "https://github.com/owner/repo",
     "apps.installing": "Installing...",
     "apps.createShortcut": "Create (⌘↵)",
     "apps.creating": "Creating...",
@@ -680,6 +684,11 @@ const dictionaries: Record<Locale, Dictionary> = {
       "Embed an external service and build a bridge/MCP data adapter",
     "template.connectedApp.placeholder":
       "Example: Telegram message reader with Telegram Web panel, auth notes, public actions for recent chats, and an MCP plan; ...",
+    "template.repoWrapper.name": "Open-source wrapper",
+    "template.repoWrapper.description":
+      "Adapt a repository into a Reflex utility with bridge/MCP layers",
+    "template.repoWrapper.placeholder":
+      "Optional requirements: which screens to expose, what data should become public actions, which MCP operations are needed; ...",
     "template.automation.name": "Automation",
     "template.automation.description":
       "Schedule, action, and widget for a background task",
@@ -742,7 +751,7 @@ const dictionaries: Record<Locale, Dictionary> = {
       "Add permissions and network hosts precisely, without manual manifest merging.",
     "recipe.utilityService.title": "Utility as a service",
     "recipe.utilityService.body":
-      "Publish actions/widgets, create utilities, export bundles, and manage server runtime.",
+      "Publish actions/widgets, create utilities, wrap open-source repos, export bundles, and manage server runtime.",
     "recipe.connectedApp.title": "Connected app adapter",
     "recipe.connectedApp.body":
       "Wrap an external service with a visible panel, learned data profile, actions, and optional MCP bridge.",
@@ -942,6 +951,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.installCustomNamePlaceholder": "Название",
     "apps.installCustomUrlPlaceholder": "https://service.example.com",
     "apps.installCustom": "Установить свой адаптер",
+    "apps.repoWrapperTitle": "Обёртка над open-source репозиторием",
+    "apps.repoWrapperHint":
+      "Вставь публичную ссылку на репозиторий. Codex разберёт исходники и спланирует Reflex bridge/MCP-обёртку вокруг них.",
+    "apps.repoWrapperUrlPlaceholder": "https://github.com/owner/repo",
     "apps.installing": "Устанавливаю...",
     "apps.createShortcut": "Создать (⌘↵)",
     "apps.creating": "Создаю...",
@@ -1426,6 +1439,11 @@ const dictionaries: Record<Locale, Dictionary> = {
       "Встроить внешний сервис и собрать bridge/MCP-адаптер данных",
     "template.connectedApp.placeholder":
       "Например: Telegram reader с панелью Telegram Web, заметками авторизации, public actions для последних чатов и MCP-планом; ...",
+    "template.repoWrapper.name": "Open-source обёртка",
+    "template.repoWrapper.description":
+      "Адаптировать репозиторий в Reflex-утилиту с bridge/MCP слоями",
+    "template.repoWrapper.placeholder":
+      "Опциональные требования: какие экраны показать, какие данные вынести в public actions, какие MCP-операции нужны; ...",
     "template.automation.name": "Автоматизация",
     "template.automation.description":
       "Расписание, action и виджет для фоновой задачи",
@@ -1488,7 +1506,7 @@ const dictionaries: Record<Locale, Dictionary> = {
       "Добавляй permissions и network hosts точечно, без ручного слияния manifest.",
     "recipe.utilityService.title": "Утилита как сервис",
     "recipe.utilityService.body":
-      "Публикуй actions/widgets, создавай утилиты, экспортируй bundles и управляй server runtime.",
+      "Публикуй actions/widgets, создавай утилиты, оборачивай open-source repos, экспортируй bundles и управляй server runtime.",
     "recipe.connectedApp.title": "Адаптер подключённого приложения",
     "recipe.connectedApp.body":
       "Оберни внешний сервис видимой панелью, изученным профилем данных, actions и опциональным MCP bridge.",

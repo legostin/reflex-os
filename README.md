@@ -161,7 +161,9 @@ The injected runtime overlay provides:
 - `window.reflexMemoryPathStatusBatch(pathsOrParams)`
 - `window.reflexMemoryForgetPath(pathOrParams)`
 - `window.reflexAppsList(params)`
-- `window.reflexAppsCreate(descriptionOrParams, template?)`
+- `window.reflexAppsCreate(descriptionOrParams, template?)`; pass
+  `{description, template: "repo-wrapper", sourceRepoUrl}` to wrap an
+  open-source repository.
 - `window.reflexAppsExport(appIdOrParams, targetPath?)`
 - `window.reflexAppsImport(zipPathOrParams)`
 - `window.reflexAppsDelete(appIdOrParams)`
@@ -207,6 +209,13 @@ The panel and public `learn_visible_interface` action can read the visible
 Browser outline/text through `integration.learnVisible`, ask the agent for a
 data/workflow profile, and persist it into app storage plus
 `manifest.integration.data_model.learned_profile`.
+
+The app generator also has a `repo-wrapper` template for open-source utilities.
+It accepts `sourceRepoUrl`, stores `source-repo.json`, seeds
+`manifest.integration.provider = "open_source_repo"`, and starts a planning
+thread that inspects the upstream repository, preserves license/attribution,
+and builds a Reflex bridge/MCP wrapper around the source instead of treating it
+as a blank app.
 
 ## App Bridge API
 
@@ -360,11 +369,13 @@ Core methods:
   `events.subscriptions`, `events.recent`,
   `events.clearSubscriptions`.
 - `apps.list()`.
-- `apps.create({ description, template?, projectId? })`; requires `apps.create`
+- `apps.create({ description, template?, projectId?, sourceRepoUrl? })`; requires `apps.create`
   or `apps:*`. Passing `projectId` also requires `projects.write:<project>` or
   `projects.write:*`. Built-in templates: `blank`, `chat`, `dashboard`,
-  `health-dashboard`, `form`, `api-client`, `connected-app`, `automation`, and
-  `node-server`.
+  `health-dashboard`, `form`, `api-client`, `connected-app`, `repo-wrapper`,
+  `automation`, and `node-server`. `repo-wrapper` requires `sourceRepoUrl` and
+  starts an agent plan to inspect the upstream code, preserve license notices,
+  and build a Reflex bridge/MCP wrapper around it.
 - `apps.export({ app_id, targetPath })` and `apps.import({ zipPath })`;
   require `apps.manage` or `apps:*`. Exports omit app storage, project metadata,
   `.git`, and dependency folders from the `.reflexapp` bundle.

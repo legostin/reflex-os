@@ -3624,13 +3624,14 @@ async fn apps_create_for_app(
         .or_else(|| string_param(&params, "prompt", "prompt"))
         .ok_or_else(|| "missing description".to_string())?;
     let template = string_param(&params, "template", "template");
+    let source_repo_url = string_param(&params, "source_repo_url", "sourceRepoUrl");
     let project_id = if string_param(&params, "project_id", "projectId").is_some() {
         let project = resolve_project_write_target(app, app_id, &params, "projects.write")?;
         Some(project.id)
     } else {
         None
     };
-    crate::create_app(app.clone(), description, template, project_id).await
+    crate::create_app(app.clone(), description, template, project_id, source_repo_url).await
 }
 
 fn apps_export_for_app(
