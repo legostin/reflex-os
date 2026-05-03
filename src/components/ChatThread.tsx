@@ -2764,21 +2764,6 @@ function AppsScreen({
                 )}
                 {template === "connected-app" && (
                   <div className="connected-install-stack">
-                    <div className="connected-install-panel">
-                      <div>
-                        <strong>{t("apps.installTelegramTitle")}</strong>
-                        <span>{t("apps.installTelegramHint")}</span>
-                      </div>
-                      <button
-                        className="modal-btn modal-btn-primary"
-                        disabled={creating || installingConnected}
-                        onClick={() => void installConnected("telegram")}
-                      >
-                        {installingConnected
-                          ? t("apps.installing")
-                          : t("apps.installTelegram")}
-                      </button>
-                    </div>
                     <div className="connected-custom-panel">
                       <strong>{t("apps.installCustomTitle")}</strong>
                       <div className="connected-custom-grid">

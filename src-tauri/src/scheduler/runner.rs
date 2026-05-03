@@ -377,7 +377,7 @@ mod tests {
             run_id: "run_test".into(),
             app_id: "app".into(),
             schedule_id: None,
-            action_id: Some("read_recent_messages".into()),
+            action_id: Some("query_mcp_data".into()),
             caller: "inter_app".into(),
             started_ms: 1,
             ended_ms: Some(2),

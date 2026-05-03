@@ -56,7 +56,7 @@ pub struct ExternalConfig {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct IntegrationConfig {
-    /// Stable provider id such as "telegram", "slack", "gmail", or "custom".
+    /// Stable provider id such as "generic_web", "crm", or "custom".
     #[serde(default)]
     pub provider: String,
     #[serde(default)]

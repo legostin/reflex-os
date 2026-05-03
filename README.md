@@ -190,8 +190,8 @@ The injected runtime overlay provides:
 - `window.reflexEventSubscriptions()`
 - `window.reflexEventClearSubscriptions()`
 
-The Apps screen also has a `Connected app` installer for Telegram and generic
-web services. It creates a local utility with `manifest.integration`, Browser
+The Apps screen also has a `Connected app` installer for generic web services.
+It creates a local utility with `manifest.integration`, Browser
 bridge permissions, and callable actions for summarizing visible web-session
 text. Raw visible text is exposed only through the non-public
 `read_visible_session` action or an explicit panel click. The installed utility
@@ -202,9 +202,6 @@ panel can save/read its provider MCP config without requiring a user project id.
 It publishes a public `query_mcp_data` action so other utilities can call the
 configured MCP bridge through `apps.invoke`, plus `check_mcp_connection` for a
 non-private availability check that updates MCP query status.
-The Telegram adapter also publishes `read_recent_messages`, which reads only
-messages available through the configured Telegram MCP server. Its panel exposes
-that action directly as a Telegram messages control through `apps.invoke`.
 The panel and public `learn_visible_interface` action can read the visible
 Browser outline/text through `integration.learnVisible`, ask the agent for a
 data/workflow profile, and persist it into app storage plus

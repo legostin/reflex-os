@@ -192,10 +192,6 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.back": "<- Back",
     "apps.describeHint":
       "Describe what the utility should do. Codex will write the files in the background.",
-    "apps.installTelegramTitle": "Ready-made Telegram adapter",
-    "apps.installTelegramHint":
-      "Install a local panel with Browser bridge actions for visible Telegram Web sessions.",
-    "apps.installTelegram": "Install Telegram adapter",
     "apps.installCustomTitle": "Generic web adapter",
     "apps.installCustomNamePlaceholder": "Display name",
     "apps.installCustomUrlPlaceholder": "https://service.example.com",
@@ -683,7 +679,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "template.connectedApp.description":
       "Embed an external service and build a bridge/MCP data adapter",
     "template.connectedApp.placeholder":
-      "Example: Telegram message reader with Telegram Web panel, auth notes, public actions for recent chats, and an MCP plan; ...",
+      "Example: customer portal reader with a visible web panel, auth notes, public actions for recent records, and an MCP plan; ...",
     "template.repoWrapper.name": "Open-source wrapper",
     "template.repoWrapper.description":
       "Adapt a repository into a Reflex utility with bridge/MCP layers",
@@ -943,10 +939,6 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.back": "<- Назад",
     "apps.describeHint":
       "Опиши, что должна делать утилита. Codex напишет файлы в фоне.",
-    "apps.installTelegramTitle": "Готовый Telegram-адаптер",
-    "apps.installTelegramHint":
-      "Поставить локальную панель с Browser bridge actions для видимой сессии Telegram Web.",
-    "apps.installTelegram": "Установить Telegram-адаптер",
     "apps.installCustomTitle": "Универсальный web-адаптер",
     "apps.installCustomNamePlaceholder": "Название",
     "apps.installCustomUrlPlaceholder": "https://service.example.com",
@@ -1438,7 +1430,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "template.connectedApp.description":
       "Встроить внешний сервис и собрать bridge/MCP-адаптер данных",
     "template.connectedApp.placeholder":
-      "Например: Telegram reader с панелью Telegram Web, заметками авторизации, public actions для последних чатов и MCP-планом; ...",
+      "Например: reader для клиентского портала с web-панелью, заметками авторизации, public actions для последних записей и MCP-планом; ...",
     "template.repoWrapper.name": "Open-source обёртка",
     "template.repoWrapper.description":
       "Адаптировать репозиторий в Reflex-утилиту с bridge/MCP слоями",

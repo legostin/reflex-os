@@ -573,9 +573,6 @@ fn install_connected_app(
     };
     manifest.actions.push(connected_app_mcp_query_action(&spec));
     manifest.actions.push(connected_app_mcp_check_action(&spec));
-    manifest
-        .actions
-        .extend(connected_app_provider_actions(&spec));
 
     apps::write_manifest(&app, &spec.app_id, &manifest).map_err(|e| e.to_string())?;
     std::fs::write(dir.join("index.html"), connected_app_index_html(&spec)?)
@@ -624,80 +621,6 @@ fn connected_app_spec(
     let provider = provider.trim().to_ascii_lowercase();
     if provider.is_empty() {
         return Err("provider is required".into());
-    }
-    if provider == "telegram" {
-        return Ok(ConnectedAppSpec {
-            app_id: "connected_telegram".into(),
-            provider,
-            name: display_name
-                .and_then(non_empty_string)
-                .unwrap_or_else(|| "Telegram".into()),
-            icon: "TG".into(),
-            description:
-                "Telegram Web visible-session adapter with Browser bridge actions and MCP plan."
-                    .into(),
-            url: url
-                .and_then(non_empty_string)
-                .unwrap_or_else(|| "https://web.telegram.org/a/".into()),
-            open_url: "https://web.telegram.org/a/".into(),
-            capabilities: vec![
-                "messages.visible_session.read".into(),
-                "messages.visible_session.summarize".into(),
-                "chats.visible_session.list".into(),
-                "mcp.telegram.optional".into(),
-            ],
-            data_model: serde_json::json!({
-                "entities": ["visible_session", "visible_chat", "visible_message", "summary"],
-                "read_modes": ["browser.visible_session", "mcp.telegram"],
-                "storage_policy": {
-                    "default": "derived summaries",
-                    "raw_text": "explicit user action only"
-                }
-            }),
-            auth: serde_json::json!({
-                "type": "user_visible_session",
-                "browser_login_required": true,
-                "credential_storage": "Reflex does not store Telegram credentials in the app manifest."
-            }),
-            mcp: serde_json::json!({
-                "recommended": true,
-                "server_name": "telegram",
-                "required_env": [
-                    "TELEGRAM_API_ID",
-                    "TELEGRAM_API_HASH",
-                    "TELEGRAM_SESSION"
-                ],
-                "expected_operations": [
-                    "list accessible chats",
-                    "read recent messages for an accessible chat",
-                    "report authentication or session errors without guessing"
-                ],
-                "setup_checklist": [
-                    "Use an MTProto or TDLib user-session MCP server; Bot API tokens cannot read arbitrary personal chats.",
-                    "Store the long-lived Telegram session outside the app manifest and pass only an environment variable or path.",
-                    "Save the MCP server config in this panel, then run Check MCP connection.",
-                    "Use Read recent messages only after MCP config is found and the connection check succeeds."
-                ],
-                "security": {
-                    "credential_storage": "outside_manifest",
-                    "personal_chats_require_user_session": true,
-                    "bot_api_personal_chat_access": false
-                },
-                "config_shape": {
-                    "command": "node",
-                    "args": ["path/to/telegram-mcp-server.js"],
-                    "env": {
-                        "TELEGRAM_API_ID": "<from user>",
-                        "TELEGRAM_API_HASH": "<from user>",
-                        "TELEGRAM_SESSION": "<stored outside manifest>"
-                    }
-                },
-                "notes": "Personal chat access requires a user-approved Telegram client session such as MTProto/TDLib/MCP. Bot API tokens cannot read arbitrary personal chats."
-            }),
-            notes:
-                "Reads only what the user opens in the visible Telegram Web session unless a user-approved Telegram MCP bridge is configured."
-                    .into(),
-        });
     }
 
     let url = url
@@ -885,43 +808,6 @@ fn connected_app_mcp_check_action(spec: &ConnectedAppSpec) -> apps::ActionDef {
             }),
             save_as: Some("mcp_health".into()),
         }],
-    }
-}
-
-fn connected_app_provider_actions(spec: &ConnectedAppSpec) -> Vec<apps::ActionDef> {
-    match spec.provider.as_str() {
-        "telegram" => vec![apps::ActionDef {
-            id: "read_recent_messages".into(),
-            name: "Read recent messages".into(),
-            description: Some(
-                "Read recent Telegram messages available through the configured Telegram MCP server."
-                    .into(),
-            ),
-            params_schema: Some(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "chat": {
-                        "type": "string",
-                        "description": "Optional chat title, username, or id filter."
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of recent messages to return."
-                    }
-                }
-            })),
-            public: true,
-            steps: vec![apps::Step {
-                method: "integration.mcpQuery".into(),
-                params: serde_json::json!({
-                    "provider": "telegram",
-                    "serviceUrl": spec.url.clone(),
-                    "query": "Read recent Telegram messages available through the configured Telegram MCP server. Optional chat filter: {{input.chat}}. Optional limit: {{input.limit}}. Only include chats/messages the MCP server can access. Return concise JSON with chats, messages, summary, warnings, and next_steps."
-                }),
-                save_as: Some("messages".into()),
-            }],
-        }],
-        _ => Vec::new(),
     }
 }
 
@@ -1175,24 +1061,6 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       </div>
     </section>
 
-    <section id="telegramMessagesSection" hidden>
-      <h2 data-i18n="telegramMessages">Telegram messages</h2>
-      <p data-i18n="telegramMessagesHint">Reads only messages available through the configured Telegram MCP server.</p>
-      <div class="form-grid">
-        <label class="field">
-          <span data-i18n="chatFilter">Chat filter</span>
-          <input id="telegramChat" autocomplete="off" placeholder="optional chat title, username, or id" data-i18n-placeholder="chatFilterPlaceholder" />
-        </label>
-        <label class="field">
-          <span data-i18n="limit">Limit</span>
-          <input id="telegramLimit" autocomplete="off" inputmode="numeric" placeholder="20" />
-        </label>
-      </div>
-      <div class="actions">
-        <button class="primary" id="readTelegramMessages" data-i18n="readRecentMessages">Read recent messages</button>
-      </div>
-    </section>
-
     <section>
       <h2 data-i18n="latestOutput">Latest output</h2>
       <pre id="output" data-i18n="initialOutput">Open the service, log in if needed, then read or summarize the visible session.</pre>
@@ -1232,12 +1100,6 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         checkMcpConnection: "Check MCP connection",
         mcpAgentQuery: "MCP agent query",
         runMcpQuery: "Run MCP query",
-        telegramMessages: "Telegram messages",
-        telegramMessagesHint: "Reads only messages available through the configured Telegram MCP server.",
-        chatFilter: "Chat filter",
-        chatFilterPlaceholder: "optional chat title, username, or id",
-        limit: "Limit",
-        readRecentMessages: "Read recent messages",
         latestOutput: "Latest output",
         initialOutput: "Open the service, log in if needed, then read or summarize the visible session.",
         savingMcpConfig: "Saving MCP config...",
@@ -1257,10 +1119,6 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         mcpQueryRequired: "MCP query is required",
         mcpQueryFinished: "MCP query finished",
         mcpQueryFailed: "MCP query failed",
-        readingTelegramMessages: "Reading Telegram messages...",
-        limitPositiveInteger: "Limit must be a positive integer",
-        telegramMessagesLoaded: "Telegram messages loaded",
-        telegramReadFailed: "Telegram read failed",
         openingService: "Opening service...",
         serviceOpened: "Service opened",
         openFailed: "Open failed",
@@ -1304,12 +1162,6 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         checkMcpConnection: "Проверить MCP",
         mcpAgentQuery: "MCP-запрос агента",
         runMcpQuery: "Запустить MCP-запрос",
-        telegramMessages: "Сообщения Telegram",
-        telegramMessagesHint: "Читает только сообщения, доступные через настроенный Telegram MCP server.",
-        chatFilter: "Фильтр чата",
-        chatFilterPlaceholder: "необязательное название, username или id чата",
-        limit: "Лимит",
-        readRecentMessages: "Считать последние сообщения",
         latestOutput: "Последний вывод",
         initialOutput: "Открой сервис, войди при необходимости, затем считай или суммируй видимую сессию.",
         savingMcpConfig: "Сохраняю MCP...",
@@ -1329,10 +1181,6 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         mcpQueryRequired: "MCP-запрос обязателен",
         mcpQueryFinished: "MCP-запрос завершён",
         mcpQueryFailed: "MCP-запрос не удался",
-        readingTelegramMessages: "Читаю сообщения Telegram...",
-        limitPositiveInteger: "Лимит должен быть положительным целым числом",
-        telegramMessagesLoaded: "Сообщения Telegram загружены",
-        telegramReadFailed: "Чтение Telegram не удалось",
         openingService: "Открываю сервис...",
         serviceOpened: "Сервис открыт",
         openFailed: "Открыть не удалось",
@@ -1407,9 +1255,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       el("mcpCommand").value = shape.command || "node";
       el("mcpArgs").value = JSON.stringify(shape.args || [], null, 2);
       el("mcpEnv").value = JSON.stringify(shape.env || {}, null, 2);
-      el("mcpQuery").value = config.provider === "telegram"
-        ? "Use the configured Telegram MCP server to list recent visible/available chats and summarize the latest messages. Do not claim access to chats or messages the MCP server cannot access. Return concise JSON with chats, latest_messages, summary, and warnings."
-        : "Use the configured provider MCP server for this connected app to inspect available recent data. Do not claim access to data the MCP server cannot access. Return concise JSON with items, summary, and warnings.";
+      el("mcpQuery").value = "Use the configured provider MCP server for this connected app to inspect available recent data. Do not claim access to data the MCP server cannot access. Return concise JSON with items, summary, and warnings.";
       renderMcpSetup();
     }
 
@@ -1454,12 +1300,6 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         '"': "&quot;",
         "'": "&#39;"
       }[ch] || ch));
-    }
-
-    function initializeProviderTools() {
-      if (config.provider !== "telegram") return;
-      el("telegramMessagesSection").hidden = false;
-      el("telegramLimit").value = "20";
     }
 
     function parseJsonField(id, fallback) {
@@ -1555,36 +1395,6 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         setStatusKey("mcpQueryFinished");
       } catch (error) {
         setStatusKey("mcpQueryFailed");
-        setOutput(String(error));
-      } finally {
-        setBusy(false);
-      }
-    }
-
-    async function readTelegramMessages() {
-      setBusy(true);
-      setStatusKey("readingTelegramMessages");
-      try {
-        const chat = el("telegramChat").value.trim();
-        const rawLimit = el("telegramLimit").value.trim();
-        const params = {};
-        if (chat) params.chat = chat;
-        if (rawLimit) {
-          const limit = Number.parseInt(rawLimit, 10);
-          if (!Number.isFinite(limit) || limit <= 0) {
-            throw new Error(t("limitPositiveInteger"));
-          }
-          params.limit = limit;
-        }
-        const result = await window.reflexAppsInvoke(
-          config.appId,
-          "read_recent_messages",
-          params
-        );
-        setOutput(result);
-        setStatusKey("telegramMessagesLoaded");
-      } catch (error) {
-        setStatusKey("telegramReadFailed");
         setOutput(String(error));
       } finally {
         setBusy(false);
@@ -1757,9 +1567,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
     el("refreshMcp").addEventListener("click", refreshMcpStatus);
     el("checkMcp").addEventListener("click", checkMcpConnection);
     el("runMcpQuery").addEventListener("click", runMcpAgentQuery);
-    el("readTelegramMessages").addEventListener("click", readTelegramMessages);
     initializeMcpForm();
-    initializeProviderTools();
     refreshProfile();
   </script>
 </body>
@@ -2438,7 +2246,7 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
 - Add at least one public manifest.action that exposes normalized data to other Reflex apps, even if the first version returns an empty/auth-required state.\n\
 - If the service has a web UI, use `integration.learnVisible` for system-level visible-session learning, and use the Browser bridge for lower-level workflows: `browser.init`, `browser.open`, `browser.readText`, `browser.readOutline`, and `browser.click/fill` where permitted.\n\
 - If durable data access needs credentials or a local protocol, write a clear MCP plan in `manifest.integration.mcp`, expose UI fields/checks for the user to configure it later, use `integration.mcpStatus` for readiness, and use `integration.mcpQuery` for MCP-backed data reads.\n\
-- For Telegram-like apps: do not claim arbitrary personal message access through the Bot API. Personal chats require user-approved Telegram client access such as MTProto/TDLib/MCP, or reading a visible Telegram Web session after the user logs in. Store only derived summaries by default unless the user explicitly chooses raw message storage.\n",
+- For personal or account-scoped data, do not claim access that the visible session or configured MCP server cannot prove. Store only derived summaries by default unless the user explicitly chooses raw data storage.\n",
         ),
         "repo-wrapper" => Some(
             "OPEN-SOURCE REPO WRAPPER TEMPLATE:\n\
@@ -2570,7 +2378,7 @@ fn build_app_creation_prompt(
     p.push_str("  system.openPath({path}) -> {ok, path}; system.revealPath({path}) -> {ok, path}; open or reveal an existing local file/folder. Relative paths resolve from the app directory.\n");
     p.push_str("  logs.write({level?, source?, message}) -> {ok}; logs.list({limit?, sinceSeq?, source?, level?}) -> {entries, latestSeq}; app-scoped diagnostics in Settings -> Logs. level: trace|debug|info|warn|error\n");
     p.push_str("  manifest.get() -> AppManifest; manifest.update({patch}) -> {ok, manifest}; safely merge-update this app's manifest.json. The id remains the current app id.\n");
-    p.push_str("  integration.catalog({provider?}) -> {recipes}; built-in connected-app recipes such as generic_web and telegram, including display URL, data strategy, and MCP config shape.\n");
+    p.push_str("  integration.catalog({provider?}) -> {recipes}; built-in connected-app recipes such as generic_web, including display URL, data strategy, and MCP config shape.\n");
     p.push_str("  integration.profile() -> {app_id, provider, integration, external, runtime, linked_projects, app_project}; current connected-app profile for external services and MCP/data adapters.\n");
     p.push_str("  integration.update({integration?|patch?, external?}) -> {ok, integration, external}; merge-update only manifest.integration and/or manifest.external without hand-editing the whole manifest.\n");
     p.push_str("  integration.learnVisible({tabId?, serviceUrl?, visibleText?, outline?}) -> {ok, profile, storageKey, learnedKey, event}; learn a connected-app adapter profile from visible browser text/outline, save it in storage, and merge it into manifest.integration.data_model.learned_profile.\n");
@@ -4547,22 +4355,13 @@ mod connected_app_tests {
     use super::*;
 
     #[test]
-    fn telegram_connected_app_spec_contains_mcp_shape() {
-        let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
+    fn connected_app_spec_requires_explicit_url() {
+        let error = match connected_app_spec("generic_web".into(), None, None) {
+            Ok(_) => panic!("expected url-required error"),
+            Err(error) => error,
+        };
 
-        assert_eq!(spec.app_id, "connected_telegram");
-        assert_eq!(spec.url, "https://web.telegram.org/a/");
-        assert!(spec
-            .capabilities
-            .iter()
-            .any(|capability| capability == "messages.visible_session.read"));
-        assert_eq!(spec.mcp["recommended"], serde_json::json!(true));
-        assert_eq!(spec.mcp["server_name"], serde_json::json!("telegram"));
-        assert!(spec
-            .mcp["notes"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("Bot API tokens cannot read arbitrary personal chats"));
+        assert!(error.contains("url is required"));
     }
 
     #[test]
@@ -4614,27 +4413,43 @@ mod connected_app_tests {
 
     #[test]
     fn connected_app_exposes_public_mcp_query_action() {
-        let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
+        let spec = connected_app_spec(
+            "generic_web".into(),
+            Some("https://service.example.com/app".into()),
+            None,
+        )
+        .expect("generic spec");
         let action = connected_app_mcp_query_action(&spec);
 
         assert_eq!(action.id, "query_mcp_data");
         assert!(action.public);
         assert_eq!(action.steps.len(), 1);
         assert_eq!(action.steps[0].method, "integration.mcpQuery");
-        assert_eq!(action.steps[0].params["provider"], serde_json::json!("telegram"));
+        assert_eq!(
+            action.steps[0].params["provider"],
+            serde_json::json!("generic_web")
+        );
         assert!(action.params_schema.is_some());
     }
 
     #[test]
     fn connected_app_exposes_public_mcp_check_action() {
-        let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
+        let spec = connected_app_spec(
+            "generic_web".into(),
+            Some("https://service.example.com/app".into()),
+            None,
+        )
+        .expect("generic spec");
         let action = connected_app_mcp_check_action(&spec);
 
         assert_eq!(action.id, "check_mcp_connection");
         assert!(action.public);
         assert_eq!(action.steps.len(), 1);
         assert_eq!(action.steps[0].method, "integration.mcpQuery");
-        assert_eq!(action.steps[0].params["provider"], serde_json::json!("telegram"));
+        assert_eq!(
+            action.steps[0].params["provider"],
+            serde_json::json!("generic_web")
+        );
         assert!(action.steps[0].params["query"]
             .as_str()
             .unwrap_or_default()
@@ -4642,57 +4457,28 @@ mod connected_app_tests {
     }
 
     #[test]
-    fn telegram_connected_app_exposes_recent_messages_action() {
-        let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
-        let actions = connected_app_provider_actions(&spec);
-        let action = actions
-            .iter()
-            .find(|action| action.id == "read_recent_messages")
-            .expect("telegram messages action");
-
-        assert!(action.public);
-        assert_eq!(action.steps.len(), 1);
-        assert_eq!(action.steps[0].method, "integration.mcpQuery");
-        assert_eq!(action.steps[0].params["provider"], serde_json::json!("telegram"));
-        assert!(action.steps[0].params["query"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("Only include chats/messages the MCP server can access"));
-    }
-
-    #[test]
-    fn generic_connected_app_has_no_provider_specific_actions() {
+    fn connected_app_html_exposes_mcp_and_learning_controls() {
         let spec = connected_app_spec(
             "generic_web".into(),
             Some("https://service.example.com/app".into()),
             None,
         )
         .expect("generic spec");
-
-        assert!(connected_app_provider_actions(&spec).is_empty());
-    }
-
-    #[test]
-    fn connected_app_html_exposes_mcp_and_learning_controls() {
-        let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
         let html = connected_app_index_html(&spec).expect("connected app html");
 
         assert!(!html.contains("__CONNECTED_APP_CONFIG__"));
-        assert!(html.contains("\"appId\":\"connected_telegram\""));
+        assert!(html.contains("\"appId\":\"connected_generic_web_service_example_com\""));
         assert!(html.contains("Save MCP config"));
         assert!(html.contains("Run MCP query"));
         assert!(html.contains("Check MCP connection"));
-        assert!(html.contains("Read recent messages"));
         assert!(html.contains("Learn interface"));
         assert!(html.contains("reflex-ui-language"));
-        assert!(html.contains("Считать последние сообщения"));
         assert!(html.contains("reflexProjectMcpUpsert"));
         assert!(html.contains("reflexIntegrationMcpStatus"));
         assert!(html.contains("reflexIntegrationMcpQuery"));
         assert!(html.contains("reflexIntegrationLearnVisible"));
         assert!(html.contains("reflexAppsInvoke"));
         assert!(html.contains("check_mcp_connection"));
-        assert!(html.contains("read_recent_messages"));
         assert!(html.contains("interface.visible_session.learn"));
     }
 }
