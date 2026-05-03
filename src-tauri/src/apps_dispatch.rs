@@ -447,12 +447,15 @@ pub async fn dispatch_app_method(
                 .to_string();
 
             let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
-            let policy = manifest
+            let host_allowed = manifest
                 .network
-                .ok_or_else(|| "manifest.network is missing — declare allowed_hosts".to_string())?;
-            if !policy.allows_host(&host) {
+                .as_ref()
+                .map(|policy| policy.allows_host(&host))
+                .unwrap_or(false);
+            if !host_allowed {
+                create_network_host_permission_request(app, app_id, &host)?;
                 return Err(format!(
-                    "host '{host}' not in manifest.network.allowed_hosts"
+                    "host '{host}' not in manifest.network.allowed_hosts; pending permission request created"
                 ));
             }
 
@@ -1356,6 +1359,43 @@ fn permissions_requests_for_app(
     Ok(serde_json::json!({ "requests": manifest.permission_requests }))
 }
 
+fn create_network_host_permission_request(
+    app: &AppHandle,
+    app_id: &str,
+    host: &str,
+) -> Result<(), String> {
+    let request = network_host_permission_request(host)?;
+    let (_, request, created) =
+        apps::upsert_permission_request(app, app_id, request).map_err(|e| e.to_string())?;
+    let _ = app.emit(
+        "reflex://app-permission-requested",
+        &serde_json::json!({
+            "app_id": app_id,
+            "request": request,
+            "created": created,
+        }),
+    );
+    emit_apps_changed(app);
+    Ok(())
+}
+
+fn network_host_permission_request(host: &str) -> Result<apps::PermissionRequest, String> {
+    let host = normalize_allowed_host(host)?;
+    Ok(apps::PermissionRequest {
+        id: format!("network_host_{}", sanitize_request_id_fragment(&host)),
+        status: "pending".into(),
+        reason: Some(format!(
+            "Network request to `{host}` was blocked because the host is not in manifest.network.allowed_hosts."
+        )),
+        permissions: Vec::new(),
+        network_hosts: vec![host],
+        server_listen: false,
+        created_at_ms: apps::timestamp_ms(),
+        resolved_at_ms: None,
+        resolved_note: None,
+    })
+}
+
 fn permissions_request_for_app(
     app: &AppHandle,
     app_id: &str,
@@ -1665,6 +1705,25 @@ fn normalize_allowed_host(raw: &str) -> Result<String, String> {
         return Err("wildcard host must be a DNS hostname".into());
     }
     Ok(if wildcard { format!("*.{host}") } else { host })
+}
+
+fn sanitize_request_id_fragment(raw: &str) -> String {
+    let mut out = String::new();
+    for ch in raw.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else if matches!(ch, '-' | '_') {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        "host".into()
+    } else {
+        trimmed.chars().take(80).collect()
+    }
 }
 
 fn merge_json(base: &mut serde_json::Value, patch: serde_json::Value) {
@@ -2264,7 +2323,7 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "projects.open",
                 "topics.open"
             ],
-            "network": "net.fetch requires manifest.network.allowed_hosts",
+            "network": "net.fetch requires manifest.network.allowed_hosts; missing hosts create pending permission requests",
             "cross_project": "linked projects are available by default; other projects require scoped permissions"
         }
     }))
@@ -6994,6 +7053,22 @@ mod tests {
             "*.example.com"
         );
         assert!(normalize_allowed_host("*.127.0.0.1").is_err());
+    }
+
+    #[test]
+    fn network_host_permission_request_normalizes_and_scopes_host_grant() {
+        let request = network_host_permission_request("https://API.Example.com/v1").unwrap();
+
+        assert_eq!(request.id, "network_host_api_example_com");
+        assert_eq!(request.status, "pending");
+        assert!(request.permissions.is_empty());
+        assert_eq!(request.network_hosts, vec!["api.example.com"]);
+        assert!(!request.server_listen);
+        assert!(request
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("manifest.network.allowed_hosts"));
     }
 
     #[test]

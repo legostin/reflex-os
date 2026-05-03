@@ -266,7 +266,8 @@ Core methods:
   host app viewer where the user can approve or deny them on the fly.
 - `network.hosts()`, `network.allowHost({ host })` or
   `network.allowHost({ hosts })`, `network.revokeHost(...)` -> targeted updates
-  to `manifest.network.allowed_hosts` for `net.fetch`.
+  to `manifest.network.allowed_hosts` for `net.fetch`. For user-approved access,
+  use `permissions.request({ hosts, reason })`.
 - `widgets.list()` -> this app's dashboard widgets.
 - `widgets.upsert({ id, name?, entry?, size?, description?, html? })` or
   `widgets.upsert({ widget, html? })` -> create/update a dashboard widget and
@@ -301,7 +302,8 @@ Core methods:
 - `dialog.openDirectory`, `dialog.openFile`, `dialog.saveFile`.
 - `notify.show({ title, body })`.
 - `net.fetch({ url, method?, headers?, body?, timeoutMs? })`; requires
-  `manifest.network.allowed_hosts`.
+  `manifest.network.allowed_hosts`. When a host is missing, Reflex creates a
+  pending permission request that can be approved in the app viewer.
 - `projects.list({ includeAll? })`.
 - `projects.open({ projectId })` -> asks Reflex to open that project in the
   main UI.

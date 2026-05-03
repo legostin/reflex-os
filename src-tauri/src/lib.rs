@@ -2295,7 +2295,7 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
         ),
         "api-client" => Some(
             "API-CLIENT TEMPLATE:\n\
-- Use `window.reflexNetFetch(...)` for the target API. Before the first request, call `await window.reflexNetworkAllowHost(\"<host>\")` so the host is added to manifest.network.allowed_hosts without manual merging.\n\
+- Use `window.reflexNetFetch(...)` for the target API. Before the first request, call `await window.reflexPermissionsRequest({hosts:[\"<host>\"], reason:\"Fetch data from <host>\"})` and show a setup-required state until approved; net.fetch also creates a pending request when a host is missing.\n\
 - Provide a localized request action and render the result with JSON pretty-printing.\n\
 - If secrets are needed, ask the user through an input field and store them with `window.reflexStorageSet`.\n",
         ),
@@ -2452,7 +2452,7 @@ fn build_app_creation_prompt(
     p.push_str("  integration.mcpStatus({provider?, serverName?, includeConfig?}) -> {provider, expected_server, configured, checked, projects}; inspect provider MCP config across accessible targets, including the app-owned project.\n");
     p.push_str("  integration.mcpQuery({query?, serviceUrl?}) -> {ok, record, storageKey, event}; run an English-wrapped agent query against configured project MCP servers, store the last MCP result, and update manifest.integration.mcp last-query metadata.\n");
     p.push_str("  permissions.list() -> {permissions}; permissions.requests() -> {requests}; permissions.request({permissions?, hosts?, reason?, serverListen?}) -> {ok, request, requests}; permissions.ensure({permission}) or ensure({permissions}) -> {ok, added, permissions}; permissions.revoke(...) -> {ok, removed, permissions}; request or update manifest permissions without manual merging\n");
-    p.push_str("  network.hosts() -> {allowed_hosts}; network.allowHost({host}) or allowHost({hosts}) -> {ok, added, allowed_hosts}; network.revokeHost(...) -> {ok, removed, allowed_hosts}; targeted manifest.network.allowed_hosts updates for net.fetch\n");
+    p.push_str("  network.hosts() -> {allowed_hosts}; network.allowHost({host}) or allowHost({hosts}) -> {ok, added, allowed_hosts}; network.revokeHost(...) -> {ok, removed, allowed_hosts}; targeted manifest.network.allowed_hosts updates for net.fetch. Use permissions.request({hosts, reason}) when host access should be approved by the user.\n");
     p.push_str("  widgets.list() -> {widgets}; widgets.upsert({id, name?, entry?, size?, description?, html?}) or widgets.upsert({widget, html?}) -> {ok, created, widget}; widgets.delete({widgetId, deleteEntry?}) -> {ok, deleted}; manage dashboard widgets without manual manifest merging\n");
     p.push_str("  actions.list() -> {actions}; actions.upsert({id, name?, description?, public?, params_schema?, steps}) or actions.upsert({action}) -> {ok, created, action}; actions.delete({actionId}) -> {ok, deleted}; publish callable API for apps.invoke without manual manifest merging\n");
     p.push_str("  agent.ask({prompt}) -> {answer}; short one-shot question to the agent\n");
@@ -2471,7 +2471,7 @@ fn build_app_creation_prompt(
     p.push_str("  dialog.openDirectory({title?, defaultPath?}) -> {path|null}; native folder picker. path = null when cancelled.\n");
     p.push_str("  dialog.openFile({title?, defaultPath?, filters?, multiple?}) -> {path|null} or {paths:[]}; native file picker. filters: [{name, extensions:[\"txt\",...]}]\n");
     p.push_str("  dialog.saveFile({title?, defaultPath?, filters?, content?}) -> {path|null}; native save dialog. If content is provided as a string, the file is written immediately to the selected path.\n");
-    p.push_str("  net.fetch({url, method?, headers?, body?, timeoutMs?}) -> {status, headers, body, encoding}; HTTP request. The host MUST be in manifest.network.allowed_hosts; supports \"*.example.com\". Add hosts through network.allowHost/reflexNetworkAllowHost. Body may be a string or JSON, which is auto-serialized. encoding=\"utf8\"|\"base64\".\n\n");
+    p.push_str("  net.fetch({url, method?, headers?, body?, timeoutMs?}) -> {status, headers, body, encoding}; HTTP request. The host MUST be in manifest.network.allowed_hosts; supports \"*.example.com\". Missing hosts create a pending permission request. Use permissions.request/reflexPermissionsRequest({hosts, reason}) when access should be approved by the user. Body may be a string or JSON, which is auto-serialized. encoding=\"utf8\"|\"base64\".\n\n");
     p.push_str("PROJECT/TOPIC API: use it for OS dashboards, navigation, and agent work overview.\n");
     p.push_str("  projects.list({includeAll?}) -> ProjectSummary[]; by default returns only linked projects. includeAll requires permission \"projects.read:*\"\n");
     p.push_str("  projects.open({projectId}) -> {ok, project_id}; open a project in the main UI. Access rules match projects.list.\n");
@@ -2523,7 +2523,7 @@ fn build_app_creation_prompt(
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryUpdate(relPathOrParams, patch?), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryStats(params), reflexMemoryReindex(params), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryPathStatusBatch(pathsOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
     p.push_str("MANIFEST.network for net.fetch:\n");
     p.push_str("  { \"network\": { \"allowed_hosts\": [\"api.example.com\", \"*.foo.com\"] } }\n\n");
-    p.push_str("- Prefer targeted calls such as await reflexNetworkAllowHost(\"api.example.com\") instead of manual manifest.update.\n\n");
+    p.push_str("- For user-approved host access, call await reflexPermissionsRequest({hosts:[\"api.example.com\"], reason:\"Fetch API data\"}) and show a setup-required state until approved. net.fetch also creates a pending permission request when a host is missing. Use reflexNetworkAllowHost only when the utility is intentionally updating its manifest.\n\n");
     p.push_str("MANIFEST.schedules: recurring tasks. Reflex runs them while it is alive, even when the app window is closed.\n");
     p.push_str("  {\n");
     p.push_str("    \"schedules\": [{\n");
