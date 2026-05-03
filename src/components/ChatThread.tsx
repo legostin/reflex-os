@@ -4850,8 +4850,16 @@ type DashboardActionSource = {
 type DashboardRecord = {
   status: "loading" | "ok" | "error";
   preview: string;
+  value?: unknown;
   updatedAtMs?: number;
   error?: string;
+};
+
+type CustomDashboardWidget = {
+  id: string;
+  title: string;
+  prompt: string;
+  createdAtMs: number;
 };
 
 const DASHBOARD_ACTION_PATTERN =
@@ -4865,6 +4873,10 @@ function dashboardSourceKey(source: DashboardActionSource): string {
 
 function dashboardCacheKey(projectId: string): string {
   return `reflex:project-dashboard:v1:${projectId}`;
+}
+
+function customDashboardWidgetsKey(projectId: string): string {
+  return `reflex:project-dashboard-widgets:v1:${projectId}`;
 }
 
 function readDashboardCache(projectId: string): Record<string, DashboardRecord> {
@@ -4887,6 +4899,37 @@ function writeDashboardCache(
   } catch {}
 }
 
+function readCustomDashboardWidgets(projectId: string): CustomDashboardWidget[] {
+  try {
+    const raw = window.localStorage.getItem(customDashboardWidgetsKey(projectId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is CustomDashboardWidget =>
+          isJsonObject(item) &&
+          typeof item.id === "string" &&
+          typeof item.title === "string" &&
+          typeof item.prompt === "string" &&
+          typeof item.createdAtMs === "number",
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCustomDashboardWidgets(
+  projectId: string,
+  widgets: CustomDashboardWidget[],
+) {
+  try {
+    window.localStorage.setItem(
+      customDashboardWidgetsKey(projectId),
+      JSON.stringify(widgets),
+    );
+  } catch {}
+}
+
 function actionHasRequiredParams(action: AppAction): boolean {
   const schema = actionParamsSchema(action);
   return isJsonObject(schema) && Array.isArray(schema.required) && schema.required.length > 0;
@@ -4903,8 +4946,19 @@ function unwrapActionResult(value: any): unknown {
   return value;
 }
 
+function normalizeDashboardValue(value: unknown): unknown {
+  let result = unwrapActionResult(value);
+  if (isJsonObject(result)) {
+    const keys = Object.keys(result);
+    if (keys.length === 1 && keys[0] === "value") {
+      result = result.value;
+    }
+  }
+  return result;
+}
+
 function dashboardPreview(value: unknown): string {
-  const result = unwrapActionResult(value);
+  const result = normalizeDashboardValue(value);
   if (isJsonObject(result)) {
     if (result.setup_required === true) {
       return String(result.message ?? "Setup required");
@@ -4938,6 +4992,7 @@ async function fetchDashboardAction(
     return {
       status: "ok",
       preview: dashboardPreview(result),
+      value: normalizeDashboardValue(result),
       updatedAtMs: Date.now(),
     };
   } catch (e) {
@@ -4961,6 +5016,165 @@ function mergeDashboardRecord(
   return next;
 }
 
+function dashboardTokens(input: string): string[] {
+  return Array.from(
+    new Set(
+      input
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}_]+/u)
+        .map((part) => part.trim())
+        .filter((part) => part.length >= 2),
+    ),
+  );
+}
+
+function dashboardSourceSearchText(source: DashboardActionSource): string {
+  return [
+    source.appId,
+    source.appName,
+    source.action.id,
+    source.action.name,
+    source.action.description ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function dashboardRecordSearchText(record?: DashboardRecord): string {
+  if (!record) return "";
+  try {
+    return JSON.stringify(record.value ?? record.preview ?? "").toLowerCase();
+  } catch {
+    return String(record.preview ?? "").toLowerCase();
+  }
+}
+
+function customWidgetSourceScore(
+  widget: CustomDashboardWidget,
+  source: DashboardActionSource,
+  record?: DashboardRecord,
+): number {
+  const tokens = dashboardTokens(widget.prompt);
+  if (tokens.length === 0) return 0;
+  const haystack = `${dashboardSourceSearchText(source)} ${dashboardRecordSearchText(record)}`;
+  return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+}
+
+function uniqueDashboardSources(
+  sources: DashboardActionSource[],
+): DashboardActionSource[] {
+  const seen = new Set<string>();
+  const out: DashboardActionSource[] = [];
+  for (const source of sources) {
+    const key = dashboardSourceKey(source);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(source);
+  }
+  return out;
+}
+
+function titleFromWidgetPrompt(prompt: string): string {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  if (!normalized) return "Widget";
+  return normalized.length > 44 ? `${normalized.slice(0, 41)}...` : normalized;
+}
+
+function formatDashboardLabel(key: string): string {
+  const spaced = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  if (!spaced) return key;
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function formatDashboardScalar(key: string, value: unknown): string {
+  if (value == null) return "—";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") {
+    if (value > 1_000_000_000_000 && /(^|_)(at|time|expires|updated|created)|_ms$/i.test(key)) {
+      return new Date(value).toLocaleString();
+    }
+    return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+  }
+  return String(value);
+}
+
+function displayNameForDashboardItem(value: unknown): string {
+  if (isJsonObject(value)) {
+    for (const key of ["name", "title", "country_name", "circuit_short_name", "session_name", "meeting_name"]) {
+      if (typeof value[key] === "string" && value[key].trim()) return value[key];
+    }
+    const first = Object.entries(value).find(([, item]) => item != null);
+    if (first) return `${formatDashboardLabel(first[0])}: ${formatDashboardScalar(first[0], first[1])}`;
+  }
+  return formatDashboardScalar("", value);
+}
+
+function DashboardValueView({
+  value,
+  fallback,
+  depth = 0,
+}: {
+  value: unknown;
+  fallback?: string;
+  depth?: number;
+}) {
+  const normalized = normalizeDashboardValue(value);
+  if (normalized == null) {
+    return <div className="dashboard-value-empty">{fallback ?? "—"}</div>;
+  }
+  if (typeof normalized !== "object") {
+    return (
+      <div className="dashboard-value-text">
+        {formatDashboardScalar("", normalized)}
+      </div>
+    );
+  }
+  if (Array.isArray(normalized)) {
+    if (normalized.length === 0) {
+      return <div className="dashboard-value-empty">[]</div>;
+    }
+    return (
+      <div className="dashboard-value-list">
+        <div className="dashboard-value-count">{normalized.length} items</div>
+        <ul>
+          {normalized.slice(0, 5).map((item, index) => (
+            <li key={index}>{displayNameForDashboardItem(item)}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+  const entries = Object.entries(normalized).slice(0, depth > 0 ? 5 : 8);
+  if (entries.length === 0) {
+    return <div className="dashboard-value-empty">{fallback ?? "{}"}</div>;
+  }
+  return (
+    <div className="dashboard-value-object">
+      {entries.map(([key, item]) => {
+        const complex = item != null && typeof item === "object";
+        return (
+          <div
+            key={key}
+            className={`dashboard-value-row ${complex ? "dashboard-value-row-block" : ""}`}
+          >
+            <span className="dashboard-value-label">{formatDashboardLabel(key)}</span>
+            {complex && depth < 1 ? (
+              <DashboardValueView value={item} depth={depth + 1} />
+            ) : (
+              <span className="dashboard-value-scalar">
+                {complex ? displayNameForDashboardItem(item) : formatDashboardScalar(key, item)}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ProjectDashboard({
   project,
   apps,
@@ -4972,12 +5186,12 @@ function ProjectDashboard({
 }) {
   const { t } = useI18n();
   const linkedIds = useMemo(() => new Set(project.apps ?? []), [project.apps]);
-  const actionSources = useMemo<DashboardActionSource[]>(() => {
+  const allActionSources = useMemo<DashboardActionSource[]>(() => {
     const out: DashboardActionSource[] = [];
     for (const app of apps) {
       if (!linkedIds.has(app.id) || app.ready === false) continue;
       for (const action of app.actions ?? []) {
-        if (!isDashboardActionCandidate(action)) continue;
+        if (action.public !== true || actionHasRequiredParams(action)) continue;
         out.push({
           appId: app.id,
           appName: app.name,
@@ -4988,6 +5202,10 @@ function ProjectDashboard({
     }
     return out;
   }, [apps, linkedIds]);
+  const actionSources = useMemo(
+    () => allActionSources.filter((source) => isDashboardActionCandidate(source.action)),
+    [allActionSources],
+  );
   const legacyWidgetSources = useMemo<WidgetSource[]>(() => {
     const out: WidgetSource[] = [];
     for (const app of apps) {
@@ -5006,18 +5224,34 @@ function ProjectDashboard({
   const [records, setRecords] = useState<Record<string, DashboardRecord>>(() =>
     readDashboardCache(project.id),
   );
+  const [customWidgets, setCustomWidgets] = useState<CustomDashboardWidget[]>(() =>
+    readCustomDashboardWidgets(project.id),
+  );
+  const [addingWidget, setAddingWidget] = useState(false);
+  const [widgetPrompt, setWidgetPrompt] = useState("");
+  const activeActionSources = useMemo(
+    () =>
+      uniqueDashboardSources([
+        ...actionSources,
+        ...(customWidgets.length > 0 ? allActionSources : []),
+      ]),
+    [actionSources, allActionSources, customWidgets.length],
+  );
 
   useEffect(() => {
     setRecords(readDashboardCache(project.id));
+    setCustomWidgets(readCustomDashboardWidgets(project.id));
+    setAddingWidget(false);
+    setWidgetPrompt("");
   }, [project.id]);
 
   useEffect(() => {
-    if (actionSources.length === 0) return;
+    if (activeActionSources.length === 0) return;
     let cancelled = false;
 
     const refresh = async () => {
       await Promise.all(
-        actionSources.map(async (source) => {
+        activeActionSources.map(async (source) => {
           const key = dashboardSourceKey(source);
           const cached = readDashboardCache(project.id)[key];
           if (
@@ -5050,9 +5284,7 @@ function ProjectDashboard({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [actionSources, project.id]);
-
-  if ((project.apps ?? []).length === 0) return null;
+  }, [activeActionSources, project.id]);
 
   const refreshOne = async (source: DashboardActionSource) => {
     const key = dashboardSourceKey(source);
@@ -5064,11 +5296,147 @@ function ProjectDashboard({
     setRecords((prev) => mergeDashboardRecord(project.id, prev, key, record));
   };
 
+  const addCustomWidget = () => {
+    const prompt = widgetPrompt.trim();
+    if (!prompt) return;
+    const widget: CustomDashboardWidget = {
+      id: `custom_${Date.now().toString(36)}`,
+      title: titleFromWidgetPrompt(prompt),
+      prompt,
+      createdAtMs: Date.now(),
+    };
+    setCustomWidgets((prev) => {
+      const next = [widget, ...prev];
+      writeCustomDashboardWidgets(project.id, next);
+      return next;
+    });
+    setWidgetPrompt("");
+    setAddingWidget(false);
+  };
+
+  const removeCustomWidget = (id: string) => {
+    setCustomWidgets((prev) => {
+      const next = prev.filter((widget) => widget.id !== id);
+      writeCustomDashboardWidgets(project.id, next);
+      return next;
+    });
+  };
+
   return (
     <section className="project-dashboard">
-      <h2 className="section-title">{t("project.dashboard")}</h2>
+      <div className="section-head">
+        <h2 className="section-title">{t("project.dashboard")}</h2>
+        <button
+          type="button"
+          className="apps-create-btn"
+          onClick={() => setAddingWidget((open) => !open)}
+        >
+          {addingWidget ? t("dashboard.cancelAdd") : t("dashboard.addWidget")}
+        </button>
+      </div>
+      {addingWidget && (
+        <div className="dashboard-widget-composer">
+          <textarea
+            className="modal-input"
+            rows={3}
+            value={widgetPrompt}
+            onChange={(e) => setWidgetPrompt(e.currentTarget.value)}
+            placeholder={t("dashboard.addPlaceholder")}
+            autoFocus
+          />
+          <div className="dashboard-widget-composer-actions">
+            <button
+              type="button"
+              className="modal-btn modal-btn-primary"
+              disabled={!widgetPrompt.trim()}
+              onClick={addCustomWidget}
+            >
+              {t("dashboard.saveWidget")}
+            </button>
+          </div>
+        </div>
+      )}
+      {customWidgets.length > 0 && (
+        <div className="dashboard-custom-grid">
+          {customWidgets.map((widget) => {
+            const scored = allActionSources
+              .map((source) => ({
+                source,
+                key: dashboardSourceKey(source),
+                score: customWidgetSourceScore(
+                  widget,
+                  source,
+                  records[dashboardSourceKey(source)],
+                ),
+              }))
+              .filter((item) => item.score > 0)
+              .sort((a, b) => b.score - a.score)
+              .slice(0, 3);
+            const visible =
+              scored.length > 0
+                ? scored
+                : allActionSources.slice(0, 1).map((source) => ({
+                    source,
+                    key: dashboardSourceKey(source),
+                    score: 0,
+                  }));
+            return (
+              <article key={widget.id} className="dashboard-custom-card">
+                <header className="dashboard-custom-header">
+                  <div>
+                    <div className="dashboard-action-name">{widget.title}</div>
+                    <div className="dashboard-widget-prompt">{widget.prompt}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="dashboard-action-refresh"
+                    onClick={() => removeCustomWidget(widget.id)}
+                    title={t("dashboard.removeWidget")}
+                  >
+                    ×
+                  </button>
+                </header>
+                {visible.length === 0 ? (
+                  <div className="dashboard-empty">{t("dashboard.noSource")}</div>
+                ) : (
+                  <div className="dashboard-custom-sources">
+                    {visible.map(({ source, key }) => {
+                      const record = records[key] ?? {
+                        status: "loading",
+                        preview: "",
+                      };
+                      return (
+                        <div key={key} className="dashboard-custom-source">
+                          <div className="dashboard-custom-source-title">
+                            {source.appIcon ?? "U"} {source.appName} ·{" "}
+                            {source.action.name || source.action.id}
+                          </div>
+                          <DashboardValueView
+                            value={
+                              record.status === "ok"
+                                ? record.value ?? record.preview
+                                : null
+                            }
+                            fallback={
+                              record.status === "loading"
+                                ? t("dashboard.loading")
+                                : record.error || t("dashboard.emptyValue")
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
       {actionSources.length === 0 ? (
+        customWidgets.length === 0 && (
         <div className="dashboard-empty">{t("dashboard.empty")}</div>
+        )
       ) : (
         <div className="dashboard-action-grid">
           {actionSources.map((source) => {
@@ -5101,13 +5469,20 @@ function ProjectDashboard({
                 <div className="dashboard-action-name">
                   {source.action.name || source.action.id}
                 </div>
-                <pre className="dashboard-action-preview">
-                  {record.status === "loading"
-                    ? t("dashboard.loading")
-                    : record.status === "error"
-                      ? record.error || t("dashboard.error")
-                      : record.preview || t("dashboard.emptyValue")}
-                </pre>
+                <DashboardValueView
+                  value={
+                    record.status === "ok"
+                      ? record.value ?? record.preview
+                      : null
+                  }
+                  fallback={
+                    record.status === "loading"
+                      ? t("dashboard.loading")
+                      : record.status === "error"
+                        ? record.error || t("dashboard.error")
+                        : t("dashboard.emptyValue")
+                  }
+                />
                 {record.updatedAtMs && (
                   <div className="dashboard-action-meta">
                     {t("dashboard.cachedAt", {
