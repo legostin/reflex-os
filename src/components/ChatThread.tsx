@@ -1151,6 +1151,14 @@ export default function ChatThread() {
   const currentRoute: Route =
     focusedPane.tabs.find((r) => routeKey(r) === focusedPane.activeKey) ??
     focusedPane.tabs[0] ?? { kind: "home" };
+  const activeRouteProjectId =
+    projectIdFromRoute(currentRoute, threads) ?? null;
+
+  useEffect(() => {
+    void invoke("set_active_project", {
+      projectId: activeRouteProjectId,
+    }).catch((e) => console.warn("[reflex] set_active_project failed", e));
+  }, [activeRouteProjectId]);
 
   const openLinkFromThread = (
     threadId: string,
@@ -4064,9 +4072,7 @@ function HomeScreen({
   const { t } = useI18n();
   const projectsRef = useRef<HTMLElement>(null);
   const [showStartDialog, setShowStartDialog] = useState(false);
-  const [dialogProjectId, setDialogProjectId] = useState(
-    () => projects[0]?.id ?? "",
-  );
+  const [dialogProjectId, setDialogProjectId] = useState("");
   const [dialogSubmitting, setDialogSubmitting] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [dialogApps, setDialogApps] = useState<AppManifest[]>([]);
@@ -4102,9 +4108,6 @@ function HomeScreen({
     if (!hasProjects) {
       onCreateProject();
       return;
-    }
-    if (!projects.some((project) => project.id === dialogProjectId)) {
-      setDialogProjectId(projects[0].id);
     }
     setDialogError(null);
     setShowStartDialog(true);
@@ -4145,7 +4148,7 @@ function HomeScreen({
       return;
     }
     if (!projects.some((project) => project.id === dialogProjectId)) {
-      setDialogProjectId(projects[0].id);
+      setDialogProjectId("");
     }
   }, [projects, dialogProjectId]);
 
@@ -4317,6 +4320,9 @@ function HomeScreen({
                 onChange={(e) => setDialogProjectId(e.currentTarget.value)}
                 autoFocus
               >
+                <option value="" disabled>
+                  {t("home.projectSelectPlaceholder")}
+                </option>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}

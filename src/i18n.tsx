@@ -222,6 +222,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "home.startDialogHint":
       "Choose where the conversation should live, then write the first message.",
     "home.projectSelectLabel": "Project",
+    "home.projectSelectPlaceholder": "Choose a project",
     "home.startDialogPlaceholder":
       "What should Codex help with in this project?",
     "home.startDialogSubmit": "Start conversation",
@@ -951,6 +952,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "home.startDialogHint":
       "Выбери, где будет жить диалог, и напиши первое сообщение.",
     "home.projectSelectLabel": "Проект",
+    "home.projectSelectPlaceholder": "Выбери проект",
     "home.startDialogPlaceholder":
       "С чем Codex должен помочь в этом проекте?",
     "home.startDialogSubmit": "Начать диалог",
