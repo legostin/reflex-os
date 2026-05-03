@@ -207,6 +207,13 @@ const dictionaries: Record<Locale, Dictionary> = {
     "home.askInProject": "Ask in a project",
     "home.askInProjectHint":
       "Files, topics, memory, and widgets stay connected there.",
+    "home.startDialogTitle": "Start a project conversation",
+    "home.startDialogHint":
+      "Choose where the conversation should live, then write the first message.",
+    "home.projectSelectLabel": "Project",
+    "home.startDialogPlaceholder":
+      "What should Codex help with in this project?",
+    "home.startDialogSubmit": "Start conversation",
     "home.buildUtility": "Build a utility",
     "home.buildUtilityHint":
       "Turn a repeated workflow into a reusable screen or automation.",
@@ -903,6 +910,13 @@ const dictionaries: Record<Locale, Dictionary> = {
     "home.askInProject": "Спросить в проекте",
     "home.askInProjectHint":
       "Файлы, топики, память и виджеты остаются связанными там.",
+    "home.startDialogTitle": "Начать диалог в проекте",
+    "home.startDialogHint":
+      "Выбери, где будет жить диалог, и напиши первое сообщение.",
+    "home.projectSelectLabel": "Проект",
+    "home.startDialogPlaceholder":
+      "С чем Codex должен помочь в этом проекте?",
+    "home.startDialogSubmit": "Начать диалог",
     "home.buildUtility": "Собрать утилиту",
     "home.buildUtilityHint":
       "Превратить повторяющуюся работу в экран или автоматизацию.",

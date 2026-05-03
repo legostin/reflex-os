@@ -2829,6 +2829,15 @@
   white-space: nowrap;
 }
 
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: rgba(245, 245, 247, 0.68);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .modal-input {
   width: 100%;
   resize: vertical;
@@ -2841,6 +2850,10 @@
   padding: 10px 12px;
   outline: none;
   box-sizing: border-box;
+}
+
+.modal-select {
+  resize: none;
 }
 
 .modal-input:focus {

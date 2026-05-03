@@ -1336,6 +1336,9 @@ export default function ChatThread() {
             onSelectApp={(id) => navigate({ kind: "app", app_id: id })}
             onOpenApps={() => navigate({ kind: "apps" })}
             onOpenMemory={() => navigate({ kind: "memory" })}
+            onCreateTopic={(projectId, prompt, planMode) =>
+              createNewTopic(projectId, prompt, planMode)
+            }
             onCreateProject={() => void createNewProject()}
           />
         );
@@ -3849,6 +3852,7 @@ function HomeScreen({
   onSelectApp,
   onOpenApps,
   onOpenMemory,
+  onCreateTopic,
   onCreateProject,
 }: {
   projects: Project[];
@@ -3859,10 +3863,23 @@ function HomeScreen({
   onSelectApp: (id: string) => void;
   onOpenApps: () => void;
   onOpenMemory: () => void;
+  onCreateTopic: (
+    projectId: string,
+    prompt: string,
+    planMode: boolean,
+  ) => Promise<void>;
   onCreateProject: () => void;
 }) {
   const { t } = useI18n();
   const projectsRef = useRef<HTMLElement>(null);
+  const [showStartDialog, setShowStartDialog] = useState(false);
+  const [dialogProjectId, setDialogProjectId] = useState(
+    () => projects[0]?.id ?? "",
+  );
+  const [dialogPrompt, setDialogPrompt] = useState("");
+  const [dialogPlanMode, setDialogPlanMode] = useState(false);
+  const [dialogSubmitting, setDialogSubmitting] = useState(false);
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const hasProjects = projects.length > 0;
   const chooseProject = () => {
     if (!hasProjects) {
@@ -3871,10 +3888,47 @@ function HomeScreen({
     }
     projectsRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   };
+  const openStartDialog = () => {
+    if (!hasProjects) {
+      onCreateProject();
+      return;
+    }
+    if (!projects.some((project) => project.id === dialogProjectId)) {
+      setDialogProjectId(projects[0].id);
+    }
+    setDialogError(null);
+    setShowStartDialog(true);
+  };
+  const submitStartDialog = async () => {
+    const text = dialogPrompt.trim();
+    if (!text || !dialogProjectId || dialogSubmitting) return;
+    setDialogSubmitting(true);
+    setDialogError(null);
+    try {
+      await onCreateTopic(dialogProjectId, text, dialogPlanMode);
+      setDialogPrompt("");
+      setDialogPlanMode(false);
+      setShowStartDialog(false);
+    } catch (e) {
+      setDialogError(String(e));
+    } finally {
+      setDialogSubmitting(false);
+    }
+  };
   const recent = threads
     .slice()
     .sort((a, b) => b.created_at_ms - a.created_at_ms)
     .slice(0, 5);
+
+  useEffect(() => {
+    if (projects.length === 0) {
+      if (dialogProjectId) setDialogProjectId("");
+      return;
+    }
+    if (!projects.some((project) => project.id === dialogProjectId)) {
+      setDialogProjectId(projects[0].id);
+    }
+  }, [projects, dialogProjectId]);
 
   return (
     <div className="home-root">
@@ -3900,7 +3954,7 @@ function HomeScreen({
         <div className="home-guide-grid">
           <button
             className="home-guide-card"
-            onClick={chooseProject}
+            onClick={openStartDialog}
           >
             <span className="home-guide-icon">💬</span>
             <span className="home-guide-title">{t("home.askInProject")}</span>
@@ -4001,6 +4055,74 @@ function HomeScreen({
             ))}
           </ul>
         </section>
+      )}
+      {showStartDialog && (
+        <div
+          className="modal-backdrop"
+          onClick={() => !dialogSubmitting && setShowStartDialog(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">{t("home.startDialogTitle")}</h2>
+            <p className="modal-hint">{t("home.startDialogHint")}</p>
+            <label className="modal-field">
+              <span>{t("home.projectSelectLabel")}</span>
+              <select
+                className="modal-input modal-select"
+                value={dialogProjectId}
+                onChange={(e) => setDialogProjectId(e.currentTarget.value)}
+                autoFocus
+              >
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <textarea
+              className="modal-input"
+              placeholder={t("home.startDialogPlaceholder")}
+              value={dialogPrompt}
+              onChange={(e) => setDialogPrompt(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void submitStartDialog();
+                }
+              }}
+              rows={5}
+            />
+            <label className="plan-toggle">
+              <input
+                type="checkbox"
+                checked={dialogPlanMode}
+                onChange={(e) => setDialogPlanMode(e.currentTarget.checked)}
+              />
+              <span>📋 {t("project.planFirst")}</span>
+            </label>
+            {dialogError && <div className="apps-error">{dialogError}</div>}
+            <div className="modal-actions">
+              <button
+                className="modal-btn"
+                disabled={dialogSubmitting}
+                onClick={() => setShowStartDialog(false)}
+              >
+                {t("apps.cancel")}
+              </button>
+              <button
+                className="modal-btn modal-btn-primary"
+                disabled={
+                  dialogSubmitting || !dialogPrompt.trim() || !dialogProjectId
+                }
+                onClick={() => void submitStartDialog()}
+              >
+                {dialogSubmitting
+                  ? t("project.starting")
+                  : t("home.startDialogSubmit")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
