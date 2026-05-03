@@ -844,19 +844,26 @@ export default function ChatThread() {
       focusedPaneId: paneId,
     }));
 
-  // Navigate within focused pane. If route already lives in another pane, just focus it.
-  const navigate = (r: Route) => {
+  // Navigate within the requested pane. If route already lives in another pane, just focus it.
+  const navigateRoute = (r: Route, preferredPaneId?: PaneId) => {
     const k = routeKey(r);
     setLayout((prev) => {
-      const focused = prev.panes.find((p) => p.id === prev.focusedPaneId);
-      if (focused?.tabs.some((t) => routeKey(t) === k)) {
+      const preferred =
+        prev.panes.find((p) => p.id === (preferredPaneId ?? prev.focusedPaneId)) ??
+        prev.panes[0];
+      if (preferred?.tabs.some((t) => routeKey(t) === k)) {
         return {
           ...prev,
           panes: prev.panes.map((p) =>
-            p.id === prev.focusedPaneId
-              ? { ...p, activeKey: k, tabs: p.tabs.map((t) => (routeKey(t) === k ? r : t)) }
+            p.id === preferred.id
+              ? {
+                  ...p,
+                  activeKey: k,
+                  tabs: p.tabs.map((t) => (routeKey(t) === k ? r : t)),
+                }
               : p,
           ),
+          focusedPaneId: preferred.id,
         };
       }
       const other = prev.panes.find((p) => p.tabs.some((t) => routeKey(t) === k));
@@ -865,22 +872,30 @@ export default function ChatThread() {
           ...prev,
           panes: prev.panes.map((p) =>
             p.id === other.id
-              ? { ...p, activeKey: k, tabs: p.tabs.map((t) => (routeKey(t) === k ? r : t)) }
+              ? {
+                  ...p,
+                  activeKey: k,
+                  tabs: p.tabs.map((t) => (routeKey(t) === k ? r : t)),
+                }
               : p,
           ),
           focusedPaneId: other.id,
         };
       }
+      if (!preferred) return prev;
       return {
         ...prev,
         panes: prev.panes.map((p) =>
-          p.id === prev.focusedPaneId
+          p.id === preferred.id
             ? { ...p, tabs: [...p.tabs, r], activeKey: k }
             : p,
         ),
+        focusedPaneId: preferred.id,
       };
     });
   };
+
+  const navigate = (r: Route) => navigateRoute(r);
 
   const openProjectRoute = (projectId: string) => {
     navigate({ kind: "project", project_id: projectId });
@@ -1423,7 +1438,7 @@ export default function ChatThread() {
     return ids;
   }, [layout.panes]);
 
-  const renderRoute = (r: Route) => {
+  const renderRoute = (r: Route, paneId: PaneId) => {
     switch (r.kind) {
       case "home":
         return (
@@ -1431,11 +1446,17 @@ export default function ChatThread() {
             projects={projects}
             threads={threads}
             openAppIds={openAppIds}
-            onSelectProject={openProjectRoute}
-            onSelectTopic={(id) => navigate({ kind: "topic", thread_id: id })}
-            onSelectApp={(id) => navigate({ kind: "app", app_id: id })}
-            onOpenApps={() => navigate({ kind: "apps" })}
-            onOpenMemory={() => navigate({ kind: "memory" })}
+            onSelectProject={(id) =>
+              navigateRoute({ kind: "project", project_id: id }, paneId)
+            }
+            onSelectTopic={(id) =>
+              navigateRoute({ kind: "topic", thread_id: id }, paneId)
+            }
+            onSelectApp={(id) =>
+              navigateRoute({ kind: "app", app_id: id }, paneId)
+            }
+            onOpenApps={() => navigateRoute({ kind: "apps" }, paneId)}
+            onOpenMemory={() => navigateRoute({ kind: "memory" }, paneId)}
             onCreateTopic={(projectId, prompt, planMode, imagePaths, goal) =>
               createNewTopic(projectId, prompt, planMode, { imagePaths, goal })
             }
@@ -1584,7 +1605,7 @@ export default function ChatThread() {
               canClose={layout.panes.length > 1}
               projects={projects}
               threads={threads}
-              renderRoute={renderRoute}
+              renderRoute={(r) => renderRoute(r, pane.id)}
               onActivateTab={(key) => activateTab(pane.id, key)}
               onCloseTab={(key) => closeTab(pane.id, key)}
               onClosePane={() => closePane(pane.id)}
