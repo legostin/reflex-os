@@ -1781,7 +1781,7 @@ CURRENT BRIDGE / RUNTIME NOTES:\n\
 - Available bridge methods: bridge.catalog, system.context, system.openPanel, system.openUrl/openPath/revealPath, logs.write/list, manifest.get/update, integration.catalog/profile/update/learnVisible/mcpStatus/mcpQuery, permissions.*, network.*, widgets.*, actions.*, agent.*, storage.*, fs.*, clipboard.*, projects.*, topics.*, skills.*, mcp.*, project.files.*, browser.*, memory.*, scheduler.*, dialog.*, notify.show, net.fetch, events.*, apps.*.\n\
 - Overlay helpers include reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexIntegrationCatalog/Profile/Update/LearnVisible/McpStatus/McpQuery, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjects*, reflexTopics*, reflexSkills*, reflexMcp*, reflexProjectFiles*, reflexBrowser*, reflexMemory*, reflexScheduler*, reflexApps*, reflexEvent*.\n\
 - If the utility needs extra app permissions, network hosts, or local server listen access, call `window.reflexPermissionsRequest({{permissions, hosts, reason, serverListen}})` and render a setup-required state until the host user approves it.\n\
-- iframe sandbox=\"allow-scripts allow-forms\"; server runtime also gets allow-same-origin. No external CDNs: use inline or local files.\n\
+- iframe sandbox includes allow-scripts, allow-forms, and allow-same-origin for static/server runtimes so legacy browser APIs do not crash; still prefer Reflex bridge storage over browser storage. No external CDNs: use inline or local files.\n\
 - Reflex injects an overlay script that captures window.onerror/unhandledrejection for Fix and supports Inspector pick events. Do not override those same event types with your own global handler.\n\
 - After edits, the iframe reloads automatically; server runtime processes restart automatically. Do not ask for manual reload.\n\
 - Do not touch .reflex/, .git/, or storage.json. You may update manifest.json permissions, network.allowed_hosts, runtime, and server fields."
@@ -2633,8 +2633,8 @@ fn build_app_creation_prompt(
     p.push_str("- If data already exists in another app, do NOT duplicate collection. Call its action through apps.invoke or listen to its events.\n\n");
 
     p.push_str("LIMITATIONS:\n");
-    p.push_str("- iframe sandbox=\"allow-scripts allow-forms\"; server runtime also gets allow-same-origin. Arbitrary external fetch may not work from the iframe, so use agent.ask or your own server runtime for dynamic data.\n");
-    p.push_str("- Browser localStorage/sessionStorage can be unavailable or throw SecurityError in static sandboxed iframes. Use Reflex storage bridge helpers for persistent state.\n");
+    p.push_str("- iframe sandbox includes allow-scripts, allow-forms, and allow-same-origin for static/server runtimes. Arbitrary external fetch may not work from the iframe, so use agent.ask or your own server runtime for dynamic data.\n");
+    p.push_str("- Browser localStorage/sessionStorage are only compatibility fallbacks. Use Reflex storage bridge helpers for persistent state.\n");
     p.push_str("- schedule.steps cannot use dialog.*, clipboard.*, system.openPanel/openUrl/openPath/revealPath, apps.create/import/commit/commitPartial/delete/restore/revert/purge, apps.open, projects.open, or topics.open because these steps run without UI. apps.diff/status/server.status/server.logs/export are allowed for monitoring/backup automations when targetPath is explicit.\n\n");
     if let Some(skeleton) = template_skeleton(template) {
         p.push_str("TEMPLATE:\n");

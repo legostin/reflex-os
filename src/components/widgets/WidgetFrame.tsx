@@ -36,7 +36,7 @@ export function WidgetFrame({ source, onOpenApp }: Props) {
       <iframe
         className="widget-iframe"
         src={src}
-        sandbox="allow-scripts allow-forms"
+        sandbox="allow-scripts allow-forms allow-same-origin"
         title={`${appName} — ${widget.name}`}
       />
     </article>

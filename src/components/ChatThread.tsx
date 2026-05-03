@@ -3675,7 +3675,7 @@ function AppViewer({
     ? "allow-scripts allow-forms allow-same-origin allow-popups allow-downloads"
     : isServerRuntime
       ? "allow-scripts allow-forms allow-same-origin"
-      : "allow-scripts allow-forms";
+      : "allow-scripts allow-forms allow-same-origin";
   const manifestFacts = useMemo(
     () => buildAppCapabilityFacts(manifest, serverPort),
     [manifest, serverPort],
