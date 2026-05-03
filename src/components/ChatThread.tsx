@@ -6325,14 +6325,10 @@ function ProjectDashboard({
               .filter((item) => item.score > 0)
               .sort((a, b) => b.score - a.score)
               .slice(0, 3);
-            const visible =
-              scored.length > 0
-                ? scored
-                : allActionSources.slice(0, 1).map((source) => ({
-                    source,
-                    key: dashboardSourceKey(source),
-                    score: 0,
-                  }));
+            const hasPendingSources = allActionSources.some((source) => {
+              const record = records[dashboardSourceKey(source)];
+              return !record || record.status === "loading";
+            });
             return (
               <article key={widget.id} className="dashboard-custom-card">
                 <header className="dashboard-custom-header">
@@ -6349,11 +6345,15 @@ function ProjectDashboard({
                     ×
                   </button>
                 </header>
-                {visible.length === 0 ? (
-                  <div className="dashboard-empty">{t("dashboard.noSource")}</div>
+                {scored.length === 0 ? (
+                  <div className="dashboard-empty">
+                    {hasPendingSources
+                      ? t("dashboard.matchingData")
+                      : t("dashboard.noSource")}
+                  </div>
                 ) : (
                   <div className="dashboard-custom-sources">
-                    {visible.map(({ source, key }) => {
+                    {scored.map(({ source, key }) => {
                       const record = records[key] ?? {
                         status: "loading",
                         preview: "",
