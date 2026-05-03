@@ -571,6 +571,7 @@ fn install_connected_app(
         ],
         widgets: Vec::new(),
     };
+    manifest.actions.push(connected_app_mcp_query_action(&spec));
 
     apps::write_manifest(&app, &spec.app_id, &manifest).map_err(|e| e.to_string())?;
     std::fs::write(dir.join("index.html"), connected_app_index_html(&spec)?)
@@ -800,6 +801,40 @@ fn connected_app_index_html(spec: &ConnectedAppSpec) -> Result<String, String> {
     });
     let config_json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
     Ok(CONNECTED_APP_INDEX_HTML.replace("__CONNECTED_APP_CONFIG__", &config_json))
+}
+
+fn connected_app_mcp_query_action(spec: &ConnectedAppSpec) -> apps::ActionDef {
+    apps::ActionDef {
+        id: "query_mcp_data".into(),
+        name: "Query MCP data".into(),
+        description: Some(
+            "Run a provider MCP query and return only data available through the configured MCP server."
+                .into(),
+        ),
+        params_schema: Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Data request to answer through the configured provider MCP server."
+                },
+                "serviceUrl": {
+                    "type": "string",
+                    "description": "Optional connected service URL override."
+                }
+            }
+        })),
+        public: true,
+        steps: vec![apps::Step {
+            method: "integration.mcpQuery".into(),
+            params: serde_json::json!({
+                "query": "{{input.query}}",
+                "serviceUrl": "{{input.serviceUrl}}",
+                "provider": spec.provider.clone(),
+            }),
+            save_as: Some("mcp".into()),
+        }],
+    }
 }
 
 const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
@@ -4026,6 +4061,19 @@ mod connected_app_tests {
             .capabilities
             .iter()
             .any(|capability| capability == "visible_session.read"));
+    }
+
+    #[test]
+    fn connected_app_exposes_public_mcp_query_action() {
+        let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
+        let action = connected_app_mcp_query_action(&spec);
+
+        assert_eq!(action.id, "query_mcp_data");
+        assert!(action.public);
+        assert_eq!(action.steps.len(), 1);
+        assert_eq!(action.steps[0].method, "integration.mcpQuery");
+        assert_eq!(action.steps[0].params["provider"], serde_json::json!("telegram"));
+        assert!(action.params_schema.is_some());
     }
 
     #[test]
