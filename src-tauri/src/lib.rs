@@ -4017,3 +4017,58 @@ pub fn run() {
             }
         });
 }
+
+#[cfg(test)]
+mod connected_app_tests {
+    use super::*;
+
+    #[test]
+    fn telegram_connected_app_spec_contains_mcp_shape() {
+        let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
+
+        assert_eq!(spec.app_id, "connected_telegram");
+        assert_eq!(spec.url, "https://web.telegram.org/a/");
+        assert!(spec
+            .capabilities
+            .iter()
+            .any(|capability| capability == "messages.visible_session.read"));
+        assert_eq!(spec.mcp["recommended"], serde_json::json!(true));
+        assert_eq!(spec.mcp["server_name"], serde_json::json!("telegram"));
+        assert!(spec
+            .mcp["notes"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Bot API tokens cannot read arbitrary personal chats"));
+    }
+
+    #[test]
+    fn generic_connected_app_id_uses_host_for_default_name() {
+        let spec = connected_app_spec(
+            "generic_web".into(),
+            Some("https://service.example.com/app".into()),
+            None,
+        )
+        .expect("generic spec");
+
+        assert_eq!(spec.app_id, "connected_generic_web_service_example_com");
+        assert_eq!(spec.open_url, "https://service.example.com/app");
+        assert!(spec
+            .capabilities
+            .iter()
+            .any(|capability| capability == "visible_session.read"));
+    }
+
+    #[test]
+    fn connected_app_html_exposes_mcp_and_learning_controls() {
+        let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
+        let html = connected_app_index_html(&spec).expect("connected app html");
+
+        assert!(!html.contains("__CONNECTED_APP_CONFIG__"));
+        assert!(html.contains("Save MCP config"));
+        assert!(html.contains("Run MCP query"));
+        assert!(html.contains("Learn interface"));
+        assert!(html.contains("reflexProjectMcpUpsert"));
+        assert!(html.contains("reflexBrowserReadOutline"));
+        assert!(html.contains("interface.visible_session.learn"));
+    }
+}
