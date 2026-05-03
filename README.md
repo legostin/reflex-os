@@ -2,19 +2,21 @@
 
 Reflex is a local macOS agent layer built with Tauri, React, and Codex CLI.
 It combines project-scoped chat threads, generated utilities, a browser/MCP
-bridge, long-term memory, file indexing, widgets, and app-driven automations.
+bridge, long-term memory, file indexing, cached dashboards, and app-driven
+automations.
 
 ## Core Surfaces
 
 - **Projects**: registered folders with sandbox settings, MCP config, agent
-  profile instructions, preferred skills, topics, linked utilities, widgets,
-  files, and RAG indexing state.
+  profile instructions, preferred skills, topics, linked utilities, cached
+  dashboard summaries, files, and RAG indexing state.
 - **Topics**: Codex-backed agent threads persisted under `.reflex/topics`.
 - **Browser**: project-scoped Playwright sidecar with an MCP bridge and a
   "start chat from tabs" flow.
 - **Apps**: generated Reflex utilities served either as static HTML or local
   server runtimes. Apps communicate with Reflex through `window.postMessage`
-  and can be created from a Project so widgets/actions link back automatically.
+  and can be created from a Project so actions and MCP-backed data adapters
+  link back automatically.
 - **Memory**: global, project, and topic notes plus vector search over notes,
   files, and selected images.
 - **Automations**: manifest-defined schedules and actions executed through the
@@ -240,7 +242,7 @@ Core methods:
   diagnostic events from the in-memory log ring.
 - `manifest.get()` -> current `manifest.json`.
 - `manifest.update({ patch })` -> merge-update this app's manifest; useful for
-  adding `actions`, `widgets`, `schedules`, permissions, or network hosts.
+  adding `actions`, `schedules`, permissions, network hosts, or legacy widgets.
 - `integration.catalog({ provider? })` -> built-in connected-app recipes,
   including expected display, data, auth, and MCP bridge shape.
 - `integration.profile()` -> this app's `integration`/`external` profile plus
@@ -268,12 +270,14 @@ Core methods:
   `network.allowHost({ hosts })`, `network.revokeHost(...)` -> targeted updates
   to `manifest.network.allowed_hosts` for `net.fetch`. For user-approved access,
   use `permissions.request({ hosts, reason })`.
-- `widgets.list()` -> this app's dashboard widgets.
+- `widgets.list()` -> this app's legacy dashboard widgets.
 - `widgets.upsert({ id, name?, entry?, size?, description?, html? })` or
-  `widgets.upsert({ widget, html? })` -> create/update a dashboard widget and
-  optionally write its HTML entry file.
-- `widgets.delete({ widgetId, deleteEntry? })` -> remove a dashboard widget and
-  optionally delete its entry file.
+  `widgets.upsert({ widget, html? })` -> create/update a legacy app-owned
+  dashboard iframe widget and optionally write its HTML entry file. Prefer
+  public cached actions for new dashboard data so Reflex formats it in the host
+  UI.
+- `widgets.delete({ widgetId, deleteEntry? })` -> remove a legacy dashboard
+  widget and optionally delete its entry file.
 - `actions.list()` -> this app's manifest actions.
 - `actions.upsert({ id, name?, description?, public?, params_schema?, steps })`
   or `actions.upsert({ action })` -> create/update a callable workflow.
@@ -473,9 +477,10 @@ Apps can expose:
   Actions may include optional `params_schema` JSON Schema metadata; caller
   input is available to workflow steps as `{{input.<field>}}`.
   Apps can publish their own callable API at runtime with `actions.upsert`.
-- `widgets`: compact pages shown on a linked project's dashboard.
-  Apps can manage their own dashboard widgets at runtime with `widgets.upsert`
-  and `widgets.delete`.
+- `widgets`: legacy compact iframe pages shown on a linked project's dashboard.
+  New dashboard data should come from background schedules/server runtime/MCP
+  adapters that cache data and expose public no-required-params summary/status
+  actions; Reflex formats those cached action results in the project dashboard.
 
 Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,

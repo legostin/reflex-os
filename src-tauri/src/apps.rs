@@ -2395,14 +2395,19 @@ fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
                 save_as: None,
             }],
         }],
-        actions: Vec::new(),
-        widgets: vec![WidgetDef {
-            id: "heartbeat".into(),
-            name: "Last heartbeat".into(),
-            entry: "widgets/heartbeat.html".into(),
-            size: "small".into(),
-            description: Some("When the schedule last ran".into()),
+        actions: vec![ActionDef {
+            id: "heartbeat-status".into(),
+            name: "Heartbeat status".into(),
+            description: Some("Cached status for the project dashboard.".into()),
+            params_schema: None,
+            public: true,
+            steps: vec![Step {
+                method: "storage.get".into(),
+                params: serde_json::json!({ "key": "last_tick_ms" }),
+                save_as: Some("output".into()),
+            }],
         }],
+        widgets: Vec::new(),
     };
     fs::write(
         dir.join("manifest.json"),
@@ -2410,51 +2415,8 @@ fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
     )?;
     fs::write(dir.join("index.html"), SAMPLE_CRON_HTML)?;
-    fs::create_dir_all(dir.join("widgets"))?;
-    fs::write(dir.join("widgets").join("heartbeat.html"), SAMPLE_CRON_WIDGET_HTML)?;
     Ok(())
 }
-
-const SAMPLE_CRON_WIDGET_HTML: &str = r#"<!doctype html>
-<html><head><meta charset="utf-8"><style>
-html,body{margin:0;padding:0;background:transparent;color:#eee;font-family:system-ui;height:100%}
-.box{box-sizing:border-box;height:100%;padding:14px;display:flex;flex-direction:column;justify-content:center;gap:4px}
-.label{font-size:10px;color:rgba(180,185,195,0.7);text-transform:uppercase;letter-spacing:0.05em}
-.value{font-size:18px;font-weight:600}
-.ago{font-size:11px;color:rgba(180,185,195,0.7)}
-</style></head><body>
-<div class="box">
-  <div class="label">⏱ Heartbeat</div>
-  <div class="value" id="value">—</div>
-  <div class="ago" id="ago">never</div>
-</div>
-<script>
-async function rinvoke(method, params){
-  return new Promise((res, rej) => {
-    const id = Math.random().toString(36).slice(2);
-    function on(ev){
-      if (ev.data?.source !== 'reflex' || ev.data?.id !== id) return;
-      window.removeEventListener('message', on);
-      ev.data.error ? rej(ev.data.error) : res(ev.data.result);
-    }
-    window.addEventListener('message', on);
-    window.parent.postMessage({source:'reflex-app',type:'request',id,method,params}, '*');
-  });
-}
-async function refresh(){
-  try {
-    const r = await rinvoke('storage.get',{key:'last_tick_ms'});
-    if (!r.value){ document.getElementById('value').textContent='—'; document.getElementById('ago').textContent='no data'; return; }
-    const ts = Number(r.value);
-    document.getElementById('value').textContent = new Date(ts).toLocaleTimeString();
-    const min = Math.floor((Date.now()-ts)/60000);
-    document.getElementById('ago').textContent = min < 1 ? 'just now' : (min + ' min ago');
-  } catch (e) { document.getElementById('value').textContent='—'; }
-}
-refresh();
-setInterval(refresh, 5000);
-</script>
-</body></html>"#;
 
 const SAMPLE_CRON_HTML: &str = r#"<!doctype html>
 <html><head><meta charset="utf-8"><title>Heartbeat</title>
@@ -2462,7 +2424,7 @@ const SAMPLE_CRON_HTML: &str = r#"<!doctype html>
 </head><body>
 <h2>⏱ Heartbeat sample</h2>
 <p>This demo app has a manifest schedule <code>0 * * * * *</code>, which runs once per minute.</p>
-<p>Reflex runs the <code>storage.set last_tick_ms</code> step automatically, even when this window is hidden. Open Automations to inspect runs.</p>
+<p>Reflex runs the <code>storage.set last_tick_ms</code> step automatically, even when this window is hidden. The public <code>heartbeat-status</code> action exposes the cached value for project dashboards. Open Automations to inspect runs.</p>
 <p>Last tick: <code id="last">—</code></p>
 <script>
 async function reflexInvoke(method, params){

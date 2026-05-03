@@ -56,7 +56,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "settings.languageLabel": "Interface language",
     "settings.layerTitle": "Reflex OS Layer",
     "settings.layerBody":
-      "Reflex is a local macOS layer over Codex CLI: projects, topics, browser/MCP bridge, generated utilities, widgets, memory, RAG, and scheduled automations live in one workspace.",
+      "Reflex is a local macOS layer over Codex CLI: projects, topics, browser/MCP bridge, generated utilities, cached dashboards, memory, RAG, and scheduled automations live in one workspace.",
     "settings.summaryLabel": "Reflex OS summary",
     "settings.systemMap": "System Map",
     "settings.bridgeTitle": "Bridge for Generated Utilities",
@@ -77,7 +77,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "settings.flowBridge": "bridge steps",
     "settings.flowHistory": "run history",
     "settings.automationHint":
-      "Generated utilities can update their own manifest, add schedules/actions, inspect runs, and expose widgets or public actions to other apps.",
+      "Generated utilities can update their own manifest, add schedules/actions, inspect runs, and expose cached public actions to Reflex dashboards or other apps.",
     "settings.copy": "Copy",
     "settings.copied": "Copied",
     "settings.allSources": "all sources",
@@ -236,7 +236,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "home.createFirstProject": "Create first project",
     "home.askInProject": "Ask in a project",
     "home.askInProjectHint":
-      "Files, topics, memory, and widgets stay connected there.",
+      "Files, topics, memory, and cached dashboards stay connected there.",
     "home.startDialogTitle": "Start a project conversation",
     "home.startDialogHint":
       "Choose where the conversation should live, then write the first message.",
@@ -288,6 +288,14 @@ const dictionaries: Record<Locale, Dictionary> = {
     "project.topics": "Topics",
     "project.runningCount": "{count} running",
     "project.dashboard": "Dashboard",
+    "dashboard.empty":
+      "No cached dashboard summaries yet. Linked utilities can expose public summary/status actions; Reflex refreshes and formats them here.",
+    "dashboard.loading": "Refreshing...",
+    "dashboard.error": "Refresh failed.",
+    "dashboard.emptyValue": "No value.",
+    "dashboard.refresh": "Refresh",
+    "dashboard.cachedAt": "Cached {time}",
+    "dashboard.legacyWidgets": "Legacy utility widgets",
     "project.linkedUtilities": "Linked utilities",
     "project.createUtility": "+ Create utility",
     "project.linkUtility": "+ Link",
@@ -379,7 +387,6 @@ const dictionaries: Record<Locale, Dictionary> = {
     "topicComposer.filesTitle": "Mention a project file",
     "topicComposer.imageTitle": "Attach an image",
     "topicComposer.saveMemoryTitle": "Save the draft to topic memory",
-    "topicComposer.widgetsTitle": "Show or hide embedded widgets",
     "topicComposer.pickImageTitle": "Attach image",
     "topicComposer.removeAttachment": "Remove attachment",
     "topicComposer.memorySaved": "Saved to topic memory.",
@@ -401,9 +408,6 @@ const dictionaries: Record<Locale, Dictionary> = {
     "topicComposer.commandImageHint": "Send an image path with the next prompt.",
     "topicComposer.commandApp": "Open utility",
     "topicComposer.commandAppHint": "Use /app name to launch a Reflex utility.",
-    "topicComposer.commandWidgets": "Toggle widgets",
-    "topicComposer.commandWidgetsHint":
-      "Show or hide widgets from utilities linked to this project.",
     "file.class.text": "Document",
     "file.class.code": "Source code",
     "file.class.image": "Image",
@@ -447,7 +451,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "diff.binary": "binary",
     "diff.binaryUnavailable": "Binary file; diff is unavailable.",
     "widget.openTitle": "Open {name}",
-    "widget.empty": "Utilities in this project do not provide widgets yet.",
+    "widget.empty": "No legacy utility widgets.",
     "quick.selectOrCreateProject": "Choose or create a project",
     "quick.askProject": "Ask {name}...",
     "quick.chooseProjectFirst": "Choose or create a project first",
@@ -659,7 +663,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "template.blank.name": "Blank",
     "template.blank.description": "Empty utility; Codex decides the structure",
     "template.blank.placeholder":
-      "Example: a counter with a save-to-storage button; a weather widget; ...",
+      "Example: a counter with a save-to-storage button; a weather status action; ...",
     "template.chat.name": "Chat utility",
     "template.chat.description": "Agent chat with streamed responses",
     "template.chat.placeholder":
@@ -673,7 +677,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "template.healthDashboard.description":
       "Operational overview of scheduler, memory/RAG, and linked apps",
     "template.healthDashboard.placeholder":
-      "Example: monitor project automations, memory index, and server apps with a compact widget; ...",
+      "Example: monitor project automations, memory index, and server apps with a cached summary; ...",
     "template.form.name": "Form",
     "template.form.description": "Fields -> Run -> result through agent.task",
     "template.form.placeholder":
@@ -694,7 +698,7 @@ const dictionaries: Record<Locale, Dictionary> = {
       "Optional requirements: which screens to expose, what data should become public actions, which MCP operations are needed; ...",
     "template.automation.name": "Automation",
     "template.automation.description":
-      "Schedule, action, and widget for a background task",
+      "Schedule and cached action for a background task",
     "template.automation.placeholder":
       "Example: check important emails hourly and save a brief summary; collect project status every morning; ...",
     "template.nodeServer.name": "Node server",
@@ -712,13 +716,13 @@ const dictionaries: Record<Locale, Dictionary> = {
     "stats.manifestGrants": "manifest grants",
     "cap.projects.title": "Projects",
     "cap.projects.body":
-      "Folders with sandbox, browser MCP, MCP servers, agent profile, preferred skills, linked utilities, widgets, and indexed files.",
+      "Folders with sandbox, browser MCP, MCP servers, agent profile, preferred skills, linked utilities, cached dashboards, and indexed files.",
     "cap.topics.title": "Topics",
     "cap.topics.body":
       "Codex threads with project profile, memory recall, and resumable work sessions.",
     "cap.apps.title": "Generated Utilities",
     "cap.apps.body":
-      "Static or local server apps with manifest, storage, actions, widgets, and Reflex bridge APIs.",
+      "Static or local server apps with manifest, storage, actions, schedules, optional MCP adapters, and Reflex bridge APIs.",
     "cap.memory.title": "Memory",
     "cap.memory.body":
       "Global, project, and topic notes, plus RAG over indexed files and saved facts.",
@@ -754,7 +758,7 @@ const dictionaries: Record<Locale, Dictionary> = {
       "Request or add permissions and network hosts precisely, without manual manifest merging.",
     "recipe.utilityService.title": "Utility as a service",
     "recipe.utilityService.body":
-      "Publish actions/widgets, create utilities, wrap open-source repos, export bundles, and manage server runtime.",
+      "Publish cached actions, create utilities, wrap open-source repos, export bundles, and manage server runtime.",
     "recipe.connectedApp.title": "Connected app adapter",
     "recipe.connectedApp.body":
       "Wrap an external service with a visible panel, learned data profile, actions, and optional MCP bridge.",
@@ -809,7 +813,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "settings.languageLabel": "Язык интерфейса",
     "settings.layerTitle": "Слой Reflex OS",
     "settings.layerBody":
-      "Reflex — локальная macOS-надстройка над Codex CLI: проекты, темы, browser/MCP bridge, генерируемые утилиты, widgets, memory, RAG и запланированные автоматизации живут в одном workspace.",
+      "Reflex — локальная macOS-надстройка над Codex CLI: проекты, темы, browser/MCP bridge, генерируемые утилиты, кешированные дашборды, memory, RAG и запланированные автоматизации живут в одном workspace.",
     "settings.summaryLabel": "Сводка Reflex OS",
     "settings.systemMap": "Карта системы",
     "settings.bridgeTitle": "Bridge для генерируемых утилит",
@@ -830,7 +834,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "settings.flowBridge": "bridge steps",
     "settings.flowHistory": "история запусков",
     "settings.automationHint":
-      "Генерируемые утилиты могут обновлять собственный manifest, добавлять schedules/actions, смотреть runs и отдавать widgets или public actions другим apps.",
+      "Генерируемые утилиты могут обновлять собственный manifest, добавлять schedules/actions, смотреть runs и отдавать кешированные public actions дашбордам Reflex или другим apps.",
     "settings.copy": "Скопировать",
     "settings.copied": "Скопировано",
     "settings.allSources": "все источники",
@@ -990,7 +994,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "home.createFirstProject": "Создать первый проект",
     "home.askInProject": "Спросить в проекте",
     "home.askInProjectHint":
-      "Файлы, топики, память и виджеты остаются связанными там.",
+      "Файлы, топики, память и кешированные дашборды остаются связанными там.",
     "home.startDialogTitle": "Начать диалог в проекте",
     "home.startDialogHint":
       "Выбери, где будет жить диалог, и напиши первое сообщение.",
@@ -1042,6 +1046,14 @@ const dictionaries: Record<Locale, Dictionary> = {
     "project.topics": "Топики",
     "project.runningCount": "{count} выполняется",
     "project.dashboard": "Дашборд",
+    "dashboard.empty":
+      "Кешированных сводок пока нет. Привязанные утилиты могут отдавать public summary/status actions; Reflex обновит и отформатирует их здесь.",
+    "dashboard.loading": "Обновление...",
+    "dashboard.error": "Не удалось обновить.",
+    "dashboard.emptyValue": "Нет значения.",
+    "dashboard.refresh": "Обновить",
+    "dashboard.cachedAt": "Кеш {time}",
+    "dashboard.legacyWidgets": "Legacy-виджеты утилит",
     "project.linkedUtilities": "Привязанные утилиты",
     "project.createUtility": "+ Создать утилиту",
     "project.linkUtility": "+ Привязать",
@@ -1133,7 +1145,6 @@ const dictionaries: Record<Locale, Dictionary> = {
     "topicComposer.filesTitle": "Упомянуть файл проекта",
     "topicComposer.imageTitle": "Прикрепить изображение",
     "topicComposer.saveMemoryTitle": "Сохранить черновик в память топика",
-    "topicComposer.widgetsTitle": "Показать или скрыть встроенные виджеты",
     "topicComposer.pickImageTitle": "Прикрепить изображение",
     "topicComposer.removeAttachment": "Убрать вложение",
     "topicComposer.memorySaved": "Сохранено в память топика.",
@@ -1157,9 +1168,6 @@ const dictionaries: Record<Locale, Dictionary> = {
     "topicComposer.commandApp": "Открыть утилиту",
     "topicComposer.commandAppHint":
       "Используй /app название, чтобы запустить утилиту Reflex.",
-    "topicComposer.commandWidgets": "Переключить виджеты",
-    "topicComposer.commandWidgetsHint":
-      "Показать или скрыть виджеты привязанных к проекту утилит.",
     "file.class.text": "Документ",
     "file.class.code": "Исходный код",
     "file.class.image": "Изображение",
@@ -1203,7 +1211,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "diff.binary": "бинарный",
     "diff.binaryUnavailable": "Бинарный файл; diff недоступен.",
     "widget.openTitle": "Открыть {name}",
-    "widget.empty": "Утилиты в этом проекте пока не предоставляют виджеты.",
+    "widget.empty": "Legacy-виджетов утилит нет.",
     "quick.selectOrCreateProject": "Выбери или создай проект",
     "quick.askProject": "Спросить {name}...",
     "quick.chooseProjectFirst": "Сначала выбери или создай проект",
@@ -1417,7 +1425,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "template.blank.name": "Пустая",
     "template.blank.description": "Пустая утилита, Codex решает структуру",
     "template.blank.placeholder":
-      "Например: счётчик с кнопкой сохранения в storage; виджет погоды; ...",
+      "Например: счётчик с кнопкой сохранения в storage; action статуса погоды; ...",
     "template.chat.name": "Чат-утилита",
     "template.chat.description": "Чат с агентом, стриминг ответа",
     "template.chat.placeholder":
@@ -1431,7 +1439,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "template.healthDashboard.description":
       "Операционный обзор scheduler, memory/RAG и linked apps",
     "template.healthDashboard.placeholder":
-      "Например: мониторинг автоматизаций проекта, индекса памяти и server apps с компактным виджетом; ...",
+      "Например: мониторинг автоматизаций проекта, индекса памяти и server apps с кешированной сводкой; ...",
     "template.form.name": "Форма",
     "template.form.description": "Поля -> Run -> результат через agent.task",
     "template.form.placeholder":
@@ -1452,7 +1460,7 @@ const dictionaries: Record<Locale, Dictionary> = {
       "Опциональные требования: какие экраны показать, какие данные вынести в public actions, какие MCP-операции нужны; ...",
     "template.automation.name": "Автоматизация",
     "template.automation.description":
-      "Расписание, action и виджет для фоновой задачи",
+      "Расписание и кешированный action для фоновой задачи",
     "template.automation.placeholder":
       "Например: раз в час проверять важные письма и сохранять краткую сводку; каждое утро собирать статус проектов; ...",
     "template.nodeServer.name": "Node-сервер",
@@ -1470,13 +1478,13 @@ const dictionaries: Record<Locale, Dictionary> = {
     "stats.manifestGrants": "manifest grants",
     "cap.projects.title": "Проекты",
     "cap.projects.body":
-      "Папки с sandbox, browser MCP, MCP servers, профилем агента, preferred skills, связанными утилитами, widgets и indexed files.",
+      "Папки с sandbox, browser MCP, MCP servers, профилем агента, preferred skills, связанными утилитами, кешированными дашбордами и indexed files.",
     "cap.topics.title": "Топики",
     "cap.topics.body":
       "Codex threads с профилем проекта, memory recall и продолжением рабочей сессии.",
     "cap.apps.title": "Генерируемые утилиты",
     "cap.apps.body":
-      "Static или local server apps с manifest, storage, actions, widgets и Reflex bridge APIs.",
+      "Static или local server apps с manifest, storage, actions, schedules, опциональными MCP adapters и Reflex bridge APIs.",
     "cap.memory.title": "Память",
     "cap.memory.body":
       "Глобальные, проектные и topic notes, плюс RAG по индексированным файлам и сохранённым фактам.",
@@ -1512,7 +1520,7 @@ const dictionaries: Record<Locale, Dictionary> = {
       "Запрашивай или добавляй permissions и network hosts точечно, без ручного слияния manifest.",
     "recipe.utilityService.title": "Утилита как сервис",
     "recipe.utilityService.body":
-      "Публикуй actions/widgets, создавай утилиты, оборачивай open-source repos, экспортируй bundles и управляй server runtime.",
+      "Публикуй кешированные actions, создавай утилиты, оборачивай open-source repos, экспортируй bundles и управляй server runtime.",
     "recipe.connectedApp.title": "Адаптер подключённого приложения",
     "recipe.connectedApp.body":
       "Оберни внешний сервис видимой панелью, изученным профилем данных, actions и опциональным MCP bridge.",

@@ -4406,27 +4406,9 @@ function HomeScreen({
   const [dialogSubmitting, setDialogSubmitting] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [dialogApps, setDialogApps] = useState<AppManifest[]>([]);
-  const [dialogWidgetsVisible, setDialogWidgetsVisible] = useState(false);
   const hasProjects = projects.length > 0;
   const dialogProject =
     projects.find((project) => project.id === dialogProjectId) ?? null;
-  const dialogWidgetSources = useMemo<WidgetSource[]>(() => {
-    if (!dialogProject) return [];
-    const linkedIds = new Set(dialogProject.apps ?? []);
-    const out: WidgetSource[] = [];
-    for (const app of dialogApps) {
-      if (!linkedIds.has(app.id) || app.ready === false) continue;
-      for (const widget of app.widgets ?? []) {
-        out.push({
-          appId: app.id,
-          appName: app.name,
-          appIcon: app.icon ?? null,
-          widget,
-        });
-      }
-    }
-    return out;
-  }, [dialogApps, dialogProject]);
   const chooseProject = () => {
     if (!hasProjects) {
       onCreateProject();
@@ -4459,7 +4441,6 @@ function HomeScreen({
         imagePaths,
         meta?.goal ?? null,
       );
-      setDialogWidgetsVisible(false);
       setShowStartDialog(false);
     } catch (e) {
       setDialogError(String(e));
@@ -4670,21 +4651,11 @@ function HomeScreen({
                   submitting={dialogSubmitting}
                   stopping={false}
                   apps={dialogApps}
-                  widgetsVisible={dialogWidgetsVisible}
                   memoryScope="project"
                   onSend={submitStartDialog}
                   onStop={async () => {}}
                   onOpenApp={onSelectApp}
-                  onToggleWidgets={() => setDialogWidgetsVisible((v) => !v)}
                 />
-                {dialogWidgetsVisible && dialogWidgetSources.length > 0 && (
-                  <div className="home-start-dialog-widgets">
-                    <WidgetGrid
-                      sources={dialogWidgetSources}
-                      onOpenApp={onSelectApp}
-                    />
-                  </div>
-                )}
               </>
             )}
             {dialogError && <div className="apps-error">{dialogError}</div>}
@@ -4868,6 +4839,296 @@ type DirEntry = {
   modified_ms: number | null;
   is_hidden: boolean;
 };
+
+type DashboardActionSource = {
+  appId: string;
+  appName: string;
+  appIcon?: string | null;
+  action: AppAction;
+};
+
+type DashboardRecord = {
+  status: "loading" | "ok" | "error";
+  preview: string;
+  updatedAtMs?: number;
+  error?: string;
+};
+
+const DASHBOARD_ACTION_PATTERN =
+  /\b(dashboard|summary|snapshot|status|stats|health|overview|today)\b/i;
+const DASHBOARD_REFRESH_MS = 60_000;
+const DASHBOARD_CACHE_TTL_MS = 55_000;
+
+function dashboardSourceKey(source: DashboardActionSource): string {
+  return `${source.appId}::${source.action.id}`;
+}
+
+function dashboardCacheKey(projectId: string): string {
+  return `reflex:project-dashboard:v1:${projectId}`;
+}
+
+function readDashboardCache(projectId: string): Record<string, DashboardRecord> {
+  try {
+    const raw = window.localStorage.getItem(dashboardCacheKey(projectId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return isJsonObject(parsed) ? (parsed as Record<string, DashboardRecord>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDashboardCache(
+  projectId: string,
+  records: Record<string, DashboardRecord>,
+) {
+  try {
+    window.localStorage.setItem(dashboardCacheKey(projectId), JSON.stringify(records));
+  } catch {}
+}
+
+function actionHasRequiredParams(action: AppAction): boolean {
+  const schema = actionParamsSchema(action);
+  return isJsonObject(schema) && Array.isArray(schema.required) && schema.required.length > 0;
+}
+
+function isDashboardActionCandidate(action: AppAction): boolean {
+  if (action.public !== true || actionHasRequiredParams(action)) return false;
+  const haystack = [action.id, action.name, action.description ?? ""].join(" ");
+  return DASHBOARD_ACTION_PATTERN.test(haystack);
+}
+
+function unwrapActionResult(value: any): unknown {
+  if (isJsonObject(value) && "result" in value) return value.result;
+  return value;
+}
+
+function dashboardPreview(value: unknown): string {
+  const result = unwrapActionResult(value);
+  if (isJsonObject(result)) {
+    if (result.setup_required === true) {
+      return String(result.message ?? "Setup required");
+    }
+    if (typeof result.summary === "string") return result.summary;
+    if (typeof result.text === "string") return result.text;
+    if (typeof result.message === "string") return result.message;
+  }
+  if (Array.isArray(result)) {
+    return result.length === 0
+      ? "[]"
+      : `${result.length} items\n${previewJsonValue(result.slice(0, 3))}`;
+  }
+  return previewJsonValue(result);
+}
+
+async function fetchDashboardAction(
+  projectId: string,
+  source: DashboardActionSource,
+): Promise<DashboardRecord> {
+  try {
+    const result = await invoke<any>("app_invoke", {
+      appId: source.appId,
+      method: "apps.invoke",
+      params: {
+        app_id: source.appId,
+        action_id: source.action.id,
+        params: { projectId },
+      },
+    });
+    return {
+      status: "ok",
+      preview: dashboardPreview(result),
+      updatedAtMs: Date.now(),
+    };
+  } catch (e) {
+    return {
+      status: "error",
+      preview: "",
+      error: String(e),
+      updatedAtMs: Date.now(),
+    };
+  }
+}
+
+function mergeDashboardRecord(
+  projectId: string,
+  prev: Record<string, DashboardRecord>,
+  key: string,
+  record: DashboardRecord,
+): Record<string, DashboardRecord> {
+  const next = { ...prev, [key]: record };
+  writeDashboardCache(projectId, next);
+  return next;
+}
+
+function ProjectDashboard({
+  project,
+  apps,
+  onOpenApp,
+}: {
+  project: Project;
+  apps: AppManifest[];
+  onOpenApp: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const linkedIds = useMemo(() => new Set(project.apps ?? []), [project.apps]);
+  const actionSources = useMemo<DashboardActionSource[]>(() => {
+    const out: DashboardActionSource[] = [];
+    for (const app of apps) {
+      if (!linkedIds.has(app.id) || app.ready === false) continue;
+      for (const action of app.actions ?? []) {
+        if (!isDashboardActionCandidate(action)) continue;
+        out.push({
+          appId: app.id,
+          appName: app.name,
+          appIcon: app.icon ?? null,
+          action,
+        });
+      }
+    }
+    return out;
+  }, [apps, linkedIds]);
+  const legacyWidgetSources = useMemo<WidgetSource[]>(() => {
+    const out: WidgetSource[] = [];
+    for (const app of apps) {
+      if (!linkedIds.has(app.id) || app.ready === false) continue;
+      for (const widget of app.widgets ?? []) {
+        out.push({
+          appId: app.id,
+          appName: app.name,
+          appIcon: app.icon ?? null,
+          widget,
+        });
+      }
+    }
+    return out;
+  }, [apps, linkedIds]);
+  const [records, setRecords] = useState<Record<string, DashboardRecord>>(() =>
+    readDashboardCache(project.id),
+  );
+
+  useEffect(() => {
+    setRecords(readDashboardCache(project.id));
+  }, [project.id]);
+
+  useEffect(() => {
+    if (actionSources.length === 0) return;
+    let cancelled = false;
+
+    const refresh = async () => {
+      await Promise.all(
+        actionSources.map(async (source) => {
+          const key = dashboardSourceKey(source);
+          const cached = readDashboardCache(project.id)[key];
+          if (
+            cached?.updatedAtMs &&
+            Date.now() - cached.updatedAtMs < DASHBOARD_CACHE_TTL_MS
+          ) {
+            setRecords((prev) => ({ ...prev, [key]: cached }));
+            return;
+          }
+          setRecords((prev) =>
+            prev[key]
+              ? prev
+              : {
+                  ...prev,
+                  [key]: { status: "loading", preview: "" },
+                },
+          );
+          const record = await fetchDashboardAction(project.id, source);
+          if (cancelled) return;
+          setRecords((prev) =>
+            mergeDashboardRecord(project.id, prev, key, record),
+          );
+        }),
+      );
+    };
+
+    void refresh();
+    const timer = window.setInterval(refresh, DASHBOARD_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [actionSources, project.id]);
+
+  if ((project.apps ?? []).length === 0) return null;
+
+  const refreshOne = async (source: DashboardActionSource) => {
+    const key = dashboardSourceKey(source);
+    setRecords((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] ?? { preview: "" }), status: "loading" },
+    }));
+    const record = await fetchDashboardAction(project.id, source);
+    setRecords((prev) => mergeDashboardRecord(project.id, prev, key, record));
+  };
+
+  return (
+    <section className="project-dashboard">
+      <h2 className="section-title">{t("project.dashboard")}</h2>
+      {actionSources.length === 0 ? (
+        <div className="dashboard-empty">{t("dashboard.empty")}</div>
+      ) : (
+        <div className="dashboard-action-grid">
+          {actionSources.map((source) => {
+            const key = dashboardSourceKey(source);
+            const record = records[key] ?? { status: "loading", preview: "" };
+            return (
+              <article
+                key={key}
+                className={`dashboard-action-card dashboard-action-${record.status}`}
+              >
+                <header className="dashboard-action-header">
+                  <button
+                    type="button"
+                    className="dashboard-action-source"
+                    onClick={() => onOpenApp(source.appId)}
+                    title={t("widget.openTitle", { name: source.appName })}
+                  >
+                    <span>{source.appIcon ?? "U"}</span>
+                    <span>{source.appName}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-action-refresh"
+                    onClick={() => void refreshOne(source)}
+                    title={t("dashboard.refresh")}
+                  >
+                    ↻
+                  </button>
+                </header>
+                <div className="dashboard-action-name">
+                  {source.action.name || source.action.id}
+                </div>
+                <pre className="dashboard-action-preview">
+                  {record.status === "loading"
+                    ? t("dashboard.loading")
+                    : record.status === "error"
+                      ? record.error || t("dashboard.error")
+                      : record.preview || t("dashboard.emptyValue")}
+                </pre>
+                {record.updatedAtMs && (
+                  <div className="dashboard-action-meta">
+                    {t("dashboard.cachedAt", {
+                      time: new Date(record.updatedAtMs).toLocaleTimeString(),
+                    })}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+      {legacyWidgetSources.length > 0 && (
+        <details className="dashboard-legacy">
+          <summary>{t("dashboard.legacyWidgets")}</summary>
+          <WidgetGrid sources={legacyWidgetSources} onOpenApp={onOpenApp} />
+        </details>
+      )}
+    </section>
+  );
+}
 
 function ProjectScreen({
   projectId,
@@ -5452,28 +5713,13 @@ function ProjectScreen({
         </section>
       )}
 
-      {project && (() => {
-        const sources: WidgetSource[] = [];
-        for (const id of linkedAppIds) {
-          const app = installedApps.find((a) => a.id === id);
-          if (!app || app.ready === false) continue;
-          for (const w of app.widgets ?? []) {
-            sources.push({
-              appId: app.id,
-              appName: app.name,
-              appIcon: app.icon ?? null,
-              widget: w,
-            });
-          }
-        }
-        if (sources.length === 0 && linkedAppIds.length === 0) return null;
-        return (
-          <section className="project-dashboard">
-            <h2 className="section-title">{t("project.dashboard")}</h2>
-            <WidgetGrid sources={sources} onOpenApp={onOpenApp} />
-          </section>
-        );
-      })()}
+      {project && (
+        <ProjectDashboard
+          project={project}
+          apps={installedApps}
+          onOpenApp={onOpenApp}
+        />
+      )}
 
       {project && (
         <section className="project-linked">
@@ -6041,7 +6287,6 @@ function TopicScreen({
   const projectRoot = project?.root ?? thread?.cwd ?? "";
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showRecall, setShowRecall] = useState(false);
-  const [showWidgets, setShowWidgets] = useState(true);
   const [apps, setApps] = useState<AppManifest[]>([]);
 
   useEffect(() => {
@@ -6067,24 +6312,6 @@ function TopicScreen({
       unlisten?.();
     };
   }, []);
-
-  const widgetSources = useMemo<WidgetSource[]>(() => {
-    if (!project) return [];
-    const linkedIds = new Set(project.apps ?? []);
-    const out: WidgetSource[] = [];
-    for (const app of apps) {
-      if (!linkedIds.has(app.id) || app.ready === false) continue;
-      for (const widget of app.widgets ?? []) {
-        out.push({
-          appId: app.id,
-          appName: app.name,
-          appIcon: app.icon ?? null,
-          widget,
-        });
-      }
-    }
-    return out;
-  }, [apps, project]);
 
   // Scroll to bottom on initial mount / when switching to this thread.
   useEffect(() => {
@@ -6125,17 +6352,10 @@ function TopicScreen({
           />
         </li>
       )}
-      {showWidgets && project && widgetSources.length > 0 && (
-        <li className="chat-widgets-wrap">
-          <WidgetGrid sources={widgetSources} onOpenApp={onOpenApp} />
-        </li>
-      )}
       <ThreadCard
         thread={thread}
         projectRoot={projectRoot || null}
         apps={apps}
-        widgetsVisible={showWidgets}
-        onToggleWidgets={() => setShowWidgets((v) => !v)}
         onOpenLink={onOpenLink}
         onOpenApp={onOpenApp}
       />
@@ -6167,16 +6387,12 @@ function ThreadCard({
   thread,
   projectRoot,
   apps,
-  widgetsVisible,
-  onToggleWidgets,
   onOpenLink,
   onOpenApp,
 }: {
   thread: Thread;
   projectRoot: string | null;
   apps: AppManifest[];
-  widgetsVisible: boolean;
-  onToggleWidgets: () => void;
   onOpenLink?: (
     threadId: string,
     url: string,
@@ -6395,11 +6611,9 @@ function ThreadCard({
         submitting={submitting}
         stopping={stopping}
         apps={apps}
-        widgetsVisible={widgetsVisible}
         onSend={sendFollowupText}
         onStop={stopThread}
         onOpenApp={onOpenApp}
-        onToggleWidgets={onToggleWidgets}
       />
       {error && <div className="chat-followup-error">{error}</div>}
     </li>

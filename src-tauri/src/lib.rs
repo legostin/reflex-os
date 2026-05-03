@@ -2191,11 +2191,11 @@ fn project_agent_profile_preface(project: &project::Project) -> String {
     }
     buf.push_str(
         "\n### Reflex operating context\n\
-- Treat this as a project-scoped macOS agent workspace: topics, generated apps, widgets, MCP servers, skills, memory/RAG, and automations can work together.\n\
+- Treat this as a project-scoped macOS agent workspace: topics, generated apps, cached dashboard summaries, MCP servers, skills, memory/RAG, and automations can work together.\n\
 - If preferred skills are listed and one matches the task, explicitly use that skill/workflow before coding.\n\
 - If MCP servers are listed, consider them available for this project and use the relevant one instead of re-implementing that capability.\n\
 - Prefer project memory/RAG for durable facts and indexed files; save durable decisions when they should affect future work.\n\
-- For repeatable background work, prefer generated Reflex apps with manifest.schedules/actions/widgets over ad-hoc scripts.\n\
+- For repeatable background work, prefer generated Reflex apps with manifest.schedules and public cached actions over ad-hoc scripts. For dashboard data, expose a public no-required-params action named with summary/status/dashboard/health and let Reflex format/cache it.\n\
 - For reusable project tools, prefer generated Reflex apps with a clear bridge API surface and documented permissions.\n",
     );
     if !instructions.is_empty() {
@@ -2277,7 +2277,8 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
 - A localized refresh action calls `window.reflexAgentTask({prompt: \"Return the requested data as strict JSON.\"})` and parses the JSON response.\n\
 - For health/ops dashboards, first check ready-made APIs: `window.reflexSchedulerStats()`, `window.reflexMemoryStats({projectId})`, `window.reflexAppsStatus(appId)`.\n\
 - Show data in a table or summary cards; errors should link to run/service detail when an id exists.\n\
-- Cache the latest result with `window.reflexStorageSet(\"lastResult\", data)`.\n",
+- Cache the latest result with `window.reflexStorageSet(\"lastResult\", data)`.\n\
+- Expose a public no-required-params manifest.action named `dashboard-summary` that returns the cached result, so Reflex can format/cache it in the project dashboard.\n",
         ),
         "health-dashboard" => Some(
             "HEALTH-DASHBOARD TEMPLATE:\n\
@@ -2286,7 +2287,7 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
 - If the app is linked to a project, get projectId from `system.context().linked_projects[0]?.id`; if there is no project, show scheduler/app health and a soft empty state for RAG.\n\
 - Summary cards: active/paused/invalid schedules, next fire, recent run errors, indexed/stale/missing memory docs, linked app health. A run error should open through `window.reflexSchedulerRunDetail(runId)`.\n\
 - Add a localized refresh action, autosave the latest snapshot through `window.reflexStorageSet(\"healthSnapshot\", data)`, and restore through `window.reflexStorageGet`.\n\
-- Add manifest.widgets with a compact `widgets/health.html` that shows the same key counters and opens the main app.\n",
+- Add a public no-required-params manifest.action named `dashboard-summary` or `health-status` that returns the cached snapshot. Reflex project dashboards format and cache this action output in the host UI.\n",
         ),
         "form" => Some(
             "FORM-TOOL TEMPLATE:\n\
@@ -2334,7 +2335,7 @@ fn template_skeleton(template: &str) -> Option<&'static str> {
 - Do not use dialog.*, clipboard.*, system.openPanel/openUrl/openPath/revealPath, apps.create/import/commit/commitPartial/delete/restore/revert/purge, apps.open, projects.open, topics.open, or scheduler.runNow/setPaused/upsert/delete inside schedule.steps.\n\
 - Add a normal UI showing state: `window.reflexSchedulerStats()`, `window.reflexSchedulerList()`, `window.reflexSchedulerRuns({limit: 20})`, run detail through `window.reflexSchedulerRunDetail(runId)`, and manual run through `window.reflexSchedulerRunNow(scheduleId)`.\n\
 - If the automation produces useful data, store it through `window.reflexStorageSet` or `window.reflexMemorySave`, and add manifest.actions for other apps.\n\
-- If the result belongs on a project dashboard, add manifest.widgets with a compact widgets/<id>.html page.\n",
+- If the result belongs on a project dashboard, expose a public no-required-params action named with summary/status/dashboard/health that returns cached data. Reflex renders the dashboard card; do not create a new app-owned iframe widget by default.\n",
         ),
         "node-server" => Some(
             "NODE-SERVER TEMPLATE:\n\
@@ -2437,7 +2438,7 @@ fn build_app_creation_prompt(
         p.push_str("- After confirmation, clone or copy upstream source into `upstream/` unless it already exists. Keep wrapper code separate when practical.\n");
         p.push_str("- Inspect package/build configuration, routes/components, APIs, storage/auth boundaries, and domain entities before deciding the wrapper strategy.\n");
         p.push_str("- Prefer a wrapper/adapter layer around upstream over invasive edits. Patch upstream only where needed to expose stable integration points.\n");
-        p.push_str("- Add Reflex bridge methods/actions/widgets around the upstream behavior, and document any MCP server or local adapter needed for durable data access.\n\n");
+        p.push_str("- Add Reflex bridge methods and public cached actions around the upstream behavior. If durable data access needs a local protocol, document or expose the MCP server/adapter the utility should run, and let Reflex format dashboard data from the action output instead of creating app-owned iframe widgets by default.\n\n");
     }
     p.push_str("AVAILABLE METHODS:\n");
     p.push_str("  bridge.catalog() -> {methods, helpers, permissions, app, notes}; runtime self-discovery for bridge API, overlay helpers, permission hints, and current grants\n");
@@ -2455,7 +2456,7 @@ fn build_app_creation_prompt(
     p.push_str("  integration.mcpQuery({query?, serviceUrl?}) -> {ok, record, storageKey, event}; run an English-wrapped agent query against configured project MCP servers, store the last MCP result, and update manifest.integration.mcp last-query metadata.\n");
     p.push_str("  permissions.list() -> {permissions}; permissions.requests() -> {requests}; permissions.request({permissions?, hosts?, reason?, serverListen?}) -> {ok, request, requests}; permissions.ensure({permission}) or ensure({permissions}) -> {ok, added, permissions}; permissions.revoke(...) -> {ok, removed, permissions}; request or update manifest permissions without manual merging\n");
     p.push_str("  network.hosts() -> {allowed_hosts}; network.allowHost({host}) or allowHost({hosts}) -> {ok, added, allowed_hosts}; network.revokeHost(...) -> {ok, removed, allowed_hosts}; targeted manifest.network.allowed_hosts updates for net.fetch. Use permissions.request({hosts, reason}) when host access should be approved by the user.\n");
-    p.push_str("  widgets.list() -> {widgets}; widgets.upsert({id, name?, entry?, size?, description?, html?}) or widgets.upsert({widget, html?}) -> {ok, created, widget}; widgets.delete({widgetId, deleteEntry?}) -> {ok, deleted}; manage dashboard widgets without manual manifest merging\n");
+    p.push_str("  widgets.list() -> {widgets}; widgets.upsert({id, name?, entry?, size?, description?, html?}) or widgets.upsert({widget, html?}) -> {ok, created, widget}; widgets.delete({widgetId, deleteEntry?}) -> {ok, deleted}; legacy app-owned iframe dashboard widgets. Prefer public cached actions for new dashboard data so Reflex can format/cache it in the host UI.\n");
     p.push_str("  actions.list() -> {actions}; actions.upsert({id, name?, description?, public?, params_schema?, steps}) or actions.upsert({action}) -> {ok, created, action}; actions.delete({actionId}) -> {ok, deleted}; publish callable API for apps.invoke without manual manifest merging\n");
     p.push_str("  agent.ask({prompt}) -> {answer}; short one-shot question to the agent\n");
     p.push_str("  agent.startTopic({prompt, projectId?}) -> {threadId}; create a full Reflex topic\n");
@@ -2496,7 +2497,7 @@ fn build_app_creation_prompt(
     p.push_str("  browser.currentUrl({tabId}); browser.readText({tabId}); browser.readOutline({tabId}); browser.screenshot({tabId, fullPage?})\n");
     p.push_str("  browser.clickText({tabId, text, exact?}); browser.clickSelector({tabId, selector}); browser.fill({tabId, selector, value}); browser.scroll({tabId, dx?, dy?}); browser.waitFor({tabId, selector, timeoutMs?})\n");
     p.push_str("- Requires manifest.permissions: \"browser.read\" for read/currentUrl/waitFor, or \"browser.control\" for init/open/close/setActive/navigate/back/forward/reload/click/fill/scroll. Project browser state requires linked project or \"browser.project:<project>\". Enabling Reflex Browser MCP through project.browser.setEnabled requires \"mcp.write:<project>\" or \"mcp.write:*\".\n\n");
-    p.push_str("SCHEDULER API: panels and widgets can show/control automations without manual JSON.\n");
+    p.push_str("SCHEDULER API: panels and cached dashboard actions can show/control automations without manual JSON.\n");
     p.push_str("  scheduler.list({appId?, includeAll?}) -> ScheduleListItem[]; by default returns only schedules owned by this app\n");
     p.push_str("  scheduler.upsert({id, name?, cron, enabled?, catch_up?, steps}) or scheduler.upsert({schedule}) -> {ok, created, schedule_id, schedule}; create/update this app's schedule\n");
     p.push_str("  scheduler.delete({scheduleId}) -> {ok, deleted, schedule_id}; delete this app's schedule\n");
@@ -2562,7 +2563,7 @@ fn build_app_creation_prompt(
     p.push_str("- The action return value is the last step value, or save_as: \"output\" when you want to be explicit.\n\n");
     p.push_str("- You can create/update an action in one call: reflexActionsUpsert({id:\"today-summary\", public:true, steps:[...]}); then other apps call it through reflexAppsInvoke.\n\n");
 
-    p.push_str("MANIFEST.widgets: mini-pages for the project dashboard. They are compact and read/show data.\n");
+    p.push_str("MANIFEST.widgets: legacy app-owned mini-pages for the project dashboard. Do not create new iframe widgets by default; prefer public cached actions named with summary/status/dashboard/health so Reflex formats/caches dashboard cards in the host UI.\n");
     p.push_str("  {\n");
     p.push_str("    \"widgets\": [{\n");
     p.push_str("      \"id\": \"today\",\n");
@@ -2572,11 +2573,11 @@ fn build_app_creation_prompt(
     p.push_str("      \"description\": \"what the widget shows\"\n");
     p.push_str("    }]\n");
     p.push_str("  }\n");
-    p.push_str("- Each widget.entry is a separate HTML file in the app directory, usually `widgets/<id>.html`.\n");
-    p.push_str("- You can create/update a widget in one call: reflexWidgetsUpsert({id:\"today\", name:\"Today\", size:\"small\", html:\"<html>...</html>\"}); by default, entry becomes widgets/<id>.html.\n");
+    p.push_str("- Each widget.entry is a separate HTML file in the app directory, usually `widgets/<id>.html`; this is for compatibility with older utilities.\n");
+    p.push_str("- You can create/update a legacy widget in one call: reflexWidgetsUpsert({id:\"today\", name:\"Today\", size:\"small\", html:\"<html>...</html>\"}); by default, entry becomes widgets/<id>.html.\n");
     p.push_str("- Widgets have access to the same bridge and runtime overlay (reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexIntegrationCatalog/Profile/Update/LearnVisible/McpStatus/McpQuery, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjectsList/Open, reflexProjectProfileUpdate, reflexProjectSandboxSet, reflexProjectAppsLink/Unlink, reflexTopicsList/Open, reflexSkillsList, reflexProjectSkillsEnsure/Revoke, reflexMcpServers, reflexProjectMcpUpsert/Delete, reflexProjectFilesList/Read/Search/Write/Mkdir/Move/Copy/Delete, reflexProjectBrowserSetEnabled, reflexBrowser*, reflexScheduler*, reflexMemory*, reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions, reflexAppsList/Create/Export/Import/Delete/TrashList/Restore/Purge/Open/Invoke/ListActions).\n");
-    p.push_str("- Keep widgets compact: dark transparent background, background:transparent, html/body height 100%, padding 12-14px, and no own frame because the dashboard grid draws it.\n");
-    p.push_str("- If data updates often, add setInterval yourself with a 5-30 second interval.\n");
+    p.push_str("- Keep legacy widgets compact: dark transparent background, background:transparent, html/body height 100%, padding 12-14px, and no own frame because the dashboard grid draws it.\n");
+    p.push_str("- For frequently updated dashboard data, run collection in schedules/server runtime/MCP-backed actions, cache with reflexStorageSet, and expose a public no-required-params action. Do not poll from an iframe widget every few seconds.\n");
     p.push_str("- If the widget reads data from another utility, use reflexAppsInvoke('<app>','<action>',{...}); do NOT duplicate data collection.\n\n");
 
     p.push_str("INTER-APP EVENTS AND CALLS:\n");

@@ -37,7 +37,6 @@ interface TopicComposerProps {
   submitting: boolean;
   stopping: boolean;
   apps: TopicComposerApp[];
-  widgetsVisible: boolean;
   memoryScope?: "topic" | "project";
   onSend: (
     prompt: string,
@@ -46,7 +45,6 @@ interface TopicComposerProps {
   ) => Promise<void>;
   onStop: () => Promise<void>;
   onOpenApp?: (appId: string) => void;
-  onToggleWidgets?: () => void;
 }
 
 type CommandId =
@@ -56,8 +54,7 @@ type CommandId =
   | "goal"
   | "file"
   | "image"
-  | "app"
-  | "widgets";
+  | "app";
 
 interface ComposerCommand {
   id: CommandId;
@@ -109,12 +106,6 @@ function commands(t: Translate): ComposerCommand[] {
       token: "/app",
       title: t("topicComposer.commandApp"),
       description: t("topicComposer.commandAppHint"),
-    },
-    {
-      id: "widgets",
-      token: "/widgets",
-      title: t("topicComposer.commandWidgets"),
-      description: t("topicComposer.commandWidgetsHint"),
     },
   ];
 }
@@ -261,12 +252,10 @@ export function TopicComposer({
   submitting,
   stopping,
   apps,
-  widgetsVisible,
   memoryScope,
   onSend,
   onStop,
   onOpenApp,
-  onToggleWidgets,
 }: TopicComposerProps) {
   const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -378,11 +367,6 @@ export function TopicComposer({
       void pickImage();
       return;
     }
-    if (cmd.id === "widgets") {
-      onToggleWidgets?.();
-      setDraft("");
-      return;
-    }
     if (cmd.id === "file") {
       setDraft("@");
       return;
@@ -410,12 +394,6 @@ export function TopicComposer({
     const remember = text.match(/^\/remember\s+([\s\S]+)$/i);
     if (remember) {
       await saveMemory(remember[1]);
-      return;
-    }
-
-    if (/^\/widgets\s*$/i.test(text)) {
-      onToggleWidgets?.();
-      setDraft("");
       return;
     }
 
@@ -520,15 +498,6 @@ export function TopicComposer({
           title={t("topicComposer.saveMemoryTitle")}
         >
           mem
-        </button>
-        <button
-          type="button"
-          className={`topic-composer-tool ${widgetsVisible ? "active" : ""}`}
-          onClick={onToggleWidgets}
-          disabled={!onToggleWidgets}
-          title={t("topicComposer.widgetsTitle")}
-        >
-          widgets
         </button>
         <button
           type="button"

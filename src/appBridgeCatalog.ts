@@ -378,7 +378,7 @@ export const BRIDGE_RECIPE_CARDS = [
   },
   {
     title: "Utility as a service",
-    body: "Publish actions/widgets, create utilities, wrap open-source repos, export bundles, and manage server runtime.",
+    body: "Publish cached actions, create utilities, wrap open-source repos, export bundles, and manage server runtime.",
     calls: ["actions.upsert", "apps.create", "apps.export", "apps.server.status"],
     example:
       'await reflexAppsCreate({ description: "Wrap this repo with Reflex bridge actions", template: "repo-wrapper", sourceRepoUrl: "https://github.com/owner/repo" });',
@@ -399,7 +399,7 @@ export const BRIDGE_RECIPE_CARDS = [
   {
     title: "Health dashboard",
     body: "Show automations, RAG index state, and the latest error; add scheduler.read:* for the full overview.",
-    calls: ["scheduler.stats", "memory.stats", "widgets.upsert"],
+    calls: ["scheduler.stats", "memory.stats", "actions.upsert"],
     example:
       "const [jobs, memory] = await Promise.all([reflexSchedulerStats({ includeAll: true }), reflexMemoryStats({ projectId })]);",
   },

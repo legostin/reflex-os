@@ -1568,6 +1568,107 @@
   gap: 10px;
 }
 
+.dashboard-empty {
+  color: rgba(180, 185, 195, 0.68);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 12px;
+}
+
+.dashboard-action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.dashboard-action-card {
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.dashboard-action-card.dashboard-action-error {
+  border-color: rgba(255, 112, 112, 0.32);
+}
+
+.dashboard-action-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.dashboard-action-source,
+.dashboard-action-refresh {
+  border: 0;
+  background: transparent;
+  color: rgba(245, 245, 247, 0.86);
+  font: inherit;
+}
+
+.dashboard-action-source {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+.dashboard-action-source span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-action-refresh {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+}
+
+.dashboard-action-refresh:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.dashboard-action-name {
+  color: rgba(245, 245, 247, 0.92);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.dashboard-action-preview {
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  color: rgba(218, 224, 235, 0.76);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.dashboard-action-meta {
+  color: rgba(180, 185, 195, 0.56);
+  font-size: 11px;
+}
+
+.dashboard-legacy {
+  color: rgba(180, 185, 195, 0.72);
+  font-size: 12px;
+}
+
+.dashboard-legacy summary {
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
 .project-linked {
   display: flex;
   flex-direction: column;
@@ -3093,14 +3194,6 @@
   resize: none;
 }
 
-.home-start-dialog-widgets {
-  max-height: 260px;
-  overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 10px;
-}
-
 .modal-input:focus {
   border-color: #4a8cff;
 }
@@ -3938,11 +4031,6 @@
 .topic-composer-status {
   color: #a4e6b6;
   font-size: 12px;
-}
-
-.chat-widgets-wrap {
-  list-style: none;
-  padding: 8px 16px 0;
 }
 
 .question-card {
