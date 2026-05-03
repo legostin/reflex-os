@@ -211,10 +211,11 @@ data/workflow profile, and persist it into app storage plus
 
 The app generator also has a `repo-wrapper` template for open-source utilities.
 It accepts `sourceRepoUrl`, stores `source-repo.json`, seeds
-`manifest.integration.provider = "open_source_repo"`, and starts a planning
-thread that inspects the upstream repository, preserves license/attribution,
-and builds a Reflex bridge/MCP wrapper around the source instead of treating it
-as a blank app.
+`manifest.integration.provider = "open_source_repo"`, creates a pending
+permission request for the repository host, and starts a planning thread that
+inspects the upstream repository, preserves license/attribution, and builds a
+Reflex bridge/MCP wrapper around the source instead of treating it as a blank
+app.
 
 ## App Bridge API
 

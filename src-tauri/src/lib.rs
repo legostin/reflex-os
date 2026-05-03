@@ -1858,7 +1858,12 @@ async fn create_app(
             .filter(|_| template == "repo-wrapper")
             .map(|repo_url| open_source_repo_integration(&label, repo_url)),
         network: None,
-        permission_requests: Vec::new(),
+        permission_requests: source_repo_url
+            .as_ref()
+            .filter(|_| template == "repo-wrapper")
+            .and_then(|repo_url| source_repo_permission_request(repo_url))
+            .into_iter()
+            .collect(),
         schedules: Vec::new(),
         actions: Vec::new(),
         widgets: Vec::new(),
@@ -2040,6 +2045,38 @@ fn open_source_repo_integration(label: &str, repo_url: &str) -> apps::Integratio
                 .into(),
         ),
     }
+}
+
+fn source_repo_permission_request(repo_url: &str) -> Option<apps::PermissionRequest> {
+    let host = source_repo_host(repo_url)?;
+    Some(apps::PermissionRequest {
+        id: format!("source_repo_{}", sanitize_app_id(&host)),
+        status: "pending".into(),
+        reason: Some(format!(
+            "Fetch or inspect the upstream open-source repository host `{host}` for the wrapper."
+        )),
+        permissions: vec!["source.repo.fetch".into()],
+        network_hosts: vec![host],
+        server_listen: false,
+        created_at_ms: apps::timestamp_ms(),
+        resolved_at_ms: None,
+        resolved_note: None,
+    })
+}
+
+fn source_repo_host(repo_url: &str) -> Option<String> {
+    let trimmed = repo_url.trim();
+    if let Some(rest) = trimmed.strip_prefix("git@") {
+        return rest
+            .split([':', '/'])
+            .next()
+            .map(str::trim)
+            .filter(|host| !host.is_empty())
+            .map(str::to_ascii_lowercase);
+    }
+    reqwest::Url::parse(trimmed)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
 }
 
 fn extract_goal_command(input: &str) -> (String, Option<String>) {
@@ -2394,6 +2431,7 @@ fn build_app_creation_prompt(
         p.push_str(&format!("- URL: {repo_url}\n"));
         p.push_str("- Treat the upstream repository as third-party open-source software. Preserve license files, attribution, and notices.\n");
         p.push_str("- In planning mode, do not clone or modify files. Plan how you will inspect and adapt the repository after confirmation.\n");
+        p.push_str("- The app includes a pending permission request for the source repository host. Wait for approval or show setup-required before fetching upstream code.\n");
         p.push_str("- After confirmation, clone or copy upstream source into `upstream/` unless it already exists. Keep wrapper code separate when practical.\n");
         p.push_str("- Inspect package/build configuration, routes/components, APIs, storage/auth boundaries, and domain entities before deciding the wrapper strategy.\n");
         p.push_str("- Prefer a wrapper/adapter layer around upstream over invasive edits. Patch upstream only where needed to expose stable integration points.\n");
@@ -4411,6 +4449,13 @@ mod connected_app_tests {
             .capabilities
             .iter()
             .any(|capability| capability == "bridge.layer.inject"));
+        let request =
+            source_repo_permission_request("git@github.com:example/tool.git").expect("request");
+        assert_eq!(request.network_hosts, vec!["github.com".to_string()]);
+        assert!(request
+            .permissions
+            .iter()
+            .any(|permission| permission == "source.repo.fetch"));
 
         let prompt = build_app_creation_prompt(
             "Wrap this tool and expose its data through Reflex actions.",
@@ -4421,6 +4466,7 @@ mod connected_app_tests {
         assert!(prompt.contains("SOURCE REPOSITORY"));
         assert!(prompt.contains("OPEN-SOURCE REPO WRAPPER TEMPLATE"));
         assert!(prompt.contains("Preserve license files, attribution, and notices"));
+        assert!(prompt.contains("pending permission request for the source repository host"));
         assert!(prompt.contains("provider `open_source_repo`"));
     }
 
