@@ -194,6 +194,8 @@ text. Raw visible text is exposed only through the non-public
 `read_visible_session` action or an explicit panel click. The installed utility
 also has scoped `mcp.read`/`mcp.write` permission on its own app project and a
 panel form that writes provider MCP server config through `project.mcp.upsert`.
+MCP bridge methods include the app-owned project in target resolution, so the
+panel can save/read its provider MCP config without requiring a user project id.
 It publishes a public `query_mcp_data` action so other utilities can call the
 configured MCP bridge through `apps.invoke`, plus `check_mcp_connection` for a
 non-private availability check that updates MCP query status.

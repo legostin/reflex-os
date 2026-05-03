@@ -4351,7 +4351,7 @@ fn mcp_servers_for_app(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let include_config = bool_param(&params, "include_config", "includeConfig").unwrap_or(false);
-    let targets = project_targets_for_app(app, app_id, &params, "mcp.read")?;
+    let targets = mcp_targets_for_app(app, app_id, &params, "mcp.read")?;
     let mut out = Vec::new();
 
     for project in targets {
@@ -4531,15 +4531,17 @@ fn resolve_project_mcp_write_target(
     app_id: &str,
     params: &serde_json::Value,
 ) -> Result<project::Project, String> {
+    let projects = mcp_project_candidates_for_app(app, app_id)?;
     if let Some(project_id) = string_param(params, "project_id", "projectId") {
-        let project = list_user_projects(app)?
-            .into_iter()
+        let project = projects
+            .iter()
             .find(|project| project.id == project_id)
+            .cloned()
             .ok_or_else(|| format!("project not found: {project_id}"))?;
         ensure_scoped_permission(app, app_id, "mcp.write", &project.id)?;
         return Ok(project);
     }
-    let targets: Vec<project::Project> = list_user_projects(app)?
+    let targets: Vec<project::Project> = projects
         .into_iter()
         .filter(|project| scoped_permission_allowed(app, app_id, "mcp.write", &project.id))
         .collect();
@@ -5467,6 +5469,54 @@ fn project_targets_for_app(
                 || scoped_permission_allowed(app, app_id, scope, &project.id)
         })
         .collect())
+}
+
+fn mcp_targets_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+    scope: &str,
+) -> Result<Vec<project::Project>, String> {
+    let include_all = bool_param(params, "include_all", "includeAll").unwrap_or(false);
+    let target_project_id = string_param(params, "project_id", "projectId");
+    let projects = mcp_project_candidates_for_app(app, app_id)?;
+
+    if let Some(project_id) = target_project_id {
+        let project = projects
+            .into_iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| format!("project not found: {project_id}"))?;
+        ensure_project_scope_access(app, app_id, scope, &project)?;
+        return Ok(vec![project]);
+    }
+
+    if include_all {
+        ensure_scoped_permission(app, app_id, scope, "*")?;
+        return Ok(projects);
+    }
+
+    Ok(projects
+        .into_iter()
+        .filter(|project| {
+            project_is_linked_to_app(app, app_id, project)
+                || scoped_permission_allowed(app, app_id, scope, &project.id)
+        })
+        .collect())
+}
+
+fn mcp_project_candidates_for_app(
+    app: &AppHandle,
+    app_id: &str,
+) -> Result<Vec<project::Project>, String> {
+    let mut projects = list_user_projects(app)?;
+    if let Ok(app_root) = apps::app_dir(app, app_id) {
+        if let Some(app_project) = project::find_project_for(&app_root) {
+            if !projects.iter().any(|project| project.id == app_project.id) {
+                projects.push(app_project);
+            }
+        }
+    }
+    Ok(projects)
 }
 
 fn list_user_projects(app: &AppHandle) -> Result<Vec<project::Project>, String> {
