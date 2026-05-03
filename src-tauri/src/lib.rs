@@ -572,6 +572,7 @@ fn install_connected_app(
         widgets: Vec::new(),
     };
     manifest.actions.push(connected_app_mcp_query_action(&spec));
+    manifest.actions.push(connected_app_mcp_check_action(&spec));
     manifest
         .actions
         .extend(connected_app_provider_actions(&spec));
@@ -841,6 +842,31 @@ fn connected_app_mcp_query_action(spec: &ConnectedAppSpec) -> apps::ActionDef {
     }
 }
 
+fn connected_app_mcp_check_action(spec: &ConnectedAppSpec) -> apps::ActionDef {
+    apps::ActionDef {
+        id: "check_mcp_connection".into(),
+        name: "Check MCP connection".into(),
+        description: Some(
+            "Check whether the configured provider MCP server is reachable without reading private data."
+                .into(),
+        ),
+        params_schema: None,
+        public: true,
+        steps: vec![apps::Step {
+            method: "integration.mcpQuery".into(),
+            params: serde_json::json!({
+                "provider": spec.provider.clone(),
+                "serviceUrl": spec.url.clone(),
+                "query": format!(
+                    "Check whether the configured {provider} MCP server is reachable for this connected app. Do not read private user data unless needed for a minimal availability check. Return concise JSON with reachable, server, available_tools_or_data, warnings, and next_steps.",
+                    provider = spec.provider.as_str()
+                ),
+            }),
+            save_as: Some("mcp_health".into()),
+        }],
+    }
+}
+
 fn connected_app_provider_actions(spec: &ConnectedAppSpec) -> Vec<apps::ActionDef> {
     match spec.provider.as_str() {
         "telegram" => vec![apps::ActionDef {
@@ -1098,6 +1124,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
       <div class="actions">
         <button id="saveMcp">Save MCP config</button>
         <button id="refreshMcp">Refresh MCP status</button>
+        <button id="checkMcp">Check MCP connection</button>
       </div>
       <label class="field">
         <span>MCP agent query</span>
@@ -1237,6 +1264,25 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
         setStatus("MCP status loaded");
       } catch (error) {
         setStatus("MCP status failed");
+        setOutput(String(error));
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function checkMcpConnection() {
+      setBusy(true);
+      setStatus("Checking MCP connection...");
+      try {
+        const result = await window.reflexAppsInvoke(
+          config.appId,
+          "check_mcp_connection",
+          {}
+        );
+        setOutput(result);
+        setStatus("MCP check finished");
+      } catch (error) {
+        setStatus("MCP check failed");
         setOutput(String(error));
       } finally {
         setBusy(false);
@@ -1456,6 +1502,7 @@ const CONNECTED_APP_INDEX_HTML: &str = r#"<!doctype html>
     el("external").addEventListener("click", () => window.reflexSystemOpenUrl(config.openUrl || config.serviceUrl));
     el("saveMcp").addEventListener("click", saveMcpConfig);
     el("refreshMcp").addEventListener("click", refreshMcpStatus);
+    el("checkMcp").addEventListener("click", checkMcpConnection);
     el("runMcpQuery").addEventListener("click", runMcpAgentQuery);
     el("readTelegramMessages").addEventListener("click", readTelegramMessages);
     initializeMcpForm();
@@ -4175,6 +4222,22 @@ mod connected_app_tests {
     }
 
     #[test]
+    fn connected_app_exposes_public_mcp_check_action() {
+        let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
+        let action = connected_app_mcp_check_action(&spec);
+
+        assert_eq!(action.id, "check_mcp_connection");
+        assert!(action.public);
+        assert_eq!(action.steps.len(), 1);
+        assert_eq!(action.steps[0].method, "integration.mcpQuery");
+        assert_eq!(action.steps[0].params["provider"], serde_json::json!("telegram"));
+        assert!(action.steps[0].params["query"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Do not read private user data"));
+    }
+
+    #[test]
     fn telegram_connected_app_exposes_recent_messages_action() {
         let spec = connected_app_spec("telegram".into(), None, None).expect("telegram spec");
         let actions = connected_app_provider_actions(&spec);
@@ -4214,12 +4277,14 @@ mod connected_app_tests {
         assert!(html.contains("\"appId\":\"connected_telegram\""));
         assert!(html.contains("Save MCP config"));
         assert!(html.contains("Run MCP query"));
+        assert!(html.contains("Check MCP connection"));
         assert!(html.contains("Read recent messages"));
         assert!(html.contains("Learn interface"));
         assert!(html.contains("reflexProjectMcpUpsert"));
         assert!(html.contains("reflexIntegrationMcpQuery"));
         assert!(html.contains("reflexIntegrationLearnVisible"));
         assert!(html.contains("reflexAppsInvoke"));
+        assert!(html.contains("check_mcp_connection"));
         assert!(html.contains("read_recent_messages"));
         assert!(html.contains("interface.visible_session.learn"));
     }

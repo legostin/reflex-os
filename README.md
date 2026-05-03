@@ -195,7 +195,8 @@ text. Raw visible text is exposed only through the non-public
 also has scoped `mcp.read`/`mcp.write` permission on its own app project and a
 panel form that writes provider MCP server config through `project.mcp.upsert`.
 It publishes a public `query_mcp_data` action so other utilities can call the
-configured MCP bridge through `apps.invoke`.
+configured MCP bridge through `apps.invoke`, plus `check_mcp_connection` for a
+non-private availability check that updates MCP query status.
 The Telegram adapter also publishes `read_recent_messages`, which reads only
 messages available through the configured Telegram MCP server. Its panel exposes
 that action directly as a Telegram messages control through `apps.invoke`.

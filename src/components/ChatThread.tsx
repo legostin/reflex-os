@@ -684,6 +684,11 @@ function connectedAppMcpConfigured(manifest: AppManifest): boolean {
   );
 }
 
+function connectedAppMcpChecked(manifest: AppManifest): boolean {
+  const mcp = manifest.integration?.mcp;
+  return isJsonObject(mcp) && !!mcp.last_query_at_ms;
+}
+
 function connectedAppLearned(manifest: AppManifest): boolean {
   const dataModel = manifest.integration?.data_model;
   return isJsonObject(dataModel) && !!dataModel.learned_profile;
@@ -2462,6 +2467,7 @@ function AppsScreen({
           <div className="connected-apps-list">
             {connectedApps.map((app) => {
               const mcpReady = connectedAppMcpConfigured(app);
+              const mcpChecked = connectedAppMcpChecked(app);
               const learned = connectedAppLearned(app);
               const actionCount = connectedAppPublicActionCount(app);
               const provider =
@@ -2498,6 +2504,13 @@ function AppsScreen({
                       {learned
                         ? t("apps.connectedLearned")
                         : t("apps.connectedLearningNeeded")}
+                    </span>
+                    <span
+                      className={`connected-app-badge ${mcpChecked ? "ok" : ""}`}
+                    >
+                      {mcpChecked
+                        ? t("apps.connectedMcpChecked")
+                        : t("apps.connectedMcpUnchecked")}
                     </span>
                     <span className="connected-app-badge">
                       {t("apps.connectedActions", { count: actionCount })}
