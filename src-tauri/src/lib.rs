@@ -3160,7 +3160,7 @@ fn respond_to_question(
 }
 
 fn build_response(method: &str, decision: &str, text: Option<&str>) -> serde_json::Value {
-    let normalized = match decision {
+    let legacy_decision = match decision {
         "approve" | "approved" => "approved",
         "approve_for_session" | "approved_for_session" => "approved_for_session",
         "deny" | "denied" => "denied",
@@ -3170,20 +3170,26 @@ fn build_response(method: &str, decision: &str, text: Option<&str>) -> serde_jso
     match method {
         // legacy v1 approvals
         "applyPatchApproval" | "execCommandApproval" => serde_json::json!({
-            "decision": normalized,
+            "decision": legacy_decision,
         }),
         // v2 named approvals
         "item/commandExecution/requestApproval"
         | "item/fileChange/requestApproval"
         | "item/permissions/requestApproval" => serde_json::json!({
-            "decision": normalized,
+            "decision": match legacy_decision {
+                "approved" => "accept",
+                "approved_for_session" => "acceptForSession",
+                "denied" => "decline",
+                "abort" => "cancel",
+                other => other,
+            },
         }),
         // free-form text input
         "item/tool/requestUserInput" | "mcpServer/elicitation/request" => serde_json::json!({
             "answer": text.unwrap_or(""),
         }),
         _ => serde_json::json!({
-            "decision": normalized,
+            "decision": legacy_decision,
             "answer": text.unwrap_or(""),
         }),
     }
@@ -4421,6 +4427,33 @@ pub fn run() {
 #[cfg(test)]
 mod connected_app_tests {
     use super::*;
+
+    #[test]
+    fn v2_approval_responses_use_app_server_decisions() {
+        let approve_session = build_response(
+            "item/commandExecution/requestApproval",
+            "approved_for_session",
+            None,
+        );
+        assert_eq!(approve_session["decision"], "acceptForSession");
+
+        let approve_once =
+            build_response("item/fileChange/requestApproval", "approved", None);
+        assert_eq!(approve_once["decision"], "accept");
+
+        let denied = build_response("item/permissions/requestApproval", "denied", None);
+        assert_eq!(denied["decision"], "decline");
+    }
+
+    #[test]
+    fn legacy_approval_responses_keep_review_decisions() {
+        let approve_session =
+            build_response("execCommandApproval", "approved_for_session", None);
+        assert_eq!(approve_session["decision"], "approved_for_session");
+
+        let denied = build_response("applyPatchApproval", "denied", None);
+        assert_eq!(denied["decision"], "denied");
+    }
 
     #[test]
     fn connected_app_spec_requires_explicit_url() {
