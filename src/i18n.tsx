@@ -159,6 +159,16 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.trash": "Trash",
     "apps.headerHint":
       "Utilities talk to the agent through the Reflex bridge. Describe what you need and Codex will build it.",
+    "apps.connectedAdapters": "Connected adapters",
+    "apps.connectedAdaptersHint":
+      "Installed web services with Browser, learning, actions, and MCP bridge state.",
+    "apps.connectedAdaptersSummary": "{ready}/{total} MCP ready",
+    "apps.connectedMcpReady": "MCP ready",
+    "apps.connectedMcpMissing": "MCP needed",
+    "apps.connectedLearned": "learned",
+    "apps.connectedLearningNeeded": "learn UI",
+    "apps.connectedActions": "{count} actions",
+    "apps.connectedOpenTitle": "Open connected adapter",
     "apps.trashTitle": "Trash",
     "apps.trashEmpty": "Empty.",
     "apps.deletedAt": "deleted {age}",
@@ -889,6 +899,16 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.trash": "Корзина",
     "apps.headerHint":
       "Утилиты общаются с агентом через мост Reflex. Опиши что хочешь, и Codex напишет.",
+    "apps.connectedAdapters": "Подключённые адаптеры",
+    "apps.connectedAdaptersHint":
+      "Установленные web-сервисы со статусом Browser bridge, обучения, actions и MCP.",
+    "apps.connectedAdaptersSummary": "{ready}/{total} MCP готово",
+    "apps.connectedMcpReady": "MCP готов",
+    "apps.connectedMcpMissing": "нужен MCP",
+    "apps.connectedLearned": "изучено",
+    "apps.connectedLearningNeeded": "изучить UI",
+    "apps.connectedActions": "{count} действий",
+    "apps.connectedOpenTitle": "Открыть подключённый адаптер",
     "apps.trashTitle": "Корзина",
     "apps.trashEmpty": "Пусто.",
     "apps.deletedAt": "удалено {age}",

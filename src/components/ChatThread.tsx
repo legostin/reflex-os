@@ -676,6 +676,32 @@ function buildAppCatalogCapabilityFacts(
   );
 }
 
+function connectedAppMcpConfigured(manifest: AppManifest): boolean {
+  const mcp = manifest.integration?.mcp;
+  return (
+    (isJsonObject(mcp) && (mcp.configured === true || !!mcp.saved_at_ms)) ||
+    (manifest.integration?.capabilities ?? []).includes("mcp.configured")
+  );
+}
+
+function connectedAppLearned(manifest: AppManifest): boolean {
+  const dataModel = manifest.integration?.data_model;
+  return isJsonObject(dataModel) && !!dataModel.learned_profile;
+}
+
+function connectedAppServiceUrl(manifest: AppManifest): string {
+  return (
+    manifest.external?.url?.trim() ||
+    manifest.external?.open_url?.trim() ||
+    manifest.integration?.provider ||
+    manifest.id
+  );
+}
+
+function connectedAppPublicActionCount(manifest: AppManifest): number {
+  return (manifest.actions ?? []).filter((action) => action.public).length;
+}
+
 function AppCapabilityDetails({ manifest }: { manifest: AppManifest | null }) {
   const { t } = useI18n();
   const permissions = manifest?.permissions ?? [];
@@ -2204,6 +2230,13 @@ function AppsScreen({
   const [busyId, setBusyId] = useState<string | null>(null);
   const selectedTemplate =
     TEMPLATES.find((item) => item.id === template) ?? TEMPLATES[0];
+  const connectedApps = useMemo(
+    () => items.filter((app) => !!app.integration?.provider),
+    [items],
+  );
+  const connectedMcpReadyCount = connectedApps.filter(
+    connectedAppMcpConfigured,
+  ).length;
 
   useEffect(() => {
     if (!openCreate) return;
@@ -2410,6 +2443,72 @@ function AppsScreen({
         <p className="apps-hint">{t("apps.headerHint")}</p>
       </header>
       {error && <div className="apps-error">{error}</div>}
+      {connectedApps.length > 0 && (
+        <section className="connected-apps-panel">
+          <div className="connected-apps-head">
+            <div>
+              <h2 className="section-title">{t("apps.connectedAdapters")}</h2>
+              <p className="apps-hint">
+                {t("apps.connectedAdaptersHint")}
+              </p>
+            </div>
+            <span className="connected-apps-summary">
+              {t("apps.connectedAdaptersSummary", {
+                ready: connectedMcpReadyCount,
+                total: connectedApps.length,
+              })}
+            </span>
+          </div>
+          <div className="connected-apps-list">
+            {connectedApps.map((app) => {
+              const mcpReady = connectedAppMcpConfigured(app);
+              const learned = connectedAppLearned(app);
+              const actionCount = connectedAppPublicActionCount(app);
+              const provider =
+                app.integration?.display_name ||
+                app.integration?.provider ||
+                app.name;
+              return (
+                <button
+                  key={app.id}
+                  className="connected-app-row"
+                  onClick={() => onOpenApp(app.id)}
+                  title={t("apps.connectedOpenTitle")}
+                >
+                  <span className="connected-app-icon">
+                    {app.icon ?? "APP"}
+                  </span>
+                  <span className="connected-app-main">
+                    <span className="connected-app-name">{app.name}</span>
+                    <span className="connected-app-meta">
+                      {provider} · {connectedAppServiceUrl(app)}
+                    </span>
+                  </span>
+                  <span className="connected-app-badges">
+                    <span
+                      className={`connected-app-badge ${mcpReady ? "ok" : "warn"}`}
+                    >
+                      {mcpReady
+                        ? t("apps.connectedMcpReady")
+                        : t("apps.connectedMcpMissing")}
+                    </span>
+                    <span
+                      className={`connected-app-badge ${learned ? "ok" : ""}`}
+                    >
+                      {learned
+                        ? t("apps.connectedLearned")
+                        : t("apps.connectedLearningNeeded")}
+                    </span>
+                    <span className="connected-app-badge">
+                      {t("apps.connectedActions", { count: actionCount })}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
       {showTrash && (
         <section className="apps-trash">
           <h3 className="apps-trash-title">{t("apps.trashTitle")}</h3>

@@ -1325,6 +1325,130 @@
   background: rgba(220, 80, 80, 0.20);
 }
 
+.connected-apps-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.connected-apps-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.connected-apps-summary {
+  flex: 0 0 auto;
+  border: 1px solid rgba(80, 140, 255, 0.22);
+  background: rgba(80, 140, 255, 0.12);
+  color: rgba(210, 224, 255, 0.92);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.connected-apps-list {
+  display: grid;
+  gap: 6px;
+}
+
+.connected-app-row {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  background: rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+
+.connected-app-row:hover {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(80, 140, 255, 0.22);
+}
+
+.connected-app-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: rgba(80, 140, 255, 0.14);
+  color: rgba(230, 238, 255, 0.96);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.connected-app-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.connected-app-name,
+.connected-app-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connected-app-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.connected-app-meta {
+  color: rgba(180, 185, 195, 0.7);
+  font-size: 11px;
+}
+
+.connected-app-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  max-width: 360px;
+}
+
+.connected-app-badge {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(245, 245, 247, 0.72);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 10px;
+}
+
+.connected-app-badge.ok {
+  border-color: rgba(80, 190, 140, 0.22);
+  background: rgba(80, 190, 140, 0.10);
+  color: rgba(200, 246, 225, 0.92);
+}
+
+.connected-app-badge.warn {
+  border-color: rgba(240, 198, 116, 0.24);
+  background: rgba(240, 198, 116, 0.10);
+  color: rgba(250, 220, 150, 0.92);
+}
+
 .project-description {
   margin: 0;
 }
@@ -2619,6 +2743,23 @@
   .home-guide-grid,
   .project-start-panel {
     grid-template-columns: 1fr;
+  }
+
+  .connected-apps-head {
+    flex-direction: column;
+  }
+
+  .connected-app-badges {
+    justify-content: flex-start;
+  }
+
+  .connected-app-row {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .connected-app-main {
+    flex: 1 1 180px;
   }
 
   .appviewer-bridge-head {
