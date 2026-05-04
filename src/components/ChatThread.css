@@ -1855,6 +1855,35 @@
   white-space: nowrap;
 }
 
+.dashboard-widget-source-lock {
+  max-width: 100%;
+  margin-top: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(91, 166, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(91, 166, 255, 0.08);
+  color: rgba(215, 228, 255, 0.88);
+  padding: 3px 7px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.dashboard-widget-source-lock span {
+  flex: 0 0 auto;
+  color: rgba(170, 190, 225, 0.74);
+}
+
+.dashboard-widget-source-lock strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
 .dashboard-widget-editor {
   background: rgba(0, 0, 0, 0.11);
 }

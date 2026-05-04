@@ -7364,6 +7364,11 @@ function ProjectDashboard({
             const editMatches = editSpec
               ? matchDashboardSourcesForSpec(editSpec, allActionSources, records, 4)
               : [];
+            const pinnedSource = widget.sourceKey
+              ? allActionSources.find(
+                  (source) => dashboardSourceKey(source) === widget.sourceKey,
+                )
+              : null;
             const hasPendingSources = allActionSources.some((source) => {
               const record = records[dashboardSourceKey(source)];
               return !record || record.status === "loading";
@@ -7377,6 +7382,22 @@ function ProjectDashboard({
                   <div>
                     <div className="dashboard-action-name">{widget.title}</div>
                     <div className="dashboard-widget-prompt">{widget.prompt}</div>
+                    {pinnedSource && (
+                      <button
+                        type="button"
+                        className="dashboard-widget-source-lock"
+                        onClick={() => onOpenApp(pinnedSource.appId)}
+                        title={t("widget.openTitle", {
+                          name: pinnedSource.appName,
+                        })}
+                      >
+                        <span>{t("dashboard.pinnedSource")}</span>
+                        <strong>
+                          {pinnedSource.appName} ·{" "}
+                          {pinnedSource.action.name || pinnedSource.action.id}
+                        </strong>
+                      </button>
+                    )}
                   </div>
                   <div className="dashboard-custom-actions">
                     <button

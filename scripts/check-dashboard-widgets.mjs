@@ -143,6 +143,7 @@ for (const key of [
   "dashboard.widgetMeta",
   "dashboard.pinWidget",
   "dashboard.pinnedWidget",
+  "dashboard.pinnedSource",
   "dashboard.saveChanges",
   "dashboard.editWidget",
   "dashboard.moveWidgetUp",
@@ -176,6 +177,7 @@ requireIncludes(failures, chatCss, "Dashboard widget preview styles are incomple
   ".dashboard-action-card-actions",
   ".dashboard-widget-wide",
   ".dashboard-widget-full",
+  ".dashboard-widget-source-lock",
   ".dashboard-custom-actions",
   ".dashboard-composite-value",
   ".dashboard-empty-hint",
@@ -221,6 +223,13 @@ requirePattern(
   dashboardBlock,
   "Pinned dashboard widgets must preserve source affinity even with weak matching.",
   /widget\.sourceKey[\s\S]+pinnedSource[\s\S]+matchedTokens/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Pinned dashboard widgets must surface their pinned source in the card UI.",
+  /dashboard-widget-source-lock[\s\S]+dashboard\.pinnedSource/,
 );
 
 requirePattern(
