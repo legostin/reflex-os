@@ -47,6 +47,11 @@ const recordSearchBlock = sliceBetween(
   "function dashboardSafeSearchText(",
   "function dashboardSourceScoreForSpec(",
 );
+const dashboardPromptBlock = sliceBetween(
+  chatThread,
+  "function buildDashboardWidgetTaskPrompt(",
+  "function ProjectDashboard(",
+);
 
 const failures = [];
 
@@ -211,6 +216,9 @@ if (/JSON\.stringify|previewJsonValue/.test(valueRenderBlock)) {
 
 if (/JSON\.stringify/.test(recordSearchBlock)) {
   failures.push("Dashboard source matching must not stringify raw records.");
+}
+if (/[А-Яа-яЁё]/.test(dashboardPromptBlock)) {
+  failures.push("Dashboard internal agent prompt builders must stay English-only.");
 }
 requirePattern(
   failures,
