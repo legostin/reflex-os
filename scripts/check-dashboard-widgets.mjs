@@ -176,8 +176,14 @@ if (domainLeakPattern.test(dashboardBlock)) {
 if (!packageJson.scripts?.["check:dashboard"]) {
   failures.push("package.json is missing scripts.check:dashboard.");
 }
+if (!packageJson.scripts?.["check:dashboard:fixtures"]) {
+  failures.push("package.json is missing scripts.check:dashboard:fixtures.");
+}
 if (!packageJson.scripts?.build?.includes("check:dashboard")) {
   failures.push("package.json build script must run check:dashboard.");
+}
+if (!packageJson.scripts?.build?.includes("check:dashboard:fixtures")) {
+  failures.push("package.json build script must run check:dashboard:fixtures.");
 }
 
 if (failures.length > 0) {
