@@ -6489,14 +6489,61 @@ function DashboardWidgetSpecPreview({
   );
 }
 
+function buildDashboardWidgetTaskPrompt(
+  project: Project,
+  widget: CustomDashboardWidget,
+  spec: DashboardViewSpec,
+  sources: DashboardActionSource[],
+): string {
+  const linkedSources = sources
+    .slice(0, 30)
+    .map(
+      (source) =>
+        `- ${source.appName} (${source.appId}) / ${source.action.name || source.action.id} (${source.action.id}): ${source.action.description || "No description"}`,
+    )
+    .join("\n");
+  return [
+    `Project: ${project.name}`,
+    `Project ID: ${project.id}`,
+    `Project root: ${project.root}`,
+    project.description ? `Project description: ${project.description}` : null,
+    "",
+    "Dashboard widget gap:",
+    `- User requested widget: ${widget.prompt}`,
+    `- Widget title: ${widget.title}`,
+    `Interpreted widget spec: layout=${spec.layout}, sort=${spec.sort}, size=${spec.size}, filters=${spec.filters.map((filter) => filter.id).join(", ") || "none"}.`,
+    "",
+    "No matching public action data currently exists for this widget, so the dashboard cannot render useful live data yet.",
+    "",
+    "Turn this dashboard gap into a working utility integration:",
+    "1. Inspect the linked utilities and their manifests first. Decide whether an existing utility should be extended.",
+    "2. If no linked utility fits, investigate whether there is a suitable open-source repository, public API, or reusable package that can be wrapped. Prefer open-source or public documented sources when available.",
+    "3. If an external repo/API is the right source, understand its code or API surface before integrating it. Use it as a wrapper target instead of hard-coded demo data.",
+    "4. Add or update the Reflex utility bridge/MCP layer as needed so the utility can run inside this project.",
+    "5. Expose a manifest action with public: true and no required params. It must return dashboard-ready structured data for this widget.",
+    "6. Make the action safe to run automatically, cache-friendly, and compatible with the generic dashboard renderer.",
+    "7. If credentials, network access, runtime.server.listen, or another permission is required, request it explicitly and return a clear setup_required state until configured.",
+    "8. Keep internal prompts, manifest action descriptions, generated utility instructions, and implementation comments in English. User-facing UI may remain localized.",
+    "9. Verify that the dashboard widget can match and render the new public action without raw JSON dumps or domain-specific dashboard code.",
+    "",
+    linkedSources
+      ? `Currently linked public actions:\n${linkedSources}`
+      : "There are no linked public actions in this project yet.",
+  ]
+    .filter((line): line is string => line != null)
+    .join("\n");
+}
+
 function ProjectDashboard({
   project,
   apps,
   onOpenApp,
+  onCreateTopic,
 }: {
   project: Project;
   apps: AppManifest[];
   onOpenApp: (id: string) => void;
+  onCreateTopic: (prompt: string, planMode: boolean) => Promise<void>;
 }) {
   const { t } = useI18n();
   const linkedIds = useMemo(() => new Set(project.apps ?? []), [project.apps]);
@@ -6545,6 +6592,7 @@ function ProjectDashboard({
   const [widgetPrompt, setWidgetPrompt] = useState("");
   const [editingWidgetId, setEditingWidgetId] = useState<string | null>(null);
   const [editingWidgetPrompt, setEditingWidgetPrompt] = useState("");
+  const [creatingWidgetTaskId, setCreatingWidgetTaskId] = useState<string | null>(null);
   const draftWidgetSpec = useMemo(
     () =>
       widgetPrompt.trim()
@@ -6577,6 +6625,7 @@ function ProjectDashboard({
     setWidgetPrompt("");
     setEditingWidgetId(null);
     setEditingWidgetPrompt("");
+    setCreatingWidgetTaskId(null);
   }, [project.id]);
 
   useEffect(() => {
@@ -6703,6 +6752,22 @@ function ProjectDashboard({
       writeCustomDashboardWidgets(project.id, next);
       return next;
     });
+  };
+
+  const createWidgetSourceTask = async (
+    widget: CustomDashboardWidget,
+    spec: DashboardViewSpec,
+  ) => {
+    if (creatingWidgetTaskId) return;
+    setCreatingWidgetTaskId(widget.id);
+    try {
+      await onCreateTopic(
+        buildDashboardWidgetTaskPrompt(project, widget, spec, allActionSources),
+        true,
+      );
+    } finally {
+      setCreatingWidgetTaskId(null);
+    }
   };
 
   return (
@@ -6864,10 +6929,29 @@ function ProjectDashboard({
                     </div>
                   </div>
                 ) : scored.length === 0 ? (
-                  <div className="dashboard-empty">
-                    {hasPendingSources
-                      ? t("dashboard.matchingData")
-                      : t("dashboard.noSource")}
+                  <div className="dashboard-empty dashboard-empty-action">
+                    <span>
+                      {hasPendingSources
+                        ? t("dashboard.matchingData")
+                        : t("dashboard.noSource")}
+                    </span>
+                    {!hasPendingSources && (
+                      <small className="dashboard-empty-hint">
+                        {t("dashboard.noSourceHint")}
+                      </small>
+                    )}
+                    {!hasPendingSources && (
+                      <button
+                        type="button"
+                        className="modal-btn modal-btn-primary"
+                        disabled={creatingWidgetTaskId === widget.id}
+                        onClick={() => void createWidgetSourceTask(widget, spec)}
+                      >
+                        {creatingWidgetTaskId === widget.id
+                          ? t("dashboard.creatingSourceTask")
+                          : t("dashboard.createSourceTask")}
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <DashboardCompositeValueView
@@ -7549,6 +7633,7 @@ function ProjectScreen({
           project={project}
           apps={installedApps}
           onOpenApp={onOpenApp}
+          onCreateTopic={onCreateTopic}
         />
       )}
 

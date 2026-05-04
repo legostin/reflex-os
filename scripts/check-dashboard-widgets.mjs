@@ -78,6 +78,10 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "const saveEditedCustomWidget =",
   "const startEditCustomWidget =",
   "const moveCustomWidget =",
+  "function buildDashboardWidgetTaskPrompt(",
+  "const createWidgetSourceTask =",
+  "dashboard.noSourceHint",
+  "dashboard.createSourceTask",
 ]);
 
 for (const filterId of [
@@ -118,6 +122,9 @@ for (const key of [
   "dashboard.moveWidgetUp",
   "dashboard.moveWidgetDown",
   "dashboard.filteredItemsCount",
+  "dashboard.noSourceHint",
+  "dashboard.createSourceTask",
+  "dashboard.creatingSourceTask",
   "dashboard.size.compact",
   "dashboard.size.normal",
   "dashboard.size.wide",
@@ -134,6 +141,7 @@ requireIncludes(failures, chatCss, "Dashboard widget preview styles are incomple
   ".dashboard-widget-full",
   ".dashboard-custom-actions",
   ".dashboard-composite-value",
+  ".dashboard-empty-hint",
 ]);
 
 if (/allActionSources\.slice\(0,\s*1\)/.test(dashboardBlock)) {
@@ -166,6 +174,27 @@ requirePattern(
   dashboardBlock,
   "Custom widget creation must persist a compiled view spec.",
   /const widget: CustomDashboardWidget =[\s\S]+spec: buildDashboardViewSpec\(prompt\)/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard source task prompt must consider open-source/API wrappers.",
+  /open-source repository[\s\S]+wrapper target/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard source task prompt must require safe public no-arg actions.",
+  /public: true[\s\S]+no required params[\s\S]+safe to run automatically/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard source task prompt must include bridge or MCP integration work.",
+  /bridge\/MCP layer/,
 );
 
 const domainLeakPattern = /\b(OpenF1|telegram|Telegram|race)\b|гонк/;

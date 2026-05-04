@@ -343,6 +343,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "dashboard.removeWidget": "Remove widget",
     "dashboard.matchingData": "Looking for matching public action data...",
     "dashboard.noSource": "No matching public action data yet.",
+    "dashboard.noSourceHint":
+      "Ask the agent to inspect utilities, look for an open-source/API source, and add a safe public action for this widget.",
+    "dashboard.createSourceTask": "Plan data source",
+    "dashboard.creatingSourceTask": "Creating task...",
     "project.linkedUtilities": "Linked utilities",
     "project.createUtility": "+ Create utility",
     "project.linkUtility": "+ Link",
@@ -1148,6 +1152,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "dashboard.removeWidget": "Удалить виджет",
     "dashboard.matchingData": "Ищем подходящие данные из public actions...",
     "dashboard.noSource": "Пока нет подходящих данных из public actions.",
+    "dashboard.noSourceHint":
+      "Поручи агенту проверить утилиты, найти open-source/API источник и добавить безопасный public action под этот виджет.",
+    "dashboard.createSourceTask": "Продумать источник",
+    "dashboard.creatingSourceTask": "Создаем задачу...",
     "project.linkedUtilities": "Привязанные утилиты",
     "project.createUtility": "+ Создать утилиту",
     "project.linkUtility": "+ Привязать",

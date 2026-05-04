@@ -1576,6 +1576,22 @@
   font-size: 12px;
 }
 
+.dashboard-empty-action {
+  display: grid;
+  gap: 10px;
+  align-items: start;
+}
+
+.dashboard-empty-hint {
+  max-width: 520px;
+  color: rgba(190, 195, 205, 0.82);
+  line-height: 1.45;
+}
+
+.dashboard-empty-action .modal-btn {
+  width: fit-content;
+}
+
 .dashboard-widget-composer {
   display: flex;
   flex-direction: column;
