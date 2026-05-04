@@ -5488,15 +5488,24 @@ function dashboardRecordSearchText(record?: DashboardRecord): string {
   }
 }
 
+function dashboardSourceScoreForSpec(
+  spec: DashboardViewSpec,
+  source: DashboardActionSource,
+  record?: DashboardRecord,
+): number {
+  const tokens = spec.includeTokens;
+  if (tokens.length === 0) return 0;
+  const haystack = `${dashboardSourceSearchText(source)} ${dashboardRecordSearchText(record)}`;
+  return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+}
+
 function customWidgetSourceScore(
   widget: CustomDashboardWidget,
   source: DashboardActionSource,
   record?: DashboardRecord,
 ): number {
-  const tokens = widget.spec?.includeTokens ?? buildDashboardViewSpec(widget.prompt).includeTokens;
-  if (tokens.length === 0) return 0;
-  const haystack = `${dashboardSourceSearchText(source)} ${dashboardRecordSearchText(record)}`;
-  return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+  const spec = widget.spec ?? buildDashboardViewSpec(widget.prompt);
+  return dashboardSourceScoreForSpec(spec, source, record);
 }
 
 function uniqueDashboardSources(
@@ -6392,6 +6401,29 @@ function ProjectDashboard({
   );
   const [addingWidget, setAddingWidget] = useState(false);
   const [widgetPrompt, setWidgetPrompt] = useState("");
+  const draftWidgetSpec = useMemo(
+    () =>
+      widgetPrompt.trim()
+        ? buildDashboardViewSpec(widgetPrompt.trim())
+        : null,
+    [widgetPrompt],
+  );
+  const draftWidgetMatches = useMemo(() => {
+    if (!draftWidgetSpec) return [];
+    return allActionSources
+      .map((source) => ({
+        source,
+        key: dashboardSourceKey(source),
+        score: dashboardSourceScoreForSpec(
+          draftWidgetSpec,
+          source,
+          records[dashboardSourceKey(source)],
+        ),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 4);
+  }, [allActionSources, draftWidgetSpec, records]);
   const activeActionSources = useMemo(
     () =>
       uniqueDashboardSources([
@@ -6508,6 +6540,45 @@ function ProjectDashboard({
             placeholder={t("dashboard.addPlaceholder")}
             autoFocus
           />
+          {draftWidgetSpec && (
+            <div className="dashboard-widget-preview">
+              <div className="dashboard-widget-preview-head">
+                <span>{t("dashboard.previewTitle")}</span>
+                <strong>{t(`dashboard.layout.${draftWidgetSpec.layout}`)}</strong>
+              </div>
+              <div className="dashboard-widget-preview-row">
+                <span>{t("dashboard.previewSort")}</span>
+                <span>{t(`dashboard.sort.${draftWidgetSpec.sort}`)}</span>
+              </div>
+              <div className="dashboard-widget-preview-row">
+                <span>{t("dashboard.previewFilters")}</span>
+                <span>
+                  {draftWidgetSpec.filters.length > 0
+                    ? draftWidgetSpec.filters
+                        .map((filter) => t(`dashboard.filter.${filter.id}`))
+                        .join(", ")
+                    : t("dashboard.previewNoFilters")}
+                </span>
+              </div>
+              <div className="dashboard-widget-preview-matches">
+                <span>{t("dashboard.previewMatches")}</span>
+                {draftWidgetMatches.length > 0 ? (
+                  <div className="dashboard-widget-preview-chips">
+                    {draftWidgetMatches.map(({ source, key }) => (
+                      <span key={key} className="dashboard-widget-preview-chip">
+                        {source.appIcon ?? "U"} {source.appName} ·{" "}
+                        {source.action.name || source.action.id}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="dashboard-widget-preview-empty">
+                    {t("dashboard.previewNoMatches")}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           <div className="dashboard-widget-composer-actions">
             <button
               type="button"
