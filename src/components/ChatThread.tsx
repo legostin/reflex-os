@@ -4909,9 +4909,22 @@ const DASHBOARD_ACTION_PATTERN =
   /\b(dashboard|summary|snapshot|status|stats|health|overview|today)\b/i;
 const DASHBOARD_REFRESH_MS = 60_000;
 const DASHBOARD_CACHE_TTL_MS = 55_000;
+const DASHBOARD_WIDGET_SIZE_ORDER: DashboardWidgetSize[] = [
+  "compact",
+  "normal",
+  "wide",
+  "full",
+];
 
 function dashboardSourceKey(source: DashboardActionSource): string {
   return `${source.appId}::${source.action.id}`;
+}
+
+function nextDashboardWidgetSize(size: DashboardWidgetSize): DashboardWidgetSize {
+  const index = DASHBOARD_WIDGET_SIZE_ORDER.indexOf(size);
+  return DASHBOARD_WIDGET_SIZE_ORDER[
+    (index + 1) % DASHBOARD_WIDGET_SIZE_ORDER.length
+  ];
 }
 
 function dashboardCacheKey(projectId: string): string {
@@ -7050,6 +7063,24 @@ function ProjectDashboard({
     });
   };
 
+  const cycleCustomWidgetSize = (id: string) => {
+    setCustomWidgets((prev) => {
+      const next = prev.map((widget) => {
+        if (widget.id !== id) return widget;
+        const spec = widget.spec ?? buildDashboardViewSpec(widget.prompt, widget.title);
+        return {
+          ...widget,
+          spec: {
+            ...spec,
+            size: nextDashboardWidgetSize(spec.size),
+          },
+        };
+      });
+      writeCustomDashboardWidgets(project.id, next);
+      return next;
+    });
+  };
+
   const pinActionAsWidget = (source: DashboardActionSource) => {
     const sourceKey = dashboardSourceKey(source);
     const prompt = dashboardWidgetPromptForSource(source);
@@ -7220,6 +7251,16 @@ function ProjectDashboard({
                       title={t("dashboard.moveWidgetDown")}
                     >
                       ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-action-refresh"
+                      onClick={() => cycleCustomWidgetSize(widget.id)}
+                      title={t("dashboard.cycleWidgetSize", {
+                        size: t(`dashboard.size.${spec.size}`),
+                      })}
+                    >
+                      ⤢
                     </button>
                     <button
                       type="button"
