@@ -77,6 +77,7 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "function aggregateDashboardTable(",
   "function DashboardWidgetSpecPreview(",
   "function DashboardSourceBlueprintView(",
+  "function customDashboardWidgetFromSource(",
   "function matchDashboardSourcesForSpec(",
   "function dashboardSourceMatchedTokensForSpec(",
   "function dashboardSafeSearchText(",
@@ -91,6 +92,7 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "function buildDashboardWidgetRepairPrompt(",
   "const createWidgetSourceTask =",
   "const createWidgetRepairTask =",
+  "const createActionSourceRepairTask =",
   "dashboard.noSourceHint",
   "dashboard.sourceBlueprintTitle",
   "dashboard.repairSourceTask",
@@ -259,6 +261,13 @@ requirePattern(
   dashboardBlock,
   "Dashboard widgets must offer a repair task for matched but unusable sources.",
   /emptyAction[\s\S]+createWidgetRepairTask/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard action cards must offer a repair task for unusable public action output.",
+  /DashboardValueView[\s\S]+emptyAction[\s\S]+createActionSourceRepairTask/,
 );
 
 requirePattern(

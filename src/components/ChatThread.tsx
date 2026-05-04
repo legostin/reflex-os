@@ -5656,6 +5656,20 @@ function dashboardWidgetPromptForSource(source: DashboardActionSource): string {
     : `${source.appName} ${actionLabel} dashboard summary`;
 }
 
+function customDashboardWidgetFromSource(
+  source: DashboardActionSource,
+  createdAtMs = Date.now(),
+): CustomDashboardWidget {
+  return {
+    id: `pinned_${createdAtMs.toString(36)}`,
+    title: titleFromWidgetPrompt(source.action.name || source.action.id),
+    prompt: dashboardWidgetPromptForSource(source),
+    createdAtMs,
+    sourceKey: dashboardSourceKey(source),
+    spec: dashboardSpecForSource(source),
+  };
+}
+
 function formatDashboardLabel(key: string): string {
   const spaced = key
     .replace(/\[\]/g, "")
@@ -6366,15 +6380,20 @@ function DashboardRowsView({ rows }: { rows: DashboardFlatField[] }) {
 function DashboardProjectedViewContent({
   projected,
   fallback,
+  emptyAction,
 }: {
   projected: DashboardProjectedView;
   fallback?: string;
+  emptyAction?: ReactNode;
 }) {
   const { t } = useI18n();
   if (!dashboardProjectedHasContent(projected)) {
     return (
-      <div className="dashboard-value-empty">
-        {fallback ?? t("dashboard.noDisplayableData")}
+      <div className="dashboard-value-empty dashboard-value-empty-stack">
+        <span>{fallback ?? t("dashboard.noDisplayableData")}</span>
+        {emptyAction && (
+          <div className="dashboard-value-empty-action">{emptyAction}</div>
+        )}
       </div>
     );
   }
@@ -6395,16 +6414,19 @@ function DashboardValueView({
   value,
   fallback,
   spec,
+  emptyAction,
 }: {
   value: unknown;
   fallback?: string;
   spec?: DashboardViewSpec;
+  emptyAction?: ReactNode;
 }) {
   const viewSpec = spec ?? buildDashboardViewSpec("summary status overview");
   return (
     <DashboardProjectedViewContent
       projected={projectDashboardValue(value, viewSpec)}
       fallback={fallback}
+      emptyAction={emptyAction}
     />
   );
 }
@@ -7084,14 +7106,7 @@ function ProjectDashboard({
   const pinActionAsWidget = (source: DashboardActionSource) => {
     const sourceKey = dashboardSourceKey(source);
     const prompt = dashboardWidgetPromptForSource(source);
-    const widget: CustomDashboardWidget = {
-      id: `pinned_${Date.now().toString(36)}`,
-      title: titleFromWidgetPrompt(source.action.name || source.action.id),
-      prompt,
-      createdAtMs: Date.now(),
-      sourceKey,
-      spec: dashboardSpecForSource(source),
-    };
+    const widget = customDashboardWidgetFromSource(source);
     setCustomWidgets((prev) => {
       if (
         prev.some(
@@ -7149,6 +7164,42 @@ function ProjectDashboard({
           spec,
           blueprint,
           matches,
+          records,
+        ),
+        true,
+      );
+    } finally {
+      setCreatingWidgetTaskId(null);
+    }
+  };
+
+  const createActionSourceRepairTask = async (
+    source: DashboardActionSource,
+    spec: DashboardViewSpec,
+    key: string,
+  ) => {
+    if (creatingWidgetTaskId) return;
+    const matchedTokens = dashboardSourceMatchedTokensForSpec(
+      spec,
+      source,
+      records[key],
+    );
+    setCreatingWidgetTaskId(key);
+    try {
+      await onCreateTopic(
+        buildDashboardWidgetRepairPrompt(
+          project,
+          customDashboardWidgetFromSource(source),
+          spec,
+          buildDashboardSourceBlueprint(spec),
+          [
+            {
+              source,
+              key,
+              score: matchedTokens.length,
+              matchedTokens,
+            },
+          ],
           records,
         ),
         true,
@@ -7469,6 +7520,25 @@ function ProjectDashboard({
                       : record.status === "error"
                         ? record.error || t("dashboard.error")
                         : t("dashboard.emptyValue")
+                  }
+                  emptyAction={
+                    record.status === "loading" ? undefined : (
+                      <>
+                        <small>{t("dashboard.repairSourceHint")}</small>
+                        <button
+                          type="button"
+                          className="modal-btn modal-btn-primary"
+                          disabled={creatingWidgetTaskId !== null}
+                          onClick={() =>
+                            void createActionSourceRepairTask(source, spec, key)
+                          }
+                        >
+                          {creatingWidgetTaskId === key
+                            ? t("dashboard.repairingSourceTask")
+                            : t("dashboard.repairSourceTask")}
+                        </button>
+                      </>
+                    )
                   }
                 />
                 {record.updatedAtMs && (
