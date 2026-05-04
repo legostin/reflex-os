@@ -463,6 +463,20 @@ type AppAction = {
   steps?: AppStep[];
 };
 
+type AppSelfTestCheck = {
+  name: string;
+  status: string;
+  message?: string | null;
+};
+
+type AppSelfTestStatus = {
+  status: string;
+  message?: string | null;
+  started_at_ms?: number | null;
+  finished_at_ms?: number | null;
+  checks?: AppSelfTestCheck[];
+};
+
 type AppManifest = {
   id: string;
   name: string;
@@ -494,6 +508,15 @@ type AppManifest = {
   schedules?: AppSchedule[];
   actions?: AppAction[];
   widgets?: AppWidget[];
+  self_test?: AppSelfTestStatus | null;
+};
+
+type GitHubExportResult = {
+  repo_url: string;
+  branch: string;
+  subdir: string;
+  commit?: string | null;
+  pushed: boolean;
 };
 
 type AppCapabilityFact = {
@@ -608,6 +631,7 @@ function buildAppCapabilityFacts(
   const integrationProvider = manifest.integration?.provider?.trim();
   const externalUrl = manifest.external?.url?.trim();
   const integrationCapabilities = manifest.integration?.capabilities ?? [];
+  const selfTest = manifest.self_test;
 
   return [
     {
@@ -623,6 +647,12 @@ function buildAppCapabilityFacts(
           : runtime === "external"
             ? externalUrl || "external web app"
             : `entry: ${manifest.entry}`,
+    },
+    {
+      key: "self_test",
+      label: "self-test",
+      value: selfTest?.status ?? "none",
+      title: selfTest?.message ?? "no self-test has run yet",
     },
     ...(runtime === "external" || integrationProvider
       ? [
@@ -2355,6 +2385,7 @@ function AppsScreen({
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importingGithub, setImportingGithub] = useState(false);
   const [installingConnected, setInstallingConnected] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [step, setStep] = useState<"template" | "describe">("template");
@@ -2387,7 +2418,7 @@ function AppsScreen({
   }, [initialTemplate, openCreate, createRequestId]);
 
   async function importBundle() {
-    if (importing) return;
+    if (importing || importingGithub) return;
     setImporting(true);
     setError(null);
     try {
@@ -2407,6 +2438,30 @@ function AppsScreen({
       setError(String(e));
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function importGithub() {
+    if (importing || importingGithub) return;
+    const repoUrl = window.prompt(t("apps.githubImportRepoPrompt"))?.trim();
+    if (!repoUrl) return;
+    const branch = window.prompt(t("apps.githubBranchPrompt"))?.trim() || null;
+    const subdir = window.prompt(t("apps.githubImportSubdirPrompt"))?.trim() || null;
+    setImportingGithub(true);
+    setError(null);
+    try {
+      const manifest = await invoke<AppManifest>("app_import_github", {
+        repoUrl,
+        branch,
+        subdir,
+      });
+      setShowModal(false);
+      setTimeout(() => void refresh(), 500);
+      onOpenApp(manifest.id);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setImportingGithub(false);
     }
   }
 
@@ -2841,10 +2896,18 @@ function AppsScreen({
                   <button
                     className="modal-btn"
                     onClick={() => void importBundle()}
-                    disabled={importing}
+                    disabled={importing || importingGithub}
                     title={t("apps.importBundleTitle")}
                   >
                     {importing ? "..." : `📥 ${t("apps.importBundle")}`}
+                  </button>
+                  <button
+                    className="modal-btn"
+                    onClick={() => void importGithub()}
+                    disabled={importing || importingGithub}
+                    title={t("apps.importGithubTitle")}
+                  >
+                    {importingGithub ? "..." : `GitHub ${t("apps.importGithub")}`}
                   </button>
                   <button
                     className="modal-btn modal-btn-primary"
@@ -3020,7 +3083,7 @@ function AppViewer({
   const rootRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [busy, setBusy] = useState<null | "save" | "revert" | "restart">(null);
+  const [busy, setBusy] = useState<null | "save" | "revert" | "restart" | "selftest">(null);
   const [error, setError] = useState<string | null>(null);
   const prevHasChangesRef = useRef(false);
   const [manifest, setManifest] = useState<AppManifest | null>(null);
@@ -3042,6 +3105,7 @@ function AppViewer({
   const [commitOpen, setCommitOpen] = useState(false);
   const [commitDraft, setCommitDraft] = useState("revision");
   const [exporting, setExporting] = useState(false);
+  const [exportingGithub, setExportingGithub] = useState(false);
   const [bridgeOpen, setBridgeOpen] = useState(false);
   const [bridgeQuery, setBridgeQuery] = useState("");
   const [copiedBridgeItem, setCopiedBridgeItem] = useState<string | null>(null);
@@ -3266,10 +3330,17 @@ function AppViewer({
         if (event.payload.app_id === appId) refresh();
       },
     );
+    const selfTested = listen<{ app_id: string }>(
+      "reflex://app-self-test",
+      (event) => {
+        if (event.payload.app_id === appId) refresh();
+      },
+    );
     return () => {
       alive = false;
       requested.then((unlisten) => unlisten());
       resolved.then((unlisten) => unlisten());
+      selfTested.then((unlisten) => unlisten());
     };
   }, [appId]);
 
@@ -3427,6 +3498,23 @@ function AppViewer({
     } catch (e) {
       setServerError(String(e));
       setServerState("failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runSelfTest() {
+    if (busy) return;
+    setBusy("selftest");
+    setError(null);
+    try {
+      const result = await invoke<AppSelfTestStatus>("app_self_test", { appId });
+      setManifest((current) =>
+        current ? { ...current, self_test: result } : current,
+      );
+      void refreshStatus();
+    } catch (e) {
+      setError(String(e));
     } finally {
       setBusy(null);
     }
@@ -3636,6 +3724,42 @@ function AppViewer({
     }
   }
 
+  async function exportGithub() {
+    if (exportingGithub) return;
+    const repoUrl = window.prompt(t("appViewer.githubExportRepoPrompt"))?.trim();
+    if (!repoUrl) return;
+    const branch = window.prompt(t("appViewer.githubBranchPrompt"), "main")?.trim() || null;
+    const subdir = window.prompt(t("appViewer.githubExportSubdirPrompt"), appId)?.trim() || appId;
+    const message =
+      window.prompt(
+        t("appViewer.githubMessagePrompt"),
+        `Export ${appId} from Reflex`,
+      )?.trim() || null;
+    setExportingGithub(true);
+    setError(null);
+    try {
+      const result = await invoke<GitHubExportResult>("app_export_github", {
+        appId,
+        repoUrl,
+        branch,
+        subdir,
+        message,
+      });
+      window.alert(
+        t(result.pushed ? "appViewer.githubExportDone" : "appViewer.githubExportNoChanges", {
+          repo: result.repo_url,
+          branch: result.branch,
+          subdir: result.subdir,
+          commit: result.commit ?? "HEAD",
+        }),
+      );
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setExportingGithub(false);
+    }
+  }
+
   async function save() {
     if (busy) return;
     const message = commitDraft.trim() || "revision";
@@ -3737,6 +3861,14 @@ function AppViewer({
           >
             {bridgeOpen ? "▾ Bridge" : "▸ Bridge"}
           </button>
+          <button
+            className="appviewer-btn"
+            onClick={() => void runSelfTest()}
+            disabled={busy !== null}
+            title="Run utility self-test"
+          >
+            {busy === "selftest" ? "..." : "Self-test"}
+          </button>
           {isExternalRuntime && externalUrl && (
             <button
               className="appviewer-btn"
@@ -3785,10 +3917,18 @@ function AppViewer({
           <button
             className="appviewer-btn"
             onClick={() => void exportApp()}
-            disabled={busy !== null || exporting}
+            disabled={busy !== null || exporting || exportingGithub}
             title={t("appViewer.exportTitle")}
           >
             {exporting ? "..." : `📤 ${t("appViewer.export")}`}
+          </button>
+          <button
+            className="appviewer-btn"
+            onClick={() => void exportGithub()}
+            disabled={busy !== null || exporting || exportingGithub}
+            title={t("appViewer.exportGithubTitle")}
+          >
+            {exportingGithub ? "..." : `GitHub ${t("appViewer.exportGithub")}`}
           </button>
         </div>
       </header>

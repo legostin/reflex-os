@@ -9,7 +9,6 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
-use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::time::sleep;
 
@@ -155,7 +154,7 @@ pub async fn index_thread_once(project_root: &Path, thread_id: &str) -> Result<u
     let cwd_str = project_root.to_string_lossy().into_owned();
     let out_str = out_path.to_string_lossy().into_owned();
 
-    let result = TokioCommand::new("codex")
+    let result = crate::codex::command()
         .args([
             "exec",
             "--json",

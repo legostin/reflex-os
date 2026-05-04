@@ -1,10 +1,12 @@
 mod app_bus;
 mod app_runtime;
 mod app_server;
+mod app_self_test;
 mod app_watcher;
 mod apps;
 mod apps_dispatch;
 mod browser;
+mod builtin_apps;
 mod bus_log;
 mod codex;
 mod context;
@@ -277,6 +279,14 @@ async fn app_server_logs(
 }
 
 #[tauri::command]
+async fn app_self_test(
+    app: AppHandle,
+    app_id: String,
+) -> Result<apps::AppSelfTestStatus, String> {
+    app_self_test::run_for_app_id(app, &app_id).await
+}
+
+#[tauri::command]
 fn app_watch_start(app: AppHandle, app_id: String) -> Result<(), String> {
     let watchers = app.state::<app_watcher::AppWatchers>();
     app_watcher::start(&watchers, &app, &app_id)
@@ -307,6 +317,30 @@ fn project_watch_stop(app: AppHandle, project_id: String) -> Result<(), String> 
 fn app_export(app: AppHandle, app_id: String, target_path: String) -> Result<(), String> {
     apps::export_app(&app, &app_id, std::path::Path::new(&target_path))
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn app_export_github(
+    app: AppHandle,
+    app_id: String,
+    repo_url: String,
+    branch: Option<String>,
+    subdir: Option<String>,
+    message: Option<String>,
+) -> Result<apps::GitHubExportResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        apps::export_app_to_github(
+            &app,
+            &app_id,
+            &repo_url,
+            branch.as_deref(),
+            subdir.as_deref(),
+            message.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -359,6 +393,32 @@ fn purge_trashed_app(app: AppHandle, trash_id: String) -> Result<(), String> {
 #[tauri::command]
 fn app_import(app: AppHandle, zip_path: String) -> Result<apps::AppManifest, String> {
     apps::import_app(&app, std::path::Path::new(&zip_path)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn app_import_github(
+    app: AppHandle,
+    repo_url: String,
+    branch: Option<String>,
+    subdir: Option<String>,
+) -> Result<apps::AppManifest, String> {
+    let app_for_work = app.clone();
+    let manifest = tauri::async_runtime::spawn_blocking(move || {
+        apps::import_app_from_github(
+            &app_for_work,
+            &repo_url,
+            branch.as_deref(),
+            subdir.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    let _ = app.emit(
+        "reflex://apps-changed",
+        &serde_json::json!({ "app_id": manifest.id }),
+    );
+    Ok(manifest)
 }
 
 #[tauri::command]
@@ -593,6 +653,7 @@ fn install_connected_app(
             },
         ],
         widgets: Vec::new(),
+        self_test: None,
     };
     manifest.actions.push(connected_app_mcp_query_action(&spec));
     manifest.actions.push(connected_app_mcp_check_action(&spec));
@@ -1868,6 +1929,7 @@ async fn create_app(
         schedules: Vec::new(),
         actions: Vec::new(),
         widgets: Vec::new(),
+        self_test: None,
     };
     apps::write_manifest(&app, &app_id, &manifest).map_err(|e| e.to_string())?;
     if let Some(repo_url) = &source_repo_url {
@@ -2520,7 +2582,7 @@ fn build_app_creation_prompt(
     p.push_str("  memory.indexPath({path, projectId?}) -> {indexed, skipped}; memory.pathStatus({path, projectId?}); memory.pathStatusBatch({paths, projectId?}); memory.forgetPath({path, projectId?})\n");
     p.push_str("- scope defaults to \"project\". If the app is linked to exactly one project, project scope targets that project memory; otherwise it targets the app's own memory.\n");
     p.push_str("- To choose a project, call system.context() and pass a projectId from linked_projects. For global scope, add permission \"memory.global.read\" or \"memory.global.write\".\n");
-    p.push_str("- The overlay already provides helpers: reflexInvoke(method, params), reflexBridgeCatalog(), reflexSystemContext(), reflexSystemOpenPanel(panelOrParams, projectId?, threadId?), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexLogList(params), reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexIntegrationLearnVisible(params?), reflexIntegrationMcpStatus(params?), reflexIntegrationMcpQuery(queryOrParams?), reflexPermissionsList(), reflexPermissionsRequests(), reflexPermissionsRequest(requestOrPermission), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexSchedulerList(params), reflexSchedulerUpsert(scheduleOrParams), reflexSchedulerDelete(scheduleIdOrParams), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerStats(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions. For open-source wrappers, call reflexAppsCreate({description, template:\"repo-wrapper\", sourceRepoUrl}).\n");
+    p.push_str("- The overlay already provides helpers: reflexInvoke(method, params), reflexBridgeCatalog(), reflexSystemContext(), reflexSystemOpenPanel(panelOrParams, projectId?, threadId?), reflexSystemOpenUrl(urlOrParams), reflexSystemOpenPath(pathOrParams), reflexSystemRevealPath(pathOrParams), reflexLog(levelOrParams, message?), reflexLogList(params), reflexManifestGet(), reflexManifestUpdate(patch), reflexIntegrationCatalog(providerOrParams?), reflexIntegrationProfile(), reflexIntegrationUpdate(patchOrParams, external?), reflexIntegrationLearnVisible(params?), reflexIntegrationMcpStatus(params?), reflexIntegrationMcpQuery(queryOrParams?), reflexPermissionsList(), reflexPermissionsRequests(), reflexPermissionsRequest(requestOrPermission), reflexPermissionsEnsure(permissionOrParams), reflexPermissionsRevoke(permissionOrParams), reflexNetworkHosts(), reflexNetworkAllowHost(hostOrParams), reflexNetworkRevokeHost(hostOrParams), reflexWidgetsList(), reflexWidgetsUpsert(widgetOrParams), reflexWidgetsDelete(widgetIdOrParams, deleteEntry?), reflexActionsList(), reflexActionsUpsert(actionOrParams), reflexActionsDelete(actionIdOrParams), reflexCapabilities(), reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexSchedulerList(params), reflexSchedulerUpsert(scheduleOrParams), reflexSchedulerDelete(scheduleIdOrParams), reflexSchedulerRunNow(scheduleId), reflexSchedulerSetPaused(scheduleId, paused), reflexSchedulerRuns(params), reflexSchedulerStats(params), reflexSchedulerRunDetail(runIdOrParams), reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsExportGithub(appIdOrParams, repoUrl, branch?, subdir?, message?), reflexAppsImportGithub(repoUrlOrParams, branch?, subdir?), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?), reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions. For open-source wrappers, call reflexAppsCreate({description, template:\"repo-wrapper\", sourceRepoUrl}).\n");
     p.push_str("  Core helpers: reflexAgentAsk/StartTopic/Task/Stream/StreamAbort(...), reflexStorageGet/Set/List/Delete(...), reflexFsRead/List/Write/Delete(...), reflexClipboardReadText(), reflexClipboardWriteText(textOrParams), reflexNetFetch(...), reflexDialogOpenDirectory/OpenFile/SaveFile(...), reflexNotifyShow(...).\n");
     p.push_str("  Browser helpers: reflexBrowserInit(params), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserClose(tabIdOrParams), reflexBrowserSetActive(tabIdOrParams), reflexBrowserNavigate(tabId, url), reflexBrowserBack(tabIdOrParams), reflexBrowserForward(tabIdOrParams), reflexBrowserReload(tabIdOrParams), reflexBrowserCurrentUrl(tabIdOrParams), reflexBrowserReadText(tabId), reflexBrowserReadOutline(tabId), reflexBrowserScreenshot(tabIdOrParams, fullPage?), reflexBrowserClickText(tabIdOrParams, text?, exact?), reflexBrowserClickSelector(tabIdOrParams, selector?), reflexBrowserFill(tabIdOrParams, selector?, value?), reflexBrowserScroll(tabIdOrParams, dx?, dy?), reflexBrowserWaitFor(tabIdOrParams, selector?, timeoutMs?).\n");
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryUpdate(relPathOrParams, patch?), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryStats(params), reflexMemoryReindex(params), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryPathStatusBatch(pathsOrParams), reflexMemoryForgetPath(pathOrParams).\n\n");
@@ -2575,10 +2637,15 @@ fn build_app_creation_prompt(
     p.push_str("  }\n");
     p.push_str("- Each widget.entry is a separate HTML file in the app directory, usually `widgets/<id>.html`; this is for compatibility with older utilities.\n");
     p.push_str("- You can create/update a legacy widget in one call: reflexWidgetsUpsert({id:\"today\", name:\"Today\", size:\"small\", html:\"<html>...</html>\"}); by default, entry becomes widgets/<id>.html.\n");
-    p.push_str("- Widgets have access to the same bridge and runtime overlay (reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexIntegrationCatalog/Profile/Update/LearnVisible/McpStatus/McpQuery, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjectsList/Open, reflexProjectProfileUpdate, reflexProjectSandboxSet, reflexProjectAppsLink/Unlink, reflexTopicsList/Open, reflexSkillsList, reflexProjectSkillsEnsure/Revoke, reflexMcpServers, reflexProjectMcpUpsert/Delete, reflexProjectFilesList/Read/Search/Write/Mkdir/Move/Copy/Delete, reflexProjectBrowserSetEnabled, reflexBrowser*, reflexScheduler*, reflexMemory*, reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions, reflexAppsList/Create/Export/Import/Delete/TrashList/Restore/Purge/Open/Invoke/ListActions).\n");
+    p.push_str("- Widgets have access to the same bridge and runtime overlay (reflexInvoke, reflexBridgeCatalog, reflexSystemContext, reflexSystemOpenPanel, reflexSystemOpenUrl/OpenPath/RevealPath, reflexLog/LogList, reflexManifestGet/Update, reflexIntegrationCatalog/Profile/Update/LearnVisible/McpStatus/McpQuery, reflexPermissions*, reflexNetwork*, reflexWidgets*, reflexActions*, reflexCapabilities, reflexAgent*, reflexStorage*, reflexFs*, reflexClipboard*, reflexNetFetch, reflexDialog*, reflexNotifyShow, reflexProjectsList/Open, reflexProjectProfileUpdate, reflexProjectSandboxSet, reflexProjectAppsLink/Unlink, reflexTopicsList/Open, reflexSkillsList, reflexProjectSkillsEnsure/Revoke, reflexMcpServers, reflexProjectMcpUpsert/Delete, reflexProjectFilesList/Read/Search/Write/Mkdir/Move/Copy/Delete, reflexProjectBrowserSetEnabled, reflexBrowser*, reflexScheduler*, reflexMemory*, reflexEventOn/Off/Emit/Recent/Subscriptions/ClearSubscriptions, reflexAppsList/Create/Export/Import/Delete/TrashList/Restore/Purge/Open/Invoke/ListActions, reflexAppsExportGithub/reflexAppsImportGithub).\n");
     p.push_str("- Keep legacy widgets compact: dark transparent background, background:transparent, html/body height 100%, padding 12-14px, and no own frame because the dashboard grid draws it.\n");
     p.push_str("- For frequently updated dashboard data, run collection in schedules/server runtime/MCP-backed actions, cache with reflexStorageSet, and expose a public no-required-params action. Do not poll from an iframe widget every few seconds.\n");
     p.push_str("- If the widget reads data from another utility, use reflexAppsInvoke('<app>','<action>',{...}); do NOT duplicate data collection.\n\n");
+
+    p.push_str("HOST SELF-TEST:\n");
+    p.push_str("- After confirmed generation turns, Reflex runs a host-side self-test automatically; do not rely on Playwright CLI wrappers for the first smoke check.\n");
+    p.push_str("- Make the app testable by leaving a valid manifest runtime: static apps need an existing non-empty entry HTML file; server apps need manifest.server.command plus runtime.server.listen permission; external apps need a valid http(s) manifest.external.url.\n");
+    p.push_str("- If runtime/server/network setup cannot be completed without user approval, request the permission and render a setup-required state instead of pretending the app is ready.\n\n");
 
     p.push_str("INTER-APP EVENTS AND CALLS:\n");
     p.push_str("  events.emit({topic, payload}); publish an event to subscribers\n");
@@ -2588,7 +2655,7 @@ fn build_app_creation_prompt(
     p.push_str("  events.clearSubscriptions(); clear all subscriptions for this app\n");
     p.push_str("  apps.list() -> AppSummary[]; safe installed app catalog without raw manifest/server command/steps\n");
     p.push_str("  apps.create({description, template?, projectId?, sourceRepoUrl?}) -> {app_id, thread_id, project_id, source_repo_url?}; create a new Reflex app through the agent generator. Template \"repo-wrapper\" requires sourceRepoUrl and plans an open-source wrapper with Reflex bridge/MCP layers. Requires permission \"apps.create\" or \"apps:*\"; projectId also requires \"projects.write:<project>\" or \"projects.write:*\"\n");
-    p.push_str("  apps.export({app_id, targetPath}) -> {ok, app_id, path}; apps.import({zipPath}) -> {ok, app}; .reflexapp bundles. Requires \"apps.manage\" or \"apps:*\". Before export, choose a path through dialog.saveFile.\n");
+    p.push_str("  apps.export({app_id, targetPath}) -> {ok, app_id, path}; apps.import({zipPath}) -> {ok, app}; .reflexapp bundles. apps.exportGithub({app_id, repoUrl, branch?, subdir?, message?}) / apps.export_github({app_id, repoUrl, branch?, subdir?, message?}) and apps.importGithub({repoUrl, branch?, subdir?}) / apps.import_github({repoUrl, branch?, subdir?}) sync utility source through GitHub using the host's configured git/GitHub auth for private repositories. Requires \"apps.manage\" or \"apps:*\". Before .reflexapp export, choose a path through dialog.saveFile.\n");
     p.push_str("  apps.delete({app_id}) -> TrashEntry; apps.trashList() -> TrashEntry[]; apps.restore({trash_id}) -> {ok, app_id}; apps.purge({trash_id}) -> {ok}; trash lifecycle. Requires \"apps.manage\" or \"apps:*\". delete cannot delete the current app.\n");
     p.push_str("  apps.status({app_id}) -> {has_changes, revision, last_commit_message, entry_exists}; revision/dirty state. Requires \"apps.manage\" or \"apps:*\"\n");
     p.push_str("  apps.diff({app_id}) -> {app_id, diff}; apps.commit({app_id, message?}) -> {ok}; apps.commitPartial({app_id, patch, message?}) -> {ok}; apps.revert({app_id}) -> {ok}; revision controls. Requires \"apps.manage\" or \"apps:*\"\n");
@@ -2624,7 +2691,7 @@ fn build_app_creation_prompt(
     p.push_str("  window.reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryUpdate(relPathOrParams, patch?), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams)\n");
     p.push_str("  window.reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryStats(params), reflexMemoryReindex(params)\n");
     p.push_str("  window.reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryPathStatusBatch(pathsOrParams), reflexMemoryForgetPath(pathOrParams)\n");
-    p.push_str("  window.reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?). Use reflexAppsCreate({description, template:\"repo-wrapper\", sourceRepoUrl}) for open-source repository wrappers.\n");
+    p.push_str("  window.reflexAppsList(params), reflexAppsCreate(descriptionOrParams, template?), reflexAppsExport(appIdOrParams, targetPath?), reflexAppsImport(zipPathOrParams), reflexAppsExportGithub(appIdOrParams, repoUrl, branch?, subdir?, message?), reflexAppsImportGithub(repoUrlOrParams, branch?, subdir?), reflexAppsDelete(appIdOrParams), reflexAppsTrashList(), reflexAppsRestore(trashIdOrParams), reflexAppsPurge(trashIdOrParams), reflexAppsStatus(appIdOrParams), reflexAppsDiff(appIdOrParams), reflexAppsCommit(appIdOrParams, message?), reflexAppsCommitPartial(appIdOrParams, patch?, message?), reflexAppsRevert(appIdOrParams), reflexAppsServerStatus(appIdOrParams), reflexAppsServerLogs(appIdOrParams), reflexAppsServerStart(appIdOrParams), reflexAppsServerStop(appIdOrParams), reflexAppsServerRestart(appIdOrParams), reflexAppsOpen(appIdOrParams), reflexAppsInvoke(appId, actionId, params), reflexAppsListActions(appIdOrParams, includeSteps?). Use reflexAppsCreate({description, template:\"repo-wrapper\", sourceRepoUrl}) for open-source repository wrappers.\n");
     p.push_str("Permissions for apps.invoke/apps.create/apps.manage are declared in manifest.permissions:\n");
     p.push_str("  [\"apps.create\"]                         -- create new Reflex apps through apps.create\n");
     p.push_str("  [\"apps.manage\"]                         -- export/import/delete/restore/purge/list trash, revision controls, and server runtime ops for installed apps\n");
@@ -2650,7 +2717,6 @@ fn build_app_creation_prompt(
 
 pub(crate) async fn ask_agent_oneshot(app: &AppHandle, prompt: &str) -> std::io::Result<String> {
     use std::process::Stdio;
-    use tokio::process::Command as TokioCommand;
     let base = app
         .path()
         .app_data_dir()
@@ -2661,7 +2727,7 @@ pub(crate) async fn ask_agent_oneshot(app: &AppHandle, prompt: &str) -> std::io:
     let cwd_str = scratch.to_string_lossy().into_owned();
     let out_str = out_path.to_string_lossy().into_owned();
 
-    let result = TokioCommand::new("codex")
+    let result = crate::codex::command()
         .args([
             "exec",
             "--json",
@@ -4263,6 +4329,9 @@ pub fn run() {
             if let Err(e) = apps::ensure_sample_app(app.handle()) {
                 eprintln!("[reflex] ensure_sample_app failed: {e}");
             }
+            if let Err(e) = builtin_apps::ensure(app.handle()) {
+                eprintln!("[reflex] ensure_builtin_apps failed: {e}");
+            }
 
             prune_orphan_threads(app.handle());
 
@@ -4338,7 +4407,9 @@ pub fn run() {
             read_app_manifest,
             resolve_app_permission_request,
             app_export,
+            app_export_github,
             app_import,
+            app_import_github,
             delete_app,
             list_trashed_apps,
             restore_app,
@@ -4348,6 +4419,7 @@ pub fn run() {
             app_server_restart,
             app_server_status,
             app_server_logs,
+            app_self_test,
             app_watch_start,
             app_watch_stop,
             project_watch_start,

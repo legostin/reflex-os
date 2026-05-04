@@ -3,7 +3,6 @@ use crate::memory::schema::{MemoryError, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use tokio::process::Command as TokioCommand;
 
 pub const MAX_TEXT_BYTES: u64 = 1024 * 1024;
 pub const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
@@ -255,7 +254,7 @@ async fn describe_image(project_root: &Path, path: &Path) -> Result<String> {
     ));
     let out_str = out_path.to_string_lossy().into_owned();
 
-    let result = TokioCommand::new("codex")
+    let result = crate::codex::command()
         .args([
             "exec",
             "--skip-git-repo-check",

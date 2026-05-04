@@ -6,7 +6,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{ChildStdin, Command as TokioCommand};
+use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::storage;
@@ -113,7 +113,7 @@ pub struct InitializeResult {
 impl AppServerClient {
     pub async fn start(app: AppHandle) -> std::io::Result<Self> {
         eprintln!("[app-server] spawning codex app-server");
-        let mut child = TokioCommand::new("codex")
+        let mut child = crate::codex::command()
             .args(["app-server", "--listen", "stdio://"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -656,6 +656,11 @@ async fn handle_line(inner: &Arc<Inner>, app: &AppHandle, line: &str) {
                     "thread_id": rt.reflex_id,
                     "exit_code": exit_code,
                 }),
+            );
+            crate::app_self_test::spawn_after_successful_turn(
+                app.clone(),
+                rt.project_root.clone(),
+                rt.reflex_id.clone(),
             );
         }
     } else if method == "error" {

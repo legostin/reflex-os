@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clipboard Snippets</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#171819;color:#f3f3ef}
+    *{box-sizing:border-box}body{margin:0;background:#171819}main{padding:18px;display:grid;gap:14px}
+    header,section{border:1px solid #343638;border-radius:8px;background:#202123;padding:14px}header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+    h1,h2,p{margin:0}h1{font-size:22px}h2{font-size:14px;color:#deded9;margin-bottom:10px}p,.muted{color:#a9aaa6;font-size:13px;line-height:1.45}
+    button,input,textarea{border:1px solid #3f4245;border-radius:6px;background:#2a2c2f;color:#f5f5f2;padding:9px 10px;font:inherit}button{cursor:pointer}button.primary{background:#f2f2ee;color:#151515;border-color:#f2f2ee}
+    input,textarea{width:100%}textarea{min-height:120px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+    .grid{display:grid;grid-template-columns:.85fr 1.15fr;gap:14px}.toolbar{display:flex;flex-wrap:wrap;gap:8px}.list{display:grid;gap:8px}.card{border:1px solid #343638;background:#242629;border-radius:6px;padding:10px}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+    code{overflow-wrap:anywhere}.preview{white-space:pre-wrap;max-height:260px;overflow:auto;background:#151617;border:1px solid #303236;border-radius:6px;padding:10px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+    @media(max-width:900px){header,.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>Clipboard Snippets</h1><p id="lead">Store reusable text, fill variables, and copy through the Reflex clipboard bridge.</p></div>
+      <div class="toolbar"><button id="readClip">Read clipboard</button><button id="add" class="primary">Add snippet</button></div>
+    </header>
+    <div class="grid">
+      <section>
+        <h2>Snippet editor</h2>
+        <div style="display:grid;gap:8px">
+          <input id="name" placeholder="Snippet name" />
+          <textarea id="body" placeholder="Text. Variables: {date}, {time}, {clipboard}"></textarea>
+          <div class="toolbar"><button id="save" class="primary">Save</button><button id="clear">Clear</button></div>
+          <p class="muted" id="clipState">Clipboard not read yet.</p>
+        </div>
+      </section>
+      <section>
+        <h2>Library</h2>
+        <div id="snippets" class="list"></div>
+      </section>
+    </div>
+    <section>
+      <h2>Preview</h2>
+      <div id="preview" class="preview">Select or write a snippet.</div>
+    </section>
+  </main>
+  <script>
+    const RU=(navigator.language||"").toLowerCase().startsWith("ru");
+    const t=RU?{lead:"Храни повторяемый текст, подставляй переменные и копируй через Reflex clipboard bridge.",add:"Добавить",save:"Сохранить",clear:"Очистить",read:"Прочитать clipboard",empty:"Пока нет snippets.",clip:"Clipboard прочитан."}:{lead:"Store reusable text, fill variables, and copy through the Reflex clipboard bridge.",add:"Add snippet",save:"Save",clear:"Clear",read:"Read clipboard",empty:"No snippets yet.",clip:"Clipboard read."};
+    const $=id=>document.getElementById(id); let snippets=[]; let selected=null; let clipboardText="";
+    const defaults=[{name:"Status update",body:"Today: {date}\\nProgress:\\nBlockers:\\nNext:"},{name:"Bug report",body:"Observed:\\nExpected:\\nSteps:\\nNotes from clipboard: {clipboard}"}];
+    async function load(){snippets=(await get("snippets",defaults)); render();}
+    async function get(key,fallback){try{const r=await reflexStorageGet(key);return Array.isArray(r.value)?r.value:fallback}catch(_){return fallback}}
+    async function persist(){await reflexStorageSet("snippets",snippets);}
+    function render(){
+      $("lead").textContent=t.lead;$("add").textContent=t.add;$("save").textContent=t.save;$("clear").textContent=t.clear;$("readClip").textContent=t.read;
+      $("snippets").innerHTML=snippets.length?snippets.map((s,i)=>`<div class="card row"><div><strong>${esc(s.name)}</strong><p>${esc((s.body||"").slice(0,120))}</p></div><div class="toolbar"><button data-edit="${i}">Edit</button><button data-copy="${i}">Copy</button><button data-del="${i}">Delete</button></div></div>`).join(""):`<p>${t.empty}</p>`;
+      document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>edit(+b.dataset.edit));
+      document.querySelectorAll("[data-copy]").forEach(b=>b.onclick=()=>copy(+b.dataset.copy));
+      document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>del(+b.dataset.del));
+      updatePreview();
+    }
+    function fill(body){const now=new Date();return String(body||"").replaceAll("{date}",now.toLocaleDateString()).replaceAll("{time}",now.toLocaleTimeString()).replaceAll("{clipboard}",clipboardText);}
+    function updatePreview(){ $("preview").textContent=fill($("body").value); }
+    function edit(i){selected=i;$("name").value=snippets[i].name;$("body").value=snippets[i].body;updatePreview();}
+    async function copy(i){const value=fill(snippets[i].body);await reflexClipboardWriteText(value);await reflexNotifyShow({title:"Copied",body:snippets[i].name}).catch(()=>{});$("preview").textContent=value;}
+    async function del(i){snippets.splice(i,1);selected=null;await persist();render();}
+    async function save(){const item={name:$("name").value.trim()||"Snippet",body:$("body").value};if(selected===null)snippets.unshift(item);else snippets[selected]=item;selected=null;await persist();render();}
+    async function readClip(){try{const r=await reflexClipboardReadText();clipboardText=r.text||r.value||"";$("clipState").textContent=t.clip;updatePreview();}catch(e){$("clipState").textContent=String(e);}}
+    function clearForm(){selected=null;$("name").value="";$("body").value="";updatePreview();}
+    function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+    $("save").onclick=save;$("add").onclick=clearForm;$("clear").onclick=clearForm;$("readClip").onclick=readClip;$("body").oninput=updatePreview;load();
+  </script>
+</body>
+</html>

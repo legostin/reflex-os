@@ -42,6 +42,30 @@ pub struct AppManifest {
     pub actions: Vec<ActionDef>,
     #[serde(default)]
     pub widgets: Vec<WidgetDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_test: Option<AppSelfTestStatus>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct AppSelfTestStatus {
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub started_at_ms: Option<u128>,
+    #[serde(default)]
+    pub finished_at_ms: Option<u128>,
+    #[serde(default)]
+    pub checks: Vec<AppSelfTestCheck>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct AppSelfTestCheck {
+    pub name: String,
+    pub status: String,
+    #[serde(default)]
+    pub message: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -429,8 +453,11 @@ pub fn list_apps(app: &AppHandle) -> io::Result<Vec<AppListing>> {
             continue;
         }
         if let Ok(s) = fs::read_to_string(&manifest_path) {
-            if let Ok(m) = serde_json::from_str::<AppManifest>(&s) {
-                let ready = app_path.join(&m.entry).exists();
+            if let Ok(mut m) = serde_json::from_str::<AppManifest>(&s) {
+                if let Ok(Some(self_test)) = read_self_test_in_dir(&app_path) {
+                    m.self_test = Some(self_test);
+                }
+                let ready = manifest_ready_in_dir(&app_path, &m);
                 out.push(AppListing { manifest: m, ready });
             }
         }
@@ -442,6 +469,27 @@ pub fn list_apps(app: &AppHandle) -> io::Result<Vec<AppListing>> {
             .cmp(&b.manifest.name.to_lowercase())
     });
     Ok(out)
+}
+
+pub fn manifest_ready_in_dir(app_path: &Path, manifest: &AppManifest) -> bool {
+    match manifest.runtime.as_deref().unwrap_or("static") {
+        "server" => manifest
+            .server
+            .as_ref()
+            .map(|server| !server.command.is_empty())
+            .unwrap_or(false),
+        "external" => manifest
+            .external
+            .as_ref()
+            .map(|external| !external.url.trim().is_empty())
+            .unwrap_or(false),
+        _ => app_path.join(&manifest.entry).is_file(),
+    }
+}
+
+pub fn app_ready(app: &AppHandle, manifest: &AppManifest) -> io::Result<bool> {
+    let dir = app_dir(app, &manifest.id)?;
+    Ok(manifest_ready_in_dir(&dir, manifest))
 }
 
 pub fn read_app_html(app: &AppHandle, id: &str) -> io::Result<String> {
@@ -457,16 +505,47 @@ pub fn read_manifest(app: &AppHandle, id: &str) -> io::Result<AppManifest> {
     let dir = app_dir(app, id)?;
     let manifest_path = dir.join("manifest.json");
     let manifest_str = fs::read_to_string(manifest_path)?;
-    serde_json::from_str(&manifest_str)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+    let mut manifest: AppManifest = serde_json::from_str(&manifest_str)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    if let Some(self_test) = read_self_test_in_dir(&dir)? {
+        manifest.self_test = Some(self_test);
+    }
+    Ok(manifest)
 }
 
 pub fn write_manifest(app: &AppHandle, id: &str, manifest: &AppManifest) -> io::Result<()> {
     let dir = app_dir(app, id)?;
     fs::create_dir_all(&dir)?;
+    let mut source_manifest = manifest.clone();
+    source_manifest.self_test = None;
     fs::write(
         dir.join("manifest.json"),
-        serde_json::to_string_pretty(manifest)
+        serde_json::to_string_pretty(&source_manifest)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
+    )
+}
+
+pub fn read_self_test_in_dir(app_path: &Path) -> io::Result<Option<AppSelfTestStatus>> {
+    let path = app_path.join(".reflex").join("self-test.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(path)?;
+    let status = serde_json::from_str(&raw)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    Ok(Some(status))
+}
+
+pub fn write_self_test(
+    app: &AppHandle,
+    id: &str,
+    status: &AppSelfTestStatus,
+) -> io::Result<()> {
+    let dir = app_dir(app, id)?.join(".reflex");
+    fs::create_dir_all(&dir)?;
+    fs::write(
+        dir.join("self-test.json"),
+        serde_json::to_string_pretty(status)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
     )
 }
@@ -1216,6 +1295,14 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
   window.reflexAppsImport = function(zipPathOrParams) {
     var params = (typeof zipPathOrParams === 'string') ? {zip_path: zipPathOrParams} : (zipPathOrParams || {});
     return reflexInvokeRaw('apps.import', params);
+  };
+  window.reflexAppsExportGithub = function(appIdOrParams, repoUrl, branch, subdir, message) {
+    var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams, repo_url: repoUrl, branch: branch || null, subdir: subdir || null, message: message || null} : (appIdOrParams || {});
+    return reflexInvokeRaw('apps.exportGithub', params);
+  };
+  window.reflexAppsImportGithub = function(repoUrlOrParams, branch, subdir) {
+    var params = (typeof repoUrlOrParams === 'string') ? {repo_url: repoUrlOrParams, branch: branch || null, subdir: subdir || null} : (repoUrlOrParams || {});
+    return reflexInvokeRaw('apps.importGithub', params);
   };
   window.reflexAppsDelete = function(appIdOrParams) {
     var params = (typeof appIdOrParams === 'string') ? {app_id: appIdOrParams} : (appIdOrParams || {});
@@ -1986,6 +2073,7 @@ mod proxy_tests {
             schedules: Vec::new(),
             actions: Vec::new(),
             widgets: Vec::new(),
+            self_test: None,
         }
     }
 
@@ -2119,6 +2207,96 @@ mod proxy_tests {
         manifest.permissions = vec!["network.allow".into()];
         assert!(!manifest_has_permission(&manifest, "runtime.server.listen"));
     }
+
+    #[test]
+    fn manifest_ready_uses_runtime_contract() {
+        let root = std::env::temp_dir().join(format!(
+            "reflex-ready-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let mut manifest = test_manifest();
+        assert!(!manifest_ready_in_dir(&root, &manifest));
+
+        std::fs::write(root.join("index.html"), "<html></html>").unwrap();
+        assert!(manifest_ready_in_dir(&root, &manifest));
+
+        manifest.runtime = Some("server".into());
+        assert!(!manifest_ready_in_dir(&root, &manifest));
+        manifest.server = Some(ServerConfig {
+            command: vec!["node".into(), "server.js".into()],
+            ready_timeout_ms: None,
+        });
+        assert!(manifest_ready_in_dir(&root, &manifest));
+
+        manifest.runtime = Some("external".into());
+        manifest.server = None;
+        assert!(!manifest_ready_in_dir(&root, &manifest));
+        manifest.external = Some(ExternalConfig {
+            url: "https://example.com".into(),
+            title: None,
+            open_url: None,
+        });
+        assert!(manifest_ready_in_dir(&root, &manifest));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn github_repo_url_validation_accepts_https_and_ssh() {
+        assert_eq!(
+            validate_github_repo_url("https://github.com/owner/repo.git").unwrap(),
+            "https://github.com/owner/repo.git"
+        );
+        assert_eq!(
+            validate_github_repo_url("git@github.com:owner/repo.git").unwrap(),
+            "git@github.com:owner/repo.git"
+        );
+        assert_eq!(
+            validate_github_repo_url("ssh://git@github.com/owner/repo.git").unwrap(),
+            "ssh://git@github.com/owner/repo.git"
+        );
+    }
+
+    #[test]
+    fn github_repo_url_validation_rejects_non_github_and_deep_paths() {
+        assert!(validate_github_repo_url("https://gitlab.com/owner/repo").is_err());
+        assert!(validate_github_repo_url("https://github.com/owner/repo/extra").is_err());
+    }
+
+    #[test]
+    fn github_subdir_validation_rejects_path_escape() {
+        assert!(normalize_relative_subdir("apps/demo").is_ok());
+        assert!(normalize_relative_subdir("../demo").is_err());
+        assert!(normalize_relative_subdir("/tmp/demo").is_err());
+        assert!(normalize_export_subdir(Some(""), "demo-app").is_ok());
+    }
+
+    #[test]
+    fn github_branch_validation_blocks_option_and_ref_escape() {
+        assert_eq!(
+            normalize_git_branch(Some("feature/demo")).unwrap(),
+            Some("feature/demo".into())
+        );
+        assert!(normalize_git_branch(Some("-bad")).is_err());
+        assert!(normalize_git_branch(Some("feature..bad")).is_err());
+        assert!(normalize_git_branch(Some("bad lock")).is_err());
+    }
+
+    #[test]
+    fn github_auth_errors_are_explained() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(256),
+            stdout: Vec::new(),
+            stderr: b"fatal: Authentication failed for 'https://github.com/o/r.git'".to_vec(),
+        };
+        let message = git_failure("GitHub clone", &output).to_string();
+        assert!(message.contains("GitHub authorization is required"));
+        assert!(message.contains("gh auth login"));
+    }
 }
 
 pub fn guess_mime(name: &str) -> &'static str {
@@ -2146,7 +2324,16 @@ pub fn guess_mime(name: &str) -> &'static str {
     }
 }
 
-// ---- Export / Import .reflexapp bundles ----
+// ---- Export / Import .reflexapp bundles and GitHub utilities ----
+
+#[derive(Serialize, Clone, Debug)]
+pub struct GitHubExportResult {
+    pub repo_url: String,
+    pub branch: String,
+    pub subdir: String,
+    pub commit: Option<String>,
+    pub pushed: bool,
+}
 
 const EXPORT_SKIP_DIRS: &[&str] = &[".reflex", ".git", "node_modules"];
 const EXPORT_SKIP_FILES: &[&str] = &["storage.json", "meta-llm.txt", ".DS_Store"];
@@ -2320,6 +2507,521 @@ pub fn import_app(app: &AppHandle, zip_path: &std::path::Path) -> io::Result<App
     Ok(manifest)
 }
 
+pub fn import_app_from_github(
+    app: &AppHandle,
+    repo_url: &str,
+    branch: Option<&str>,
+    subdir: Option<&str>,
+) -> io::Result<AppManifest> {
+    let repo_url = validate_github_repo_url(repo_url)?;
+    let branch = normalize_git_branch(branch)?;
+    let subdir = normalize_optional(subdir);
+    let temp_root = github_temp_dir("import")?;
+    let repo_dir = temp_root.join("repo");
+
+    let result = (|| {
+        let mut args = vec!["clone".to_string(), "--depth".into(), "1".into()];
+        if let Some(branch) = branch.as_deref() {
+            args.push("--branch".into());
+            args.push(branch.to_string());
+        }
+        args.push(repo_url.clone());
+        args.push(repo_dir.to_string_lossy().into_owned());
+        run_git(None, &args, "GitHub clone")?;
+
+        let source_dir = locate_github_app_dir(&repo_dir, subdir.as_deref())?;
+        import_app_from_dir(app, &source_dir)
+    })();
+
+    let _ = fs::remove_dir_all(&temp_root);
+    result
+}
+
+pub fn export_app_to_github(
+    app: &AppHandle,
+    app_id: &str,
+    repo_url: &str,
+    branch: Option<&str>,
+    subdir: Option<&str>,
+    message: Option<&str>,
+) -> io::Result<GitHubExportResult> {
+    let app_source_dir = app_dir(app, app_id)?;
+    if !app_source_dir.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("app not found: {app_id}"),
+        ));
+    }
+
+    let repo_url = validate_github_repo_url(repo_url)?;
+    let requested_branch = normalize_git_branch(branch)?;
+    let export_subdir = normalize_export_subdir(subdir, app_id)?;
+    let commit_message = normalize_optional(message)
+        .unwrap_or_else(|| format!("Export {app_id} from Reflex"));
+    let temp_root = github_temp_dir("export")?;
+    let repo_dir = temp_root.join("repo");
+
+    let result = (|| {
+        let args = vec![
+            "clone".to_string(),
+            repo_url.clone(),
+            repo_dir.to_string_lossy().into_owned(),
+        ];
+        run_git(None, &args, "GitHub clone")?;
+        let branch = checkout_export_branch(&repo_dir, requested_branch.as_deref())?;
+
+        let target_dir = repo_dir.join(&export_subdir);
+        if target_dir.exists() {
+            fs::remove_dir_all(&target_dir)?;
+        }
+        copy_export_tree(&app_source_dir, &target_dir)?;
+
+        run_git(
+            Some(&repo_dir),
+            &["add".into(), "--".into(), export_subdir.clone()],
+            "GitHub stage export",
+        )?;
+
+        if git_status_path_is_clean(&repo_dir, &export_subdir)? {
+            let commit = current_commit(&repo_dir).ok();
+            return Ok(GitHubExportResult {
+                repo_url,
+                branch,
+                subdir: export_subdir,
+                commit,
+                pushed: false,
+            });
+        }
+
+        run_git(
+            Some(&repo_dir),
+            &[
+                "-c".into(),
+                "user.email=reflex@local".into(),
+                "-c".into(),
+                "user.name=Reflex".into(),
+                "-c".into(),
+                "commit.gpgsign=false".into(),
+                "commit".into(),
+                "-m".into(),
+                commit_message,
+            ],
+            "GitHub commit",
+        )?;
+        let commit = current_commit(&repo_dir).ok();
+        run_git(
+            Some(&repo_dir),
+            &[
+                "push".into(),
+                "-u".into(),
+                "origin".into(),
+                format!("HEAD:{branch}"),
+            ],
+            "GitHub push",
+        )?;
+
+        Ok(GitHubExportResult {
+            repo_url,
+            branch,
+            subdir: export_subdir,
+            commit,
+            pushed: true,
+        })
+    })();
+
+    let _ = fs::remove_dir_all(&temp_root);
+    result
+}
+
+fn import_app_from_dir(app: &AppHandle, source_dir: &Path) -> io::Result<AppManifest> {
+    let manifest_path = source_dir.join("manifest.json");
+    let manifest_bytes = fs::read(&manifest_path)?;
+    let mut manifest: AppManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let original_id = manifest.id.clone();
+    let target_dir_root = apps_dir(app)?;
+    let mut new_id = original_id.clone();
+    if target_dir_root.join(&new_id).exists() {
+        new_id = format!("{original_id}_imported_{now_ms}");
+    }
+    manifest.id = new_id.clone();
+    let target_dir = target_dir_root.join(&new_id);
+    fs::create_dir_all(&target_dir)?;
+
+    let copy_result = (|| {
+        let mut entries = Vec::new();
+        collect_files(source_dir, source_dir, &mut entries)?;
+        for rel in entries {
+            if rel == Path::new("manifest.json") {
+                continue;
+            }
+            let source = source_dir.join(&rel);
+            let target = target_dir.join(&rel);
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(source, target)?;
+        }
+        write_manifest(app, &new_id, &manifest)
+    })();
+
+    if copy_result.is_err() {
+        let _ = fs::remove_dir_all(&target_dir);
+    }
+    copy_result?;
+    Ok(manifest)
+}
+
+fn copy_export_tree(source_dir: &Path, target_dir: &Path) -> io::Result<()> {
+    let mut entries = Vec::new();
+    collect_files(source_dir, source_dir, &mut entries)?;
+    for rel in entries {
+        let source = source_dir.join(&rel);
+        let target = target_dir.join(&rel);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(source, target)?;
+    }
+    Ok(())
+}
+
+fn locate_github_app_dir(repo_dir: &Path, subdir: Option<&str>) -> io::Result<PathBuf> {
+    if let Some(subdir) = subdir {
+        let rel = normalize_relative_subdir(subdir)?;
+        let dir = repo_dir.join(rel);
+        if dir.join("manifest.json").is_file() {
+            return Ok(dir);
+        }
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("manifest.json missing in requested subdirectory: {subdir}"),
+        ));
+    }
+
+    if repo_dir.join("manifest.json").is_file() {
+        return Ok(repo_dir.to_path_buf());
+    }
+
+    let mut matches = Vec::new();
+    find_manifest_dirs(repo_dir, repo_dir, &mut matches)?;
+    match matches.len() {
+        0 => Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "manifest.json missing in GitHub repository",
+        )),
+        1 => Ok(matches.remove(0)),
+        _ => {
+            let dirs = matches
+                .iter()
+                .take(8)
+                .map(|dir| {
+                    dir.strip_prefix(repo_dir)
+                        .unwrap_or(dir)
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("multiple Reflex utilities found; choose a subdirectory: {dirs}"),
+            ))
+        }
+    }
+}
+
+fn find_manifest_dirs(dir: &Path, base: &Path, matches: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let rel = path.strip_prefix(base).unwrap_or(&path);
+        if should_skip_export(rel) {
+            continue;
+        }
+        let ft = entry.file_type()?;
+        if ft.is_dir() {
+            if path.join("manifest.json").is_file() {
+                matches.push(path);
+            } else {
+                find_manifest_dirs(&path, base, matches)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_github_repo_url(raw: &str) -> io::Result<String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "GitHub repository URL is required",
+        ));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "GitHub repository URL contains control characters",
+        ));
+    }
+
+    let path = if let Some(rest) = trimmed.strip_prefix("https://github.com/") {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("git@github.com:") {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("ssh://git@github.com/") {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("github.com/") {
+        return validate_github_repo_path(rest).map(|_| format!("https://{trimmed}"));
+    } else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected a GitHub URL like https://github.com/owner/repo or git@github.com:owner/repo.git",
+        ));
+    };
+
+    validate_github_repo_path(path)?;
+    Ok(trimmed.to_string())
+}
+
+fn validate_github_repo_path(path: &str) -> io::Result<()> {
+    let without_suffix = path.trim_end_matches(".git");
+    let mut parts = without_suffix.split('/');
+    let owner = parts.next().unwrap_or_default();
+    let repo = parts.next().unwrap_or_default();
+    if owner.is_empty()
+        || repo.is_empty()
+        || parts.next().is_some()
+        || !is_github_path_component(owner)
+        || !is_github_path_component(repo)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "GitHub repository must be in owner/repo form",
+        ));
+    }
+    Ok(())
+}
+
+fn is_github_path_component(value: &str) -> bool {
+    value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+}
+
+fn normalize_optional(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn normalize_git_branch(value: Option<&str>) -> io::Result<Option<String>> {
+    let Some(branch) = normalize_optional(value) else {
+        return Ok(None);
+    };
+    validate_git_branch(&branch)?;
+    Ok(Some(branch))
+}
+
+fn validate_git_branch(branch: &str) -> io::Result<()> {
+    let invalid = branch.starts_with('-')
+        || branch.starts_with('/')
+        || branch.ends_with('/')
+        || branch.ends_with(".lock")
+        || branch.contains("..")
+        || branch.contains("//")
+        || branch.contains("@{")
+        || branch
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace() || matches!(ch, '\\' | '~' | '^' | ':' | '?' | '*' | '['));
+    if invalid {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Git branch contains unsupported characters",
+        ));
+    }
+    Ok(())
+}
+
+fn normalize_export_subdir(subdir: Option<&str>, app_id: &str) -> io::Result<String> {
+    let raw = normalize_optional(subdir).unwrap_or_else(|| app_id.to_string());
+    let rel = normalize_relative_subdir(&raw)?;
+    let out = rel.to_string_lossy().replace('\\', "/");
+    if out == "." || out.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "GitHub export subdirectory cannot be repository root",
+        ));
+    }
+    Ok(out)
+}
+
+fn normalize_relative_subdir(raw: &str) -> io::Result<PathBuf> {
+    let path = Path::new(raw.trim());
+    if path.as_os_str().is_empty() || path.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "subdirectory must be a relative path",
+        ));
+    }
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            std::path::Component::Normal(part) => out.push(part),
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "subdirectory cannot contain '.', '..' or path prefixes",
+                ));
+            }
+        }
+    }
+    if out.as_os_str().is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "subdirectory must be a relative path",
+        ));
+    }
+    Ok(out)
+}
+
+fn github_temp_dir(kind: &str) -> io::Result<PathBuf> {
+    let root = std::env::temp_dir().join(format!(
+        "reflex-github-{kind}-{}",
+        uuid::Uuid::new_v4().simple()
+    ));
+    fs::create_dir_all(&root)?;
+    Ok(root)
+}
+
+fn checkout_export_branch(repo_dir: &Path, requested: Option<&str>) -> io::Result<String> {
+    let has_head = git_success(repo_dir, &["rev-parse", "--verify", "HEAD"]);
+    if let Some(branch) = requested {
+        if has_head {
+            if !git_success(repo_dir, &["checkout", branch]) {
+                run_git(
+                    Some(repo_dir),
+                    &["checkout".into(), "-b".into(), branch.into()],
+                    "GitHub checkout branch",
+                )?;
+            }
+        } else {
+            run_git(
+                Some(repo_dir),
+                &["checkout".into(), "--orphan".into(), branch.into()],
+                "GitHub checkout branch",
+            )?;
+        }
+        return Ok(branch.to_string());
+    }
+
+    if has_head {
+        if let Ok(branch) = run_git(
+            Some(repo_dir),
+            &["branch".into(), "--show-current".into()],
+            "GitHub current branch",
+        ) {
+            let branch = branch.trim();
+            if !branch.is_empty() {
+                return Ok(branch.to_string());
+            }
+        }
+    }
+
+    let branch = "main";
+    if has_head {
+        run_git(
+            Some(repo_dir),
+            &["checkout".into(), "-B".into(), branch.into()],
+            "GitHub checkout branch",
+        )?;
+    } else {
+        run_git(
+            Some(repo_dir),
+            &["checkout".into(), "--orphan".into(), branch.into()],
+            "GitHub checkout branch",
+        )?;
+    }
+    Ok(branch.to_string())
+}
+
+fn git_status_path_is_clean(repo_dir: &Path, subdir: &str) -> io::Result<bool> {
+    let out = run_git(
+        Some(repo_dir),
+        &["status".into(), "--porcelain".into(), "--".into(), subdir.into()],
+        "GitHub status",
+    )?;
+    Ok(out.trim().is_empty())
+}
+
+fn current_commit(repo_dir: &Path) -> io::Result<String> {
+    Ok(run_git(
+        Some(repo_dir),
+        &["rev-parse".into(), "--short".into(), "HEAD".into()],
+        "GitHub commit hash",
+    )?
+    .trim()
+    .to_string())
+}
+
+fn git_success(repo_dir: &Path, args: &[&str]) -> bool {
+    std::process::Command::new("git")
+        .args(args)
+        .current_dir(repo_dir)
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+fn run_git(cwd: Option<&Path>, args: &[String], context: &str) -> io::Result<String> {
+    let mut command = std::process::Command::new("git");
+    command.args(args);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    let out = command.output()?;
+    if out.status.success() {
+        return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+    }
+    Err(git_failure(context, &out))
+}
+
+fn git_failure(context: &str, out: &std::process::Output) -> io::Error {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    let lower = combined.to_lowercase();
+    let auth_like = [
+        "authentication failed",
+        "permission denied",
+        "could not read username",
+        "repository not found",
+        "access denied",
+        "could not read from remote repository",
+        "support for password authentication was removed",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle));
+    let detail = combined.trim();
+    let message = if auth_like {
+        format!(
+            "{context} failed: GitHub authorization is required or the repository is unavailable. Configure git auth (SSH key, credential helper, or `gh auth login`) and retry. git output: {detail}"
+        )
+    } else if detail.is_empty() {
+        format!("{context} failed")
+    } else {
+        format!("{context} failed: {detail}")
+    };
+    io::Error::new(io::ErrorKind::Other, message)
+}
+
 pub fn ensure_sample_app(app: &AppHandle) -> io::Result<()> {
     let dir = app_dir(app, "sample-hello")?;
     if dir.join("manifest.json").exists() {
@@ -2348,6 +3050,7 @@ pub fn ensure_sample_app(app: &AppHandle) -> io::Result<()> {
         schedules: Vec::new(),
         actions: Vec::new(),
         widgets: Vec::new(),
+        self_test: None,
     };
     fs::write(
         dir.join("manifest.json"),
@@ -2408,6 +3111,7 @@ fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
             }],
         }],
         widgets: Vec::new(),
+        self_test: None,
     };
     fs::write(
         dir.join("manifest.json"),

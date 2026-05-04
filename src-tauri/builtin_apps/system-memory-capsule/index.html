@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Memory Capsule</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#171819;color:#f3f3ef}
+    *{box-sizing:border-box}body{margin:0;background:#171819}main{padding:18px;display:grid;gap:14px}
+    header,section{border:1px solid #343638;border-radius:8px;background:#202123;padding:14px}header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+    h1,h2,p{margin:0}h1{font-size:22px}h2{font-size:14px;color:#deded9;margin-bottom:10px}p,.muted{color:#a9aaa6;font-size:13px;line-height:1.45}
+    button,input,textarea,select{border:1px solid #3f4245;border-radius:6px;background:#2a2c2f;color:#f5f5f2;padding:9px 10px;font:inherit}button{cursor:pointer}button.primary{background:#f2f2ee;color:#151515;border-color:#f2f2ee}
+    input,textarea,select{width:100%}textarea{min-height:120px;resize:vertical}.grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:14px}.toolbar{display:flex;flex-wrap:wrap;gap:8px}.list{display:grid;gap:8px;max-height:420px;overflow:auto}
+    .card{border:1px solid #343638;background:#242629;border-radius:6px;padding:10px}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}.preview{white-space:pre-wrap;max-height:300px;overflow:auto;background:#151617;border:1px solid #303236;border-radius:6px;padding:10px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+    @media(max-width:900px){header,.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>Memory Capsule</h1><p id="lead">Capture durable notes, search memory, and recall context across projects.</p></div>
+      <div class="toolbar"><button id="refresh">List</button><button id="stats" class="primary">Stats</button></div>
+    </header>
+    <div class="grid">
+      <section>
+        <h2>Save memory</h2>
+        <div style="display:grid;gap:8px">
+          <select id="scope"><option value="project">Project</option><option value="global">Global</option></select>
+          <select id="project"></select>
+          <input id="name" placeholder="Name" />
+          <input id="tags" placeholder="tags: planning, api, decision" />
+          <textarea id="body" placeholder="Memory body"></textarea>
+          <button id="save" class="primary">Save memory</button>
+        </div>
+      </section>
+      <section>
+        <h2>Search and recall</h2>
+        <div style="display:grid;gap:8px">
+          <input id="query" placeholder="Search query" />
+          <div class="toolbar"><button id="search" class="primary">Search</button><button id="recall">Recall</button></div>
+          <pre id="output" class="preview">No result yet.</pre>
+        </div>
+      </section>
+    </div>
+    <section><h2>Notes</h2><div id="notes" class="list"></div></section>
+  </main>
+  <script>
+    const RU=(navigator.language||"").toLowerCase().startsWith("ru");
+    const t=RU?{lead:"Сохраняй долговременные заметки, ищи memory и восстанавливай контекст проектов.",list:"Список",stats:"Статистика",save:"Сохранить memory",search:"Искать",recall:"Recall",none:"Заметок нет."}:{lead:"Capture durable notes, search memory, and recall context across projects.",list:"List",stats:"Stats",save:"Save memory",search:"Search",recall:"Recall",none:"No notes."};
+    const $=id=>document.getElementById(id);let projects=[];
+    function params(){const p={scope:$("scope").value};if(p.scope==="project"&&$("project").value)p.projectId=$("project").value;return p}
+    async function init(){Object.assign($("lead"),{textContent:t.lead});$("refresh").textContent=t.list;$("stats").textContent=t.stats;$("save").textContent=t.save;$("search").textContent=t.search;$("recall").textContent=t.recall;projects=await reflexProjectsList().catch(()=>[]);$("project").innerHTML=projects.map(p=>`<option value="${esc(p.id)}">${esc(p.name||p.id)}</option>`).join("");await list();}
+    async function save(){
+      try{
+        const tags=$("tags").value.split(",").map(s=>s.trim()).filter(Boolean);
+        const result=await reflexMemorySave({...params(),kind:"fact",name:$("name").value.trim()||"Memory note",description:tags.join(", "),tags,body:$("body").value});
+        $("output").textContent=JSON.stringify(result,null,2);await list();
+      }catch(e){$("output").textContent=String(e)}
+    }
+    async function list(){
+      try{
+        const notes=await reflexMemoryList({...params(),filter:{}});
+        await reflexStorageSet("lastMemoryList",notes);
+        $("notes").innerHTML=(notes||[]).length?notes.map(noteCard).join(""):`<p>${t.none}</p>`;
+        document.querySelectorAll("[data-read]").forEach(b=>b.onclick=()=>read(b.dataset.read));
+      }catch(e){$("notes").innerHTML=`<p>${esc(String(e))}</p>`}
+    }
+    function noteCard(n){const path=n.rel_path||n.relPath||n.path||n.name;return `<div class="card row"><div><strong>${esc(n.name)}</strong><p>${esc(n.description||path||"")}</p></div><button data-read="${esc(path)}">Read</button></div>`}
+    async function read(path){try{$("output").textContent=JSON.stringify(await reflexMemoryRead({...params(),relPath:path}),null,2)}catch(e){$("output").textContent=String(e)}}
+    async function search(){try{$("output").textContent=JSON.stringify(await reflexMemorySearch({...params(),query:$("query").value}),null,2)}catch(e){$("output").textContent=String(e)}}
+    async function recall(){try{$("output").textContent=JSON.stringify(await reflexMemoryRecall({...params(),query:$("query").value}),null,2)}catch(e){$("output").textContent=String(e)}}
+    async function stats(){try{$("output").textContent=JSON.stringify(await reflexMemoryStats(params()),null,2)}catch(e){$("output").textContent=String(e)}}
+    function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+    $("save").onclick=save;$("refresh").onclick=list;$("search").onclick=search;$("recall").onclick=recall;$("stats").onclick=stats;$("scope").onchange=list;$("project").onchange=list;init();
+  </script>
+</body>
+</html>

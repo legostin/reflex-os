@@ -1,0 +1,61 @@
+{
+  "id": "system-automation-center",
+  "name": "System · Automation Center",
+  "icon": "AC",
+  "description": "Manage schedules, inspect runs, create reminders, and expose automation health.",
+  "entry": "index.html",
+  "permissions": [
+    "storage.get",
+    "storage.set",
+    "scheduler.read:*",
+    "scheduler.run:*",
+    "scheduler.write:*",
+    "notify.show"
+  ],
+  "kind": "panel",
+  "created_at_ms": 1,
+  "schedules": [
+    {
+      "id": "daily-review",
+      "name": "Daily Reflex review",
+      "cron": "0 0 9 * * *",
+      "enabled": false,
+      "catch_up": "once",
+      "steps": [
+        {
+          "method": "notify.show",
+          "params": {
+            "title": "Reflex daily review",
+            "body": "Open Automation Center to review schedules, runs, and failures."
+          }
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "automation-health",
+      "name": "Automation health",
+      "description": "Return scheduler stats across installed utilities.",
+      "public": true,
+      "steps": [
+        {
+          "method": "scheduler.stats",
+          "params": {
+            "includeAll": true,
+            "recentLimit": 100
+          }
+        }
+      ]
+    }
+  ],
+  "widgets": [
+    {
+      "id": "automation-health",
+      "name": "Automation health",
+      "entry": "index.html",
+      "size": "large",
+      "description": "Schedules, recent runs, and failures."
+    }
+  ]
+}

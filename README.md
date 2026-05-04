@@ -22,6 +22,30 @@ automations.
 - **Automations**: manifest-defined schedules and actions executed through the
   same bridge methods that apps use.
 
+## Built-In System Utilities
+
+Reflex installs a starter utility suite on first launch. Existing utility
+folders are left untouched, so user edits/configuration are preserved.
+
+- `system-quick-capture`: universal inbox for tasks, ideas, links, bugs, and
+  decisions with handoff to memory, topics, and review reminders.
+- `system-project-cockpit`: practical project home screen for topics, memory
+  stats, schedules, linked utilities, and quick project file access.
+- `system-research-capture`: browser-page capture, agent summary, project/global
+  memory save, and follow-up topic creation.
+- `system-automation-center`: scheduler health, recent run detail, manual run,
+  and configurable notification reminder schedules.
+- `system-clipboard-snippets`: reusable snippets, clipboard read/write, simple
+  variables, and a public snippet-library action.
+- `system-project-file-lens`: project file search/read, bookmarks, path copy,
+  and project navigation.
+- `system-memory-capsule`: global/project memory save, list, search, recall,
+  and stats workflows.
+- `system-api-workbench`: `net.fetch` request presets, host allow-list flow,
+  response capture, and a public last-response action.
+- `system-bridge-console`: power-user bridge catalog search, pinned helpers,
+  direct `reflexInvoke` calls, and permissions/context overview.
+
 ## Project Agent Profile
 
 Each project can define:
@@ -170,6 +194,8 @@ The injected runtime overlay provides:
   open-source repository.
 - `window.reflexAppsExport(appIdOrParams, targetPath?)`
 - `window.reflexAppsImport(zipPathOrParams)`
+- `window.reflexAppsExportGithub(appIdOrParams, repoUrl?, branch?, subdir?, message?)`
+- `window.reflexAppsImportGithub(repoUrlOrParams, branch?, subdir?)`
 - `window.reflexAppsDelete(appIdOrParams)`
 - `window.reflexAppsTrashList()`
 - `window.reflexAppsRestore(trashIdOrParams)`
@@ -387,9 +413,15 @@ Core methods:
   `automation`, and `node-server`. `repo-wrapper` requires `sourceRepoUrl` and
   starts an agent plan to inspect the upstream code, preserve license notices,
   and build a Reflex bridge/MCP wrapper around it.
-- `apps.export({ app_id, targetPath })` and `apps.import({ zipPath })`;
+- `apps.export({ app_id, targetPath })`, `apps.import({ zipPath })`,
+  `apps.exportGithub({ app_id, repoUrl, branch?, subdir?, message? })`, and
+  `apps.importGithub({ repoUrl, branch?, subdir? })`;
+  snake-case aliases `apps.export_github` and `apps.import_github` are also
+  available.
   require `apps.manage` or `apps:*`. Exports omit app storage, project metadata,
-  `.git`, and dependency folders from the `.reflexapp` bundle.
+  `.git`, and dependency folders. GitHub import/export uses the host's
+  configured git/GitHub credentials, so private repositories work after SSH,
+  credential helper, or `gh auth login` setup.
 - `apps.delete({ app_id })`, `apps.trashList()`,
   `apps.restore({ trash_id })`, and `apps.purge({ trash_id })`; require
   `apps.manage` or `apps:*`. Delete moves an app to trash; purge permanently
@@ -485,8 +517,8 @@ Apps can expose:
 Workflow steps call normal bridge methods and can pass previous results through
 `{{steps.<name>.<field>}}` templates. UI-only methods like `dialog.*`,
 `clipboard.*`, `system.openPanel`, `system.openUrl`, `system.openPath`,
-`system.revealPath`, `apps.create`, `apps.import`, `apps.commit`,
-`apps.commitPartial`, `apps.delete`, `apps.restore`, `apps.revert`,
+`system.revealPath`, `apps.create`, `apps.import`, `apps.importGithub`,
+`apps.exportGithub`, `apps.commit`, `apps.commitPartial`, `apps.delete`, `apps.restore`, `apps.revert`,
 `apps.purge`, and `apps.open` are not valid inside schedules. `projects.open`,
 `topics.open`, `scheduler.runNow`,
 `scheduler.setPaused`, `scheduler.upsert`, and

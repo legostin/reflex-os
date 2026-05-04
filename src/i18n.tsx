@@ -128,6 +128,17 @@ const dictionaries: Record<Locale, Dictionary> = {
     "appViewer.newThread": "New thread",
     "appViewer.exportTitle": "Export utility to a .reflexapp file",
     "appViewer.export": "Export",
+    "appViewer.exportGithubTitle": "Export utility source to a GitHub repository",
+    "appViewer.exportGithub": "Export",
+    "appViewer.githubExportRepoPrompt":
+      "GitHub repository URL to push to. Private repos use your configured git/GitHub auth.",
+    "appViewer.githubBranchPrompt": "Branch",
+    "appViewer.githubExportSubdirPrompt": "Repository subdirectory",
+    "appViewer.githubMessagePrompt": "Commit message",
+    "appViewer.githubExportDone":
+      "Exported to {repo} on {branch}/{subdir}. Commit {commit}.",
+    "appViewer.githubExportNoChanges":
+      "GitHub export found no changes in {repo} on {branch}/{subdir}.",
     "appViewer.actions": "Actions",
     "appViewer.public": "public",
     "appViewer.params": "params",
@@ -195,6 +206,13 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.importTitle": "Import .reflexapp",
     "apps.importBundleTitle": "Import .reflexapp bundle",
     "apps.importBundle": "Import .reflexapp",
+    "apps.importGithubTitle": "Import Reflex utility from GitHub",
+    "apps.importGithub": "Import",
+    "apps.githubImportRepoPrompt":
+      "GitHub repository URL. Private repos use your configured git/GitHub auth.",
+    "apps.githubBranchPrompt": "Branch to import (optional)",
+    "apps.githubImportSubdirPrompt":
+      "Subdirectory containing manifest.json (optional; empty means auto-detect)",
     "apps.next": "Next ->",
     "apps.back": "<- Back",
     "apps.describeHint":
@@ -960,6 +978,17 @@ const dictionaries: Record<Locale, Dictionary> = {
     "appViewer.newThread": "Новый тред",
     "appViewer.exportTitle": "Экспортировать утилиту в .reflexapp файл",
     "appViewer.export": "Экспорт",
+    "appViewer.exportGithubTitle": "Экспортировать исходники утилиты в GitHub репозиторий",
+    "appViewer.exportGithub": "Экспорт",
+    "appViewer.githubExportRepoPrompt":
+      "URL GitHub репозитория для push. Приватные репозитории используют настроенную git/GitHub авторизацию.",
+    "appViewer.githubBranchPrompt": "Ветка",
+    "appViewer.githubExportSubdirPrompt": "Поддиректория в репозитории",
+    "appViewer.githubMessagePrompt": "Сообщение коммита",
+    "appViewer.githubExportDone":
+      "Экспортировано в {repo}: {branch}/{subdir}. Коммит {commit}.",
+    "appViewer.githubExportNoChanges":
+      "GitHub export не нашёл изменений в {repo}: {branch}/{subdir}.",
     "appViewer.actions": "Действия",
     "appViewer.public": "публичное",
     "appViewer.params": "параметры",
@@ -1028,6 +1057,13 @@ const dictionaries: Record<Locale, Dictionary> = {
     "apps.importTitle": "Импорт .reflexapp",
     "apps.importBundleTitle": "Импортировать .reflexapp бандл",
     "apps.importBundle": "Импорт .reflexapp",
+    "apps.importGithubTitle": "Импортировать утилиту Reflex из GitHub",
+    "apps.importGithub": "Импорт",
+    "apps.githubImportRepoPrompt":
+      "URL GitHub репозитория. Приватные репозитории используют настроенную git/GitHub авторизацию.",
+    "apps.githubBranchPrompt": "Ветка для импорта (необязательно)",
+    "apps.githubImportSubdirPrompt":
+      "Поддиректория с manifest.json (необязательно; пусто значит авто-поиск)",
     "apps.next": "Дальше ->",
     "apps.back": "<- Назад",
     "apps.describeHint":

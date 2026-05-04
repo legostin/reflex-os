@@ -1,13 +1,136 @@
 use crate::storage;
 use serde::Deserialize;
 use serde_json::Value;
+use std::env;
 use std::path::PathBuf;
-use std::process::Stdio;
+use std::process::{Command as StdCommand, Stdio};
+use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter};
 #[cfg(target_os = "macos")]
 use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
 use tokio::process::Command as TokioCommand;
+
+static CODEX_BINARY: OnceLock<String> = OnceLock::new();
+
+pub(crate) fn command() -> TokioCommand {
+    let mut command = TokioCommand::new(binary_path());
+    if let Some(path) = augmented_path() {
+        command.env("PATH", path);
+    }
+    command
+}
+
+pub(crate) fn binary_path() -> &'static str {
+    CODEX_BINARY.get_or_init(resolve_codex_binary).as_str()
+}
+
+fn resolve_codex_binary() -> String {
+    if let Ok(path) = env::var("REFLEX_CODEX_BIN") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            eprintln!("[reflex] using REFLEX_CODEX_BIN={trimmed}");
+            return trimmed.to_string();
+        }
+    }
+
+    let mut candidates = Vec::new();
+    if let Ok(path) = env::var("PATH") {
+        for dir in env::split_paths(&path) {
+            push_candidate(&mut candidates, dir.join("codex"));
+        }
+    }
+    if let Ok(home) = env::var("HOME") {
+        push_candidate(
+            &mut candidates,
+            PathBuf::from(&home).join(".npm-global/bin/codex"),
+        );
+        push_candidate(&mut candidates, PathBuf::from(&home).join(".local/bin/codex"));
+        push_candidate(&mut candidates, PathBuf::from(&home).join(".bun/bin/codex"));
+    }
+    push_candidate(&mut candidates, PathBuf::from("/opt/homebrew/bin/codex"));
+    push_candidate(&mut candidates, PathBuf::from("/usr/local/bin/codex"));
+
+    let selected = candidates
+        .iter()
+        .filter_map(|candidate| {
+            codex_version(candidate)
+                .map(|version| (candidate.clone(), version))
+        })
+        .max_by(|(_, left), (_, right)| left.cmp(right));
+
+    if let Some((path, version)) = selected {
+        eprintln!(
+            "[reflex] using codex {}.{}.{} at {}",
+            version.0, version.1, version.2, path
+        );
+        return path;
+    }
+
+    candidates
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| "codex".to_string())
+}
+
+fn push_candidate(candidates: &mut Vec<String>, path: PathBuf) {
+    if !path.is_file() {
+        return;
+    }
+    let display = path.to_string_lossy().into_owned();
+    if !candidates.iter().any(|existing| existing == &display) {
+        candidates.push(display);
+    }
+}
+
+fn codex_version(path: &str) -> Option<(u32, u32, u32)> {
+    let output = StdCommand::new(path).arg("--version").output().ok()?;
+    let text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    parse_semver_like(&text)
+}
+
+fn parse_semver_like(text: &str) -> Option<(u32, u32, u32)> {
+    text.split(|c: char| !c.is_ascii_digit() && c != '.')
+        .filter_map(|chunk| {
+            let mut parts = chunk.split('.');
+            let major = parts.next()?.parse::<u32>().ok()?;
+            let minor = parts.next()?.parse::<u32>().ok()?;
+            let patch = parts
+                .next()
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or(0);
+            Some((major, minor, patch))
+        })
+        .max()
+}
+
+fn augmented_path() -> Option<String> {
+    let mut paths: Vec<PathBuf> = Vec::new();
+    if let Ok(home) = env::var("HOME") {
+        paths.push(PathBuf::from(&home).join(".npm-global/bin"));
+        paths.push(PathBuf::from(&home).join(".local/bin"));
+        paths.push(PathBuf::from(&home).join(".bun/bin"));
+    }
+    paths.push(PathBuf::from("/opt/homebrew/bin"));
+    paths.push(PathBuf::from("/usr/local/bin"));
+    if let Ok(current) = env::var("PATH") {
+        paths.extend(env::split_paths(&current));
+    }
+
+    let mut deduped: Vec<PathBuf> = Vec::new();
+    for path in paths {
+        if !deduped.iter().any(|existing| existing == &path) {
+            deduped.push(path);
+        }
+    }
+    env::join_paths(deduped)
+        .ok()
+        .and_then(|value| value.into_string().ok())
+}
 
 /// Notify the user that a thread finished. Public so app-server module can call it.
 pub fn notify_thread_done_external(
@@ -172,7 +295,7 @@ pub async fn generate_topic_meta(
     let cwd_str = project_root.to_string_lossy().into_owned();
     let out_str = out_path.to_string_lossy().into_owned();
 
-    let result = TokioCommand::new("codex")
+    let result = command()
         .args([
             "exec",
             "--json",
@@ -255,4 +378,21 @@ fn extract_meta_json(s: &str) -> Option<GeneratedMeta> {
         return None;
     }
     serde_json::from_str(&s[start..=end]).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_semver_like;
+
+    #[test]
+    fn parses_codex_cli_version_with_warning() {
+        let text = "WARNING: could not update PATH\ncodex-cli 0.128.0";
+        assert_eq!(parse_semver_like(text), Some((0, 128, 0)));
+    }
+
+    #[test]
+    fn keeps_highest_version_in_text() {
+        let text = "old 0.101.0 new 0.128.0";
+        assert_eq!(parse_semver_like(text), Some((0, 128, 0)));
+    }
 }

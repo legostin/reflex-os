@@ -5,7 +5,6 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::Stdio;
 use tauri::{AppHandle, Manager};
-use tokio::process::Command as TokioCommand;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExistingSuggestion {
@@ -152,7 +151,7 @@ async fn run_codex(app: &AppHandle, prompt: &str) -> Result<String, String> {
     let cwd_str = scratch.to_string_lossy().into_owned();
     let out_str = out_path.to_string_lossy().into_owned();
 
-    let result = TokioCommand::new("codex")
+    let result = crate::codex::command()
         .args([
             "exec",
             "--json",

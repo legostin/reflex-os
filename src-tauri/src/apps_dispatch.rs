@@ -596,6 +596,12 @@ pub async fn dispatch_app_method(
         "apps.create" => apps_create_for_app(app, app_id, params).await,
         "apps.export" => apps_export_for_app(app, app_id, params),
         "apps.import" => apps_import_for_app(app, app_id, params),
+        "apps.exportGithub" | "apps.export_github" => {
+            apps_export_github_for_app(app, app_id, params).await
+        }
+        "apps.importGithub" | "apps.import_github" => {
+            apps_import_github_for_app(app, app_id, params).await
+        }
         "apps.delete" => apps_delete_for_app(app, app_id, params),
         "apps.trashList" => apps_trash_list_for_app(app, app_id),
         "apps.restore" => apps_restore_for_app(app, app_id, params),
@@ -2107,6 +2113,10 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "apps.create",
                 "apps.export",
                 "apps.import",
+                "apps.exportGithub",
+                "apps.importGithub",
+                "apps.export_github",
+                "apps.import_github",
                 "apps.delete",
                 "apps.trashList",
                 "apps.restore",
@@ -2269,6 +2279,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexAppsCreate",
                 "reflexAppsExport",
                 "reflexAppsImport",
+                "reflexAppsExportGithub",
+                "reflexAppsImportGithub",
                 "reflexAppsDelete",
                 "reflexAppsTrashList",
                 "reflexAppsRestore",
@@ -2320,6 +2332,8 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "system.revealPath",
                 "apps.create",
                 "apps.import",
+                "apps.exportGithub",
+                "apps.importGithub",
                 "apps.delete",
                 "apps.restore",
                 "apps.purge",
@@ -3694,6 +3708,7 @@ fn app_summary_from_manifest(manifest: apps::AppManifest, ready: bool) -> serde_
             "capabilities": integration.capabilities.clone(),
         })),
         "ready": ready,
+        "self_test": manifest.self_test.clone(),
         "capabilities": {
             "permissions": manifest.permissions.len(),
             "network_hosts": manifest
@@ -3807,9 +3822,74 @@ fn apps_import_for_app(
         &serde_json::json!({ "app_id": manifest.id }),
     )
     .map_err(|e| e.to_string())?;
-    let ready = apps::app_dir(app, &manifest.id)
-        .map(|dir| dir.join(&manifest.entry).exists())
-        .unwrap_or(false);
+    let ready = apps::app_ready(app, &manifest).unwrap_or(false);
+    Ok(serde_json::json!({
+        "ok": true,
+        "app": app_summary_from_manifest(manifest, ready),
+    }))
+}
+
+async fn apps_export_github_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let target_app_id = required_string_param(&params, "app_id", "appId")?;
+    let repo_url = required_string_param(&params, "repo_url", "repoUrl")?;
+    let branch = string_param(&params, "branch", "branch");
+    let subdir = string_param(&params, "subdir", "subdir");
+    let message = string_param(&params, "message", "message");
+    let app = app.clone();
+    let result_app_id = target_app_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        apps::export_app_to_github(
+            &app,
+            &target_app_id,
+            &repo_url,
+            branch.as_deref(),
+            subdir.as_deref(),
+            message.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    let mut value = serde_json::to_value(result).map_err(|e| e.to_string())?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("ok".into(), serde_json::Value::Bool(true));
+        obj.insert("app_id".into(), serde_json::Value::String(result_app_id));
+    }
+    Ok(value)
+}
+
+async fn apps_import_github_for_app(
+    app: &AppHandle,
+    caller_app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ensure_apps_manage_permission(app, caller_app_id)?;
+    let repo_url = required_string_param(&params, "repo_url", "repoUrl")?;
+    let branch = string_param(&params, "branch", "branch");
+    let subdir = string_param(&params, "subdir", "subdir");
+    let app_for_work = app.clone();
+    let manifest = tauri::async_runtime::spawn_blocking(move || {
+        apps::import_app_from_github(
+            &app_for_work,
+            &repo_url,
+            branch.as_deref(),
+            subdir.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    app.emit(
+        "reflex://apps-changed",
+        &serde_json::json!({ "app_id": manifest.id }),
+    )
+    .map_err(|e| e.to_string())?;
+    let ready = apps::app_ready(app, &manifest).unwrap_or(false);
     Ok(serde_json::json!({
         "ok": true,
         "app": app_summary_from_manifest(manifest, ready),

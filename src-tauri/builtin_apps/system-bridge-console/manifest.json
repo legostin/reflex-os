@@ -1,0 +1,44 @@
+{
+  "id": "system-bridge-console",
+  "name": "System · Bridge Console",
+  "icon": "BC",
+  "description": "Search, inspect, pin, and exercise Reflex bridge methods and runtime helpers.",
+  "entry": "index.html",
+  "permissions": [
+    "storage.get",
+    "storage.set",
+    "logs.write",
+    "permissions.list",
+    "apps.manage",
+    "apps.create",
+    "projects.read:*",
+    "topics.read:*",
+    "scheduler.read:*",
+    "memory.global.read"
+  ],
+  "kind": "panel",
+  "created_at_ms": 1,
+  "actions": [
+    {
+      "id": "bridge-snapshot",
+      "name": "Bridge snapshot",
+      "description": "Return the current bridge catalog payload for other utilities.",
+      "public": true,
+      "steps": [
+        {
+          "method": "bridge.catalog",
+          "params": {}
+        }
+      ]
+    }
+  ],
+  "widgets": [
+    {
+      "id": "bridge-map",
+      "name": "Bridge map",
+      "entry": "index.html",
+      "size": "large",
+      "description": "Runtime bridge catalog and permission overview."
+    }
+  ]
+}
