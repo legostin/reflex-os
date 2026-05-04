@@ -201,6 +201,11 @@ assert(
   !withoutOwnerProjection.rows.some((row) => row.value.includes("Alice")),
   "excluded owner field should not render",
 );
+const withoutRussianOwnerSpec = dashboard.buildDashboardViewSpec("summary без владельца");
+assert(
+  withoutRussianOwnerSpec.excludeKeys.includes("owner"),
+  "Russian owner exclusion should map to owner key",
+);
 
 const latestErrorsSpec = dashboard.buildDashboardViewSpec("latest errors list");
 assert(latestErrorsSpec.layout === "list", "latest errors list should infer list layout");

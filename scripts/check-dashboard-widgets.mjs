@@ -74,6 +74,7 @@ requireIncludes(failures, dashboardBlock, "Dashboard view spec contract is incom
   "function inferDashboardSort(",
   "function inferDashboardMaxItems(",
   "function inferDashboardExcludeKeys(",
+  "DASHBOARD_EXCLUDE_KEY_ALIASES",
   "function projectDashboardValue(",
 ]);
 

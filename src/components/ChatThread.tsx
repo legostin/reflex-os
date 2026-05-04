@@ -5281,6 +5281,18 @@ const DASHBOARD_RU_TOKEN_SYNONYMS: Array<[string, string[]]> = [
   ["числ", ["count", "total", "number"]],
 ];
 
+const DASHBOARD_EXCLUDE_KEY_ALIASES: Array<[string, string[]]> = [
+  ["владел", ["owner"]],
+  ["ответствен", ["owner", "assignee"]],
+  ["исполн", ["assignee", "owner"]],
+  ["сообщ", ["message"]],
+  ["описан", ["description", "summary"]],
+  ["источник", ["source", "source_id", "source_url"]],
+  ["ссыл", ["url", "source_url"]],
+  ["приоритет", ["priority"]],
+  ["токен", ["token"]],
+];
+
 const DASHBOARD_META_KEY_PATTERNS = [
   /^auth$/i,
   /^cache($|[_-])/i,
@@ -5544,7 +5556,13 @@ function inferDashboardExcludeKeys(prompt: string): string[] {
     for (const match of prompt.matchAll(pattern)) {
       const value = match[1] ?? "";
       for (const token of dashboardTokens(value)) {
-        if (!DASHBOARD_STOP_TOKENS.has(token)) out.add(token);
+        if (DASHBOARD_STOP_TOKENS.has(token)) continue;
+        out.add(token);
+        for (const [prefix, aliases] of DASHBOARD_EXCLUDE_KEY_ALIASES) {
+          if (token.startsWith(prefix)) {
+            for (const alias of aliases) out.add(alias);
+          }
+        }
       }
     }
   }
