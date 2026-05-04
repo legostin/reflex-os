@@ -5562,21 +5562,29 @@ function dashboardRecordSearchText(record?: DashboardRecord): string {
   return dashboardSafeSearchText(record.value ?? record.preview ?? "");
 }
 
+function dashboardSourceMatchedTokensForSpec(
+  spec: DashboardViewSpec,
+  source: DashboardActionSource,
+  record?: DashboardRecord,
+): string[] {
+  if (spec.includeTokens.length === 0) return [];
+  const haystack = `${dashboardSourceSearchText(source)} ${dashboardRecordSearchText(record)}`;
+  return spec.includeTokens.filter((token) => haystack.includes(token));
+}
+
 function dashboardSourceScoreForSpec(
   spec: DashboardViewSpec,
   source: DashboardActionSource,
   record?: DashboardRecord,
 ): number {
-  const tokens = spec.includeTokens;
-  if (tokens.length === 0) return 0;
-  const haystack = `${dashboardSourceSearchText(source)} ${dashboardRecordSearchText(record)}`;
-  return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+  return dashboardSourceMatchedTokensForSpec(spec, source, record).length;
 }
 
 type DashboardSourceMatch = {
   source: DashboardActionSource;
   key: string;
   score: number;
+  matchedTokens: string[];
 };
 
 function matchDashboardSourcesForSpec(
@@ -5588,10 +5596,16 @@ function matchDashboardSourcesForSpec(
   return sources
     .map((source) => {
       const key = dashboardSourceKey(source);
+      const matchedTokens = dashboardSourceMatchedTokensForSpec(
+        spec,
+        source,
+        records[key],
+      );
       return {
         source,
         key,
         score: dashboardSourceScoreForSpec(spec, source, records[key]),
+        matchedTokens,
       };
     })
     .filter((item) => item.score > 0)
@@ -6629,10 +6643,23 @@ function DashboardWidgetSpecPreview({
         <span>{t("dashboard.previewMatches")}</span>
         {matches.length > 0 ? (
           <div className="dashboard-widget-preview-chips">
-            {matches.map(({ source, key }) => (
-              <span key={key} className="dashboard-widget-preview-chip">
-                {source.appIcon ?? "U"} {source.appName} ·{" "}
-                {source.action.name || source.action.id}
+            {matches.map(({ source, key, matchedTokens }) => (
+              <span
+                key={key}
+                className="dashboard-widget-preview-chip"
+                title={t("dashboard.previewMatchSignals", {
+                  signals: matchedTokens.join(", "),
+                })}
+              >
+                <span className="dashboard-widget-preview-chip-label">
+                  {source.appIcon ?? "U"} {source.appName} ·{" "}
+                  {source.action.name || source.action.id}
+                </span>
+                <span className="dashboard-widget-preview-chip-signals">
+                  {t("dashboard.previewMatchScore", {
+                    count: matchedTokens.length,
+                  })}
+                </span>
               </span>
             ))}
           </div>
@@ -6735,11 +6762,12 @@ function buildDashboardWidgetRepairPrompt(
   records: Record<string, DashboardRecord>,
 ): string {
   const matchedSources = matches
-    .map(({ source, key, score }) => {
+    .map(({ source, key, score, matchedTokens }) => {
       const actionName = source.action.name || source.action.id;
       return [
         `- ${source.appName} (${source.appId}) / ${actionName} (${source.action.id})`,
         `  match score: ${score}`,
+        `  matched signals: ${matchedTokens.join(", ") || "none"}`,
         `  observed shape: ${dashboardRecordSafeShape(records[key])}`,
       ].join("\n");
     })

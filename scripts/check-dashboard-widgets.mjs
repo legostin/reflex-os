@@ -75,6 +75,7 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "function DashboardWidgetSpecPreview(",
   "function DashboardSourceBlueprintView(",
   "function matchDashboardSourcesForSpec(",
+  "function dashboardSourceMatchedTokensForSpec(",
   "function dashboardSafeSearchText(",
   "function buildDashboardSourceBlueprint(",
   "dashboard.widgetMeta",
@@ -122,6 +123,8 @@ for (const key of [
   "dashboard.previewSize",
   "dashboard.previewFilters",
   "dashboard.previewMatches",
+  "dashboard.previewMatchSignals",
+  "dashboard.previewMatchScore",
   "dashboard.sourceColumn",
   "dashboard.widgetMeta",
   "dashboard.saveChanges",
@@ -150,6 +153,7 @@ for (const key of [
 requireIncludes(failures, chatCss, "Dashboard widget preview styles are incomplete", [
   ".dashboard-widget-preview",
   ".dashboard-widget-preview-chip",
+  ".dashboard-widget-preview-chip-signals",
   ".dashboard-widget-wide",
   ".dashboard-widget-full",
   ".dashboard-custom-actions",
@@ -177,6 +181,12 @@ requirePattern(
   recordSearchBlock,
   "Dashboard source matching must skip secret-bearing keys.",
   /DASHBOARD_SECRET_KEY_PATTERNS/,
+);
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard source matches must preserve the matched signals for explainability.",
+  /matchedTokens: string\[\][\s\S]+dashboardSourceMatchedTokensForSpec/,
 );
 
 requirePattern(

@@ -1699,13 +1699,26 @@
 
 .dashboard-widget-preview-chip {
   max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.045);
   padding: 3px 7px;
+}
+
+.dashboard-widget-preview-chip-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dashboard-widget-preview-chip-signals {
+  flex: 0 0 auto;
+  color: rgba(170, 182, 210, 0.78);
+  font-size: 11px;
 }
 
 .dashboard-widget-preview-empty {

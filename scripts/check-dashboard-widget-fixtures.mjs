@@ -110,6 +110,23 @@ assert(
   openTasksSpec.filters.some((filter) => filter.id === "open"),
   "open tasks table should infer open filter",
 );
+const openTasksMatches = dashboard.matchDashboardSourcesForSpec(openTasksSpec, [
+  {
+    appId: "tasks",
+    appName: "Task Utility",
+    action: {
+      id: "tasks_overview",
+      name: "Tasks overview",
+      description: "Open tasks dashboard table",
+    },
+  },
+], {}, 4);
+assert(openTasksMatches[0]?.matchedTokens.includes("open"), "matches should explain open signal");
+assert(openTasksMatches[0]?.matchedTokens.includes("tasks"), "matches should explain tasks signal");
+assert(
+  openTasksMatches[0]?.score === openTasksMatches[0]?.matchedTokens.length,
+  "match score should equal matched signal count",
+);
 const openTasksProjection = dashboard.projectDashboardValue(
   {
     tasks: [
