@@ -206,6 +206,10 @@ assert(
   withoutRussianOwnerSpec.excludeKeys.includes("owner"),
   "Russian owner exclusion should map to owner key",
 );
+assert(
+  !withoutRussianOwnerSpec.excludeKeys.includes("владельца"),
+  "Russian owner exclusion should not keep localized key noise",
+);
 
 const latestErrorsSpec = dashboard.buildDashboardViewSpec("latest errors list");
 assert(latestErrorsSpec.layout === "list", "latest errors list should infer list layout");

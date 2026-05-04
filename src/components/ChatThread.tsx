@@ -5557,12 +5557,14 @@ function inferDashboardExcludeKeys(prompt: string): string[] {
       const value = match[1] ?? "";
       for (const token of dashboardTokens(value)) {
         if (DASHBOARD_STOP_TOKENS.has(token)) continue;
-        out.add(token);
+        let expanded = false;
         for (const [prefix, aliases] of DASHBOARD_EXCLUDE_KEY_ALIASES) {
           if (token.startsWith(prefix)) {
             for (const alias of aliases) out.add(alias);
+            expanded = true;
           }
         }
+        if (!expanded) out.add(token);
       }
     }
   }
