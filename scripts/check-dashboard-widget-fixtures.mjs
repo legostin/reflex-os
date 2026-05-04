@@ -193,6 +193,10 @@ assert(
   !withoutOwnerSpec.includeTokens.includes("owner"),
   "excluded owner field should not remain a source matching token",
 );
+assert(
+  !withoutOwnerSpec.includeTokens.includes("without"),
+  "exclude directive should not remain a source matching token",
+);
 const withoutOwnerProjection = dashboard.projectDashboardValue(
   { owner: "Alice", status: "ok" },
   withoutOwnerSpec,
@@ -209,6 +213,10 @@ assert(
 assert(
   !withoutRussianOwnerSpec.excludeKeys.includes("владельца"),
   "Russian owner exclusion should not keep localized key noise",
+);
+assert(
+  !withoutRussianOwnerSpec.includeTokens.includes("без"),
+  "Russian exclude directive should not remain a source matching token",
 );
 
 const latestErrorsSpec = dashboard.buildDashboardViewSpec("latest errors list");
