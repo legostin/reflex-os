@@ -4915,6 +4915,19 @@ const DASHBOARD_WIDGET_SIZE_ORDER: DashboardWidgetSize[] = [
   "wide",
   "full",
 ];
+const DASHBOARD_WIDGET_LAYOUT_ORDER: DashboardViewLayout[] = [
+  "summary",
+  "list",
+  "table",
+  "metric",
+];
+const DASHBOARD_WIDGET_SORT_ORDER: DashboardSortMode[] = [
+  "relevance",
+  "latest",
+  "oldest",
+  "largest",
+  "smallest",
+];
 
 function dashboardSourceKey(source: DashboardActionSource): string {
   return `${source.appId}::${source.action.id}`;
@@ -4924,6 +4937,22 @@ function nextDashboardWidgetSize(size: DashboardWidgetSize): DashboardWidgetSize
   const index = DASHBOARD_WIDGET_SIZE_ORDER.indexOf(size);
   return DASHBOARD_WIDGET_SIZE_ORDER[
     (index + 1) % DASHBOARD_WIDGET_SIZE_ORDER.length
+  ];
+}
+
+function nextDashboardWidgetLayout(
+  layout: DashboardViewLayout,
+): DashboardViewLayout {
+  const index = DASHBOARD_WIDGET_LAYOUT_ORDER.indexOf(layout);
+  return DASHBOARD_WIDGET_LAYOUT_ORDER[
+    (index + 1) % DASHBOARD_WIDGET_LAYOUT_ORDER.length
+  ];
+}
+
+function nextDashboardWidgetSort(sort: DashboardSortMode): DashboardSortMode {
+  const index = DASHBOARD_WIDGET_SORT_ORDER.indexOf(sort);
+  return DASHBOARD_WIDGET_SORT_ORDER[
+    (index + 1) % DASHBOARD_WIDGET_SORT_ORDER.length
   ];
 }
 
@@ -7103,6 +7132,42 @@ function ProjectDashboard({
     });
   };
 
+  const cycleCustomWidgetLayout = (id: string) => {
+    setCustomWidgets((prev) => {
+      const next = prev.map((widget) => {
+        if (widget.id !== id) return widget;
+        const spec = widget.spec ?? buildDashboardViewSpec(widget.prompt, widget.title);
+        return {
+          ...widget,
+          spec: {
+            ...spec,
+            layout: nextDashboardWidgetLayout(spec.layout),
+          },
+        };
+      });
+      writeCustomDashboardWidgets(project.id, next);
+      return next;
+    });
+  };
+
+  const cycleCustomWidgetSort = (id: string) => {
+    setCustomWidgets((prev) => {
+      const next = prev.map((widget) => {
+        if (widget.id !== id) return widget;
+        const spec = widget.spec ?? buildDashboardViewSpec(widget.prompt, widget.title);
+        return {
+          ...widget,
+          spec: {
+            ...spec,
+            sort: nextDashboardWidgetSort(spec.sort),
+          },
+        };
+      });
+      writeCustomDashboardWidgets(project.id, next);
+      return next;
+    });
+  };
+
   const pinActionAsWidget = (source: DashboardActionSource) => {
     const sourceKey = dashboardSourceKey(source);
     const prompt = dashboardWidgetPromptForSource(source);
@@ -7312,6 +7377,26 @@ function ProjectDashboard({
                       })}
                     >
                       ⤢
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-action-refresh"
+                      onClick={() => cycleCustomWidgetLayout(widget.id)}
+                      title={t("dashboard.cycleWidgetLayout", {
+                        layout: t(`dashboard.layout.${spec.layout}`),
+                      })}
+                    >
+                      ▦
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-action-refresh"
+                      onClick={() => cycleCustomWidgetSort(widget.id)}
+                      title={t("dashboard.cycleWidgetSort", {
+                        sort: t(`dashboard.sort.${spec.sort}`),
+                      })}
+                    >
+                      ⇅
                     </button>
                     <button
                       type="button"
