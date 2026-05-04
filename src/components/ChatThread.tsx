@@ -6266,6 +6266,7 @@ type DashboardProjectedSource = {
   label: string;
   status: DashboardRecord["status"];
   error?: string;
+  updatedAtMs?: number;
   projected?: DashboardProjectedView;
 };
 
@@ -6282,6 +6283,7 @@ function projectDashboardCompositeEntries(
     label: dashboardCompositeSourceLabel(entry.source),
     status: entry.record.status,
     error: entry.record.error,
+    updatedAtMs: entry.record.updatedAtMs,
     projected:
       entry.record.status === "ok"
         ? projectDashboardValue(entry.record.value ?? entry.record.preview, spec)
@@ -6403,6 +6405,9 @@ function DashboardCompositeValueView({
   const rowBlocks = contentSources
     .filter((source) => (source.projected?.rows.length ?? 0) > 0)
     .slice(0, 4);
+  const latestUpdatedAtMs = Math.max(
+    ...contentSources.map((source) => source.updatedAtMs ?? 0),
+  );
 
   return (
     <div className="dashboard-composite-value">
@@ -6419,6 +6424,14 @@ function DashboardCompositeValueView({
           <DashboardRowsView rows={source.projected?.rows ?? []} />
         </div>
       ))}
+      {latestUpdatedAtMs > 0 && (
+        <div className="dashboard-action-meta">
+          {t("dashboard.widgetMeta", {
+            sources: contentSources.length,
+            time: new Date(latestUpdatedAtMs).toLocaleTimeString(),
+          })}
+        </div>
+      )}
     </div>
   );
 }
