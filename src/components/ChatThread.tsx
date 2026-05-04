@@ -6899,7 +6899,8 @@ function buildDashboardWidgetTaskPrompt(
     "6. Make the action safe to run automatically, cache-friendly, and compatible with the generic dashboard renderer.",
     "7. If credentials, network access, runtime.server.listen, or another permission is required, request it explicitly and return a clear setup_required state until configured.",
     "8. Keep internal prompts, manifest action descriptions, generated utility instructions, and implementation comments in English. User-facing UI may remain localized.",
-    "9. Verify that the dashboard widget can match and render the new public action without raw JSON dumps or domain-specific dashboard code.",
+    "9. If the quoted widget request is not English, translate its intent before writing internal prompts, manifests, code comments, or utility instructions.",
+    "10. Verify that the dashboard widget can match and render the new public action without raw JSON dumps or domain-specific dashboard code.",
     "",
     linkedSources
       ? `Currently linked public actions:\n${linkedSources}`
@@ -6976,7 +6977,8 @@ function buildDashboardWidgetRepairPrompt(
     "5. Do not add hard-coded demo data or dashboard-specific UI heuristics. Fix the reusable utility output.",
     "6. If credentials, network access, runtime.server.listen, or another permission is required, request it explicitly and return setup_required until configured.",
     "7. Keep internal prompts, manifest action descriptions, generated utility instructions, and implementation comments in English. User-facing UI may remain localized.",
-    "8. Verify that the dashboard widget renders useful data without raw JSON dumps.",
+    "8. If the quoted widget request is not English, translate its intent before writing internal prompts, manifests, code comments, or utility instructions.",
+    "9. Verify that the dashboard widget renders useful data without raw JSON dumps.",
     "",
     matchedSources
       ? `Matched public actions:\n${matchedSources}`
