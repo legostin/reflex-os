@@ -4881,6 +4881,14 @@ type DashboardViewSpec = {
   showMeta: boolean;
 };
 
+type DashboardSourceBlueprint = {
+  actionId: string;
+  actionName: string;
+  resultKind: DashboardViewLayout;
+  fields: string[];
+  notes: string[];
+};
+
 type CustomDashboardWidget = {
   id: string;
   title: string;
@@ -5612,6 +5620,108 @@ function formatDashboardLabel(key: string): string {
     .trim();
   if (!spaced) return key;
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+const DASHBOARD_SOURCE_BLUEPRINT_STOP_WORDS = new Set([
+  "dashboard",
+  "summary",
+  "snapshot",
+  "status",
+  "stats",
+  "health",
+  "overview",
+  "today",
+  "items",
+  "item",
+  "list",
+  "table",
+  "metric",
+]);
+
+const DASHBOARD_SOURCE_BLUEPRINT_FIELDS: Record<DashboardViewLayout, string[]> = {
+  summary: ["summary", "metrics[]", "items[].title", "items[].status", "updated_at_ms"],
+  list: [
+    "items[].title",
+    "items[].status",
+    "items[].updated_at_ms",
+    "items[].summary",
+    "items[].source_url",
+  ],
+  table: [
+    "items[].title",
+    "items[].status",
+    "items[].updated_at_ms",
+    "items[].owner",
+    "items[].source_url",
+  ],
+  metric: ["value", "label", "unit", "trend", "updated_at_ms"],
+};
+
+function uniqueDashboardText(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const normalized = value?.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function dashboardSlugPart(value: string): string | null {
+  const slug = value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return slug.length >= 2 ? slug : null;
+}
+
+function buildDashboardSourceBlueprint(
+  spec: DashboardViewSpec,
+): DashboardSourceBlueprint {
+  const filterIds = spec.filters.map((filter) => filter.id);
+  const signalTokens = spec.includeTokens
+    .map(dashboardSlugPart)
+    .filter(
+      (token): token is string =>
+        !!token && !DASHBOARD_SOURCE_BLUEPRINT_STOP_WORDS.has(token),
+    )
+    .slice(0, 3);
+  const slugParts = uniqueDashboardText([
+    "dashboard",
+    ...signalTokens,
+    spec.layout,
+    ...filterIds,
+    "source",
+  ]).slice(0, 7);
+  const actionId =
+    slugParts.join("_").slice(0, 72).replace(/_+$/g, "") ||
+    "dashboard_source";
+  const filterFields = spec.filters.flatMap((filter) =>
+    filter.keyHints.slice(0, 3),
+  );
+  const fields = uniqueDashboardText([
+    ...DASHBOARD_SOURCE_BLUEPRINT_FIELDS[spec.layout],
+    ...filterFields,
+    "source_id",
+  ]).slice(0, 10);
+  const filterLabel =
+    filterIds.length > 0 ? ` with ${filterIds.join(", ")} signals` : "";
+  return {
+    actionId,
+    actionName: `Dashboard ${formatDashboardLabel(spec.layout)}${filterLabel}`,
+    resultKind: spec.layout,
+    fields,
+    notes: [
+      "public: true",
+      "no required params",
+      "safe automatic refresh",
+      "structured data only",
+      "derived from the current dashboard widget",
+    ],
+  };
 }
 
 function formatDashboardScalar(key: string, value: unknown): string {
@@ -6493,6 +6603,7 @@ function buildDashboardWidgetTaskPrompt(
   project: Project,
   widget: CustomDashboardWidget,
   spec: DashboardViewSpec,
+  blueprint: DashboardSourceBlueprint,
   sources: DashboardActionSource[],
 ): string {
   const linkedSources = sources
@@ -6512,6 +6623,13 @@ function buildDashboardWidgetTaskPrompt(
     `- User requested widget: ${widget.prompt}`,
     `- Widget title: ${widget.title}`,
     `Interpreted widget spec: layout=${spec.layout}, sort=${spec.sort}, size=${spec.size}, filters=${spec.filters.map((filter) => filter.id).join(", ") || "none"}.`,
+    "",
+    "Recommended source contract:",
+    `- Action id: ${blueprint.actionId}`,
+    `- Action name: ${blueprint.actionName}`,
+    `- Result kind: ${blueprint.resultKind}`,
+    `- Expected fields: ${blueprint.fields.join(", ")}`,
+    `- Contract notes: ${blueprint.notes.join("; ")}`,
     "",
     "No matching public action data currently exists for this widget, so the dashboard cannot render useful live data yet.",
     "",
@@ -6757,12 +6875,19 @@ function ProjectDashboard({
   const createWidgetSourceTask = async (
     widget: CustomDashboardWidget,
     spec: DashboardViewSpec,
+    blueprint: DashboardSourceBlueprint,
   ) => {
     if (creatingWidgetTaskId) return;
     setCreatingWidgetTaskId(widget.id);
     try {
       await onCreateTopic(
-        buildDashboardWidgetTaskPrompt(project, widget, spec, allActionSources),
+        buildDashboardWidgetTaskPrompt(
+          project,
+          widget,
+          spec,
+          blueprint,
+          allActionSources,
+        ),
         true,
       );
     } finally {
@@ -6817,6 +6942,7 @@ function ProjectDashboard({
         <div className="dashboard-custom-grid">
           {customWidgets.map((widget, widgetIndex) => {
             const spec = widget.spec ?? buildDashboardViewSpec(widget.prompt, widget.title);
+            const sourceBlueprint = buildDashboardSourceBlueprint(spec);
             const scored = matchDashboardSourcesForSpec(
               spec,
               allActionSources,
@@ -6941,11 +7067,43 @@ function ProjectDashboard({
                       </small>
                     )}
                     {!hasPendingSources && (
+                      <div className="dashboard-source-blueprint">
+                        <div className="dashboard-source-blueprint-head">
+                          <span>{t("dashboard.sourceBlueprintTitle")}</span>
+                          <code>{sourceBlueprint.actionId}</code>
+                        </div>
+                        <div className="dashboard-source-blueprint-meta">
+                          {t("dashboard.sourceBlueprintKind", {
+                            kind: t(`dashboard.layout.${sourceBlueprint.resultKind}`),
+                          })}
+                        </div>
+                        <div className="dashboard-source-blueprint-fields">
+                          <span>{t("dashboard.sourceBlueprintFields")}</span>
+                          <div className="dashboard-source-blueprint-chips">
+                            {sourceBlueprint.fields.map((field) => (
+                              <code
+                                key={field}
+                                className="dashboard-source-blueprint-chip"
+                              >
+                                {field}
+                              </code>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {!hasPendingSources && (
                       <button
                         type="button"
                         className="modal-btn modal-btn-primary"
                         disabled={creatingWidgetTaskId === widget.id}
-                        onClick={() => void createWidgetSourceTask(widget, spec)}
+                        onClick={() =>
+                          void createWidgetSourceTask(
+                            widget,
+                            spec,
+                            sourceBlueprint,
+                          )
+                        }
                       >
                         {creatingWidgetTaskId === widget.id
                           ? t("dashboard.creatingSourceTask")

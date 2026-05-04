@@ -345,6 +345,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "dashboard.noSource": "No matching public action data yet.",
     "dashboard.noSourceHint":
       "Ask the agent to inspect utilities, look for an open-source/API source, and add a safe public action for this widget.",
+    "dashboard.sourceBlueprintTitle": "Expected source",
+    "dashboard.sourceBlueprintKind": "Result: {kind}",
+    "dashboard.sourceBlueprintFields": "Fields",
     "dashboard.createSourceTask": "Plan data source",
     "dashboard.creatingSourceTask": "Creating task...",
     "project.linkedUtilities": "Linked utilities",
@@ -1154,6 +1157,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "dashboard.noSource": "Пока нет подходящих данных из public actions.",
     "dashboard.noSourceHint":
       "Поручи агенту проверить утилиты, найти open-source/API источник и добавить безопасный public action под этот виджет.",
+    "dashboard.sourceBlueprintTitle": "Ожидаемый источник",
+    "dashboard.sourceBlueprintKind": "Результат: {kind}",
+    "dashboard.sourceBlueprintFields": "Поля",
     "dashboard.createSourceTask": "Продумать источник",
     "dashboard.creatingSourceTask": "Создаем задачу...",
     "project.linkedUtilities": "Привязанные утилиты",

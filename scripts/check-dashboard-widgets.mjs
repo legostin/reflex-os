@@ -56,6 +56,7 @@ requireIncludes(failures, dashboardBlock, "Dashboard view spec contract is incom
   "type DashboardWidgetSize =",
   "type DashboardValueFilter =",
   "type DashboardViewSpec =",
+  "type DashboardSourceBlueprint =",
   "filters: DashboardValueFilter[];",
   "sort: DashboardSortMode;",
   "size: DashboardWidgetSize;",
@@ -74,6 +75,7 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "function DashboardWidgetSpecPreview(",
   "function matchDashboardSourcesForSpec(",
   "function dashboardSafeSearchText(",
+  "function buildDashboardSourceBlueprint(",
   "dashboard.widgetMeta",
   "const saveEditedCustomWidget =",
   "const startEditCustomWidget =",
@@ -81,6 +83,7 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "function buildDashboardWidgetTaskPrompt(",
   "const createWidgetSourceTask =",
   "dashboard.noSourceHint",
+  "dashboard.sourceBlueprintTitle",
   "dashboard.createSourceTask",
 ]);
 
@@ -123,6 +126,9 @@ for (const key of [
   "dashboard.moveWidgetDown",
   "dashboard.filteredItemsCount",
   "dashboard.noSourceHint",
+  "dashboard.sourceBlueprintTitle",
+  "dashboard.sourceBlueprintKind",
+  "dashboard.sourceBlueprintFields",
   "dashboard.createSourceTask",
   "dashboard.creatingSourceTask",
   "dashboard.size.compact",
@@ -142,6 +148,8 @@ requireIncludes(failures, chatCss, "Dashboard widget preview styles are incomple
   ".dashboard-custom-actions",
   ".dashboard-composite-value",
   ".dashboard-empty-hint",
+  ".dashboard-source-blueprint",
+  ".dashboard-source-blueprint-chip",
 ]);
 
 if (/allActionSources\.slice\(0,\s*1\)/.test(dashboardBlock)) {
@@ -195,6 +203,13 @@ requirePattern(
   dashboardBlock,
   "Dashboard source task prompt must include bridge or MCP integration work.",
   /bridge\/MCP layer/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard source task prompt must include the inferred source contract.",
+  /Recommended source contract[\s\S]+Expected fields/,
 );
 
 const domainLeakPattern = /\b(OpenF1|telegram|Telegram|race)\b|гонк/;

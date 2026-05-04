@@ -1588,6 +1588,56 @@
   line-height: 1.45;
 }
 
+.dashboard-source-blueprint {
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+  padding: 10px 0 2px;
+}
+
+.dashboard-source-blueprint-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: rgba(235, 238, 245, 0.88);
+  font-weight: 650;
+}
+
+.dashboard-source-blueprint-head code {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(210, 220, 245, 0.94);
+  font-size: 11px;
+}
+
+.dashboard-source-blueprint-meta,
+.dashboard-source-blueprint-fields > span {
+  color: rgba(180, 185, 195, 0.72);
+}
+
+.dashboard-source-blueprint-fields {
+  display: grid;
+  gap: 6px;
+}
+
+.dashboard-source-blueprint-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dashboard-source-blueprint-chip {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(205, 212, 225, 0.9);
+  font-size: 11px;
+}
+
 .dashboard-empty-action .modal-btn {
   width: fit-content;
 }
