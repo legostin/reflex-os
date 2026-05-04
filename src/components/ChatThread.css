@@ -1686,6 +1686,12 @@
   min-width: 0;
 }
 
+.dashboard-custom-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
 .dashboard-action-source,
 .dashboard-action-refresh {
   border: 0;
@@ -1734,6 +1740,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dashboard-widget-editor {
+  background: rgba(0, 0, 0, 0.11);
 }
 
 .dashboard-custom-sources {

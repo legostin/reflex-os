@@ -5499,13 +5499,30 @@ function dashboardSourceScoreForSpec(
   return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
 }
 
-function customWidgetSourceScore(
-  widget: CustomDashboardWidget,
-  source: DashboardActionSource,
-  record?: DashboardRecord,
-): number {
-  const spec = widget.spec ?? buildDashboardViewSpec(widget.prompt);
-  return dashboardSourceScoreForSpec(spec, source, record);
+type DashboardSourceMatch = {
+  source: DashboardActionSource;
+  key: string;
+  score: number;
+};
+
+function matchDashboardSourcesForSpec(
+  spec: DashboardViewSpec,
+  sources: DashboardActionSource[],
+  records: Record<string, DashboardRecord>,
+  limit: number,
+): DashboardSourceMatch[] {
+  return sources
+    .map((source) => {
+      const key = dashboardSourceKey(source);
+      return {
+        source,
+        key,
+        score: dashboardSourceScoreForSpec(spec, source, records[key]),
+      };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
 function uniqueDashboardSources(
@@ -6347,6 +6364,55 @@ function DashboardCompositeValueView({
   );
 }
 
+function DashboardWidgetSpecPreview({
+  spec,
+  matches,
+}: {
+  spec: DashboardViewSpec;
+  matches: DashboardSourceMatch[];
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="dashboard-widget-preview">
+      <div className="dashboard-widget-preview-head">
+        <span>{t("dashboard.previewTitle")}</span>
+        <strong>{t(`dashboard.layout.${spec.layout}`)}</strong>
+      </div>
+      <div className="dashboard-widget-preview-row">
+        <span>{t("dashboard.previewSort")}</span>
+        <span>{t(`dashboard.sort.${spec.sort}`)}</span>
+      </div>
+      <div className="dashboard-widget-preview-row">
+        <span>{t("dashboard.previewFilters")}</span>
+        <span>
+          {spec.filters.length > 0
+            ? spec.filters
+                .map((filter) => t(`dashboard.filter.${filter.id}`))
+                .join(", ")
+            : t("dashboard.previewNoFilters")}
+        </span>
+      </div>
+      <div className="dashboard-widget-preview-matches">
+        <span>{t("dashboard.previewMatches")}</span>
+        {matches.length > 0 ? (
+          <div className="dashboard-widget-preview-chips">
+            {matches.map(({ source, key }) => (
+              <span key={key} className="dashboard-widget-preview-chip">
+                {source.appIcon ?? "U"} {source.appName} ·{" "}
+                {source.action.name || source.action.id}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="dashboard-widget-preview-empty">
+            {t("dashboard.previewNoMatches")}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ProjectDashboard({
   project,
   apps,
@@ -6401,6 +6467,8 @@ function ProjectDashboard({
   );
   const [addingWidget, setAddingWidget] = useState(false);
   const [widgetPrompt, setWidgetPrompt] = useState("");
+  const [editingWidgetId, setEditingWidgetId] = useState<string | null>(null);
+  const [editingWidgetPrompt, setEditingWidgetPrompt] = useState("");
   const draftWidgetSpec = useMemo(
     () =>
       widgetPrompt.trim()
@@ -6410,19 +6478,12 @@ function ProjectDashboard({
   );
   const draftWidgetMatches = useMemo(() => {
     if (!draftWidgetSpec) return [];
-    return allActionSources
-      .map((source) => ({
-        source,
-        key: dashboardSourceKey(source),
-        score: dashboardSourceScoreForSpec(
-          draftWidgetSpec,
-          source,
-          records[dashboardSourceKey(source)],
-        ),
-      }))
-      .filter((item) => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 4);
+    return matchDashboardSourcesForSpec(
+      draftWidgetSpec,
+      allActionSources,
+      records,
+      4,
+    );
   }, [allActionSources, draftWidgetSpec, records]);
   const activeActionSources = useMemo(
     () =>
@@ -6438,6 +6499,8 @@ function ProjectDashboard({
     setCustomWidgets(readCustomDashboardWidgets(project.id));
     setAddingWidget(false);
     setWidgetPrompt("");
+    setEditingWidgetId(null);
+    setEditingWidgetPrompt("");
   }, [project.id]);
 
   useEffect(() => {
@@ -6508,6 +6571,40 @@ function ProjectDashboard({
     });
     setWidgetPrompt("");
     setAddingWidget(false);
+    setEditingWidgetId(null);
+    setEditingWidgetPrompt("");
+  };
+
+  const startEditCustomWidget = (widget: CustomDashboardWidget) => {
+    setAddingWidget(false);
+    setWidgetPrompt("");
+    setEditingWidgetId(widget.id);
+    setEditingWidgetPrompt(widget.prompt);
+  };
+
+  const cancelEditCustomWidget = () => {
+    setEditingWidgetId(null);
+    setEditingWidgetPrompt("");
+  };
+
+  const saveEditedCustomWidget = (id: string) => {
+    const prompt = editingWidgetPrompt.trim();
+    if (!prompt) return;
+    setCustomWidgets((prev) => {
+      const next = prev.map((widget) =>
+        widget.id === id
+          ? {
+              ...widget,
+              title: titleFromWidgetPrompt(prompt),
+              prompt,
+              spec: buildDashboardViewSpec(prompt),
+            }
+          : widget,
+      );
+      writeCustomDashboardWidgets(project.id, next);
+      return next;
+    });
+    cancelEditCustomWidget();
   };
 
   const removeCustomWidget = (id: string) => {
@@ -6516,6 +6613,7 @@ function ProjectDashboard({
       writeCustomDashboardWidgets(project.id, next);
       return next;
     });
+    if (editingWidgetId === id) cancelEditCustomWidget();
   };
 
   return (
@@ -6525,7 +6623,10 @@ function ProjectDashboard({
         <button
           type="button"
           className="apps-create-btn"
-          onClick={() => setAddingWidget((open) => !open)}
+          onClick={() => {
+            setAddingWidget((open) => !open);
+            cancelEditCustomWidget();
+          }}
         >
           {addingWidget ? t("dashboard.cancelAdd") : t("dashboard.addWidget")}
         </button>
@@ -6541,43 +6642,10 @@ function ProjectDashboard({
             autoFocus
           />
           {draftWidgetSpec && (
-            <div className="dashboard-widget-preview">
-              <div className="dashboard-widget-preview-head">
-                <span>{t("dashboard.previewTitle")}</span>
-                <strong>{t(`dashboard.layout.${draftWidgetSpec.layout}`)}</strong>
-              </div>
-              <div className="dashboard-widget-preview-row">
-                <span>{t("dashboard.previewSort")}</span>
-                <span>{t(`dashboard.sort.${draftWidgetSpec.sort}`)}</span>
-              </div>
-              <div className="dashboard-widget-preview-row">
-                <span>{t("dashboard.previewFilters")}</span>
-                <span>
-                  {draftWidgetSpec.filters.length > 0
-                    ? draftWidgetSpec.filters
-                        .map((filter) => t(`dashboard.filter.${filter.id}`))
-                        .join(", ")
-                    : t("dashboard.previewNoFilters")}
-                </span>
-              </div>
-              <div className="dashboard-widget-preview-matches">
-                <span>{t("dashboard.previewMatches")}</span>
-                {draftWidgetMatches.length > 0 ? (
-                  <div className="dashboard-widget-preview-chips">
-                    {draftWidgetMatches.map(({ source, key }) => (
-                      <span key={key} className="dashboard-widget-preview-chip">
-                        {source.appIcon ?? "U"} {source.appName} ·{" "}
-                        {source.action.name || source.action.id}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="dashboard-widget-preview-empty">
-                    {t("dashboard.previewNoMatches")}
-                  </span>
-                )}
-              </div>
-            </div>
+            <DashboardWidgetSpecPreview
+              spec={draftWidgetSpec}
+              matches={draftWidgetMatches}
+            />
           )}
           <div className="dashboard-widget-composer-actions">
             <button
@@ -6595,19 +6663,19 @@ function ProjectDashboard({
         <div className="dashboard-custom-grid">
           {customWidgets.map((widget) => {
             const spec = widget.spec ?? buildDashboardViewSpec(widget.prompt, widget.title);
-            const scored = allActionSources
-              .map((source) => ({
-                source,
-                key: dashboardSourceKey(source),
-                score: customWidgetSourceScore(
-                  widget,
-                  source,
-                  records[dashboardSourceKey(source)],
-                ),
-              }))
-              .filter((item) => item.score > 0)
-              .sort((a, b) => b.score - a.score)
-              .slice(0, 3);
+            const scored = matchDashboardSourcesForSpec(
+              spec,
+              allActionSources,
+              records,
+              3,
+            );
+            const isEditing = editingWidgetId === widget.id;
+            const editSpec = isEditing && editingWidgetPrompt.trim()
+              ? buildDashboardViewSpec(editingWidgetPrompt.trim())
+              : null;
+            const editMatches = editSpec
+              ? matchDashboardSourcesForSpec(editSpec, allActionSources, records, 4)
+              : [];
             const hasPendingSources = allActionSources.some((source) => {
               const record = records[dashboardSourceKey(source)];
               return !record || record.status === "loading";
@@ -6619,16 +6687,60 @@ function ProjectDashboard({
                     <div className="dashboard-action-name">{widget.title}</div>
                     <div className="dashboard-widget-prompt">{widget.prompt}</div>
                   </div>
-                  <button
-                    type="button"
-                    className="dashboard-action-refresh"
-                    onClick={() => removeCustomWidget(widget.id)}
-                    title={t("dashboard.removeWidget")}
-                  >
-                    ×
-                  </button>
+                  <div className="dashboard-custom-actions">
+                    <button
+                      type="button"
+                      className="dashboard-action-refresh"
+                      onClick={() => startEditCustomWidget(widget)}
+                      title={t("dashboard.editWidget")}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-action-refresh"
+                      onClick={() => removeCustomWidget(widget.id)}
+                      title={t("dashboard.removeWidget")}
+                    >
+                      ×
+                    </button>
+                  </div>
                 </header>
-                {scored.length === 0 ? (
+                {isEditing ? (
+                  <div className="dashboard-widget-composer dashboard-widget-editor">
+                    <textarea
+                      className="modal-input"
+                      rows={3}
+                      value={editingWidgetPrompt}
+                      onChange={(e) => setEditingWidgetPrompt(e.currentTarget.value)}
+                      placeholder={t("dashboard.addPlaceholder")}
+                      autoFocus
+                    />
+                    {editSpec && (
+                      <DashboardWidgetSpecPreview
+                        spec={editSpec}
+                        matches={editMatches}
+                      />
+                    )}
+                    <div className="dashboard-widget-composer-actions">
+                      <button
+                        type="button"
+                        className="modal-btn"
+                        onClick={cancelEditCustomWidget}
+                      >
+                        {t("dashboard.cancelAdd")}
+                      </button>
+                      <button
+                        type="button"
+                        className="modal-btn modal-btn-primary"
+                        disabled={!editingWidgetPrompt.trim()}
+                        onClick={() => saveEditedCustomWidget(widget.id)}
+                      >
+                        {t("dashboard.saveChanges")}
+                      </button>
+                    </div>
+                  </div>
+                ) : scored.length === 0 ? (
                   <div className="dashboard-empty">
                     {hasPendingSources
                       ? t("dashboard.matchingData")
