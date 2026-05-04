@@ -6691,6 +6691,19 @@ function ProjectDashboard({
                     <button
                       type="button"
                       className="dashboard-action-refresh"
+                      onClick={() =>
+                        void Promise.all(
+                          scored.map(({ source }) => refreshOne(source)),
+                        )
+                      }
+                      disabled={scored.length === 0}
+                      title={t("dashboard.refreshWidget")}
+                    >
+                      ↻
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-action-refresh"
                       onClick={() => startEditCustomWidget(widget)}
                       title={t("dashboard.editWidget")}
                     >

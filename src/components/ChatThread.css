@@ -1727,6 +1727,11 @@
   background: rgba(255, 255, 255, 0.09);
 }
 
+.dashboard-action-refresh:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
 .dashboard-action-name {
   color: rgba(245, 245, 247, 0.92);
   font-weight: 700;
