@@ -119,12 +119,13 @@ Build the utility, copy the resulting `dist/` into the app folder as
 
 | Layer | Pick this when… |
 |---|---|
-| `reflexInvoke(method, params)` | You need a one-off bridge call and there is no typed wrapper yet. |
-| `bridge.<area>` (`memory`, `topics`, `events`, `agent`, `storage`, `fs`, `projectFiles`, `manifest`, `actions`, `widgets`, `scheduler`, `permissions`, `network`, `system`, `projects`) | Anywhere you would have written `window.reflexMemorySave(...)` etc. — the wrappers add types and inherit host defaults. |
-| `useMemoryNotes`, `useStorage`, `useEvent`, `useTopics`, `useAgentStream`, `useSystemContext`, `useBridgeCatalog`, `useProjects`, `useManifest` | Reactive state. Each wraps a bridge area + `useAsync` cache. |
-| Primitives: `Button`, `Card`, `Section`, `Field`, `Input`, `Textarea`, `Select`, `Badge`, `EmptyState`, `Toolbar`, `StatusLine` | Anywhere you would have hand-rolled a `<button>` or `<input>`. |
+| `reflexInvoke(method, params)` | Last resort. The framework wraps **100% of the host bridge** — if you reach for raw invoke you almost certainly missed a typed client. |
+| `bridge.<area>` (`memory`, `topics`, `events`, `agent`, `storage`, `fs`, `projectFiles`, `manifest`, `actions`, `widgets`, `scheduler`, `permissions`, `network`, `system`, `projects`, `apps`, `browser`, `integration`, `mcp`, `skills`, `dialog`) | Anywhere you would have written `window.reflexMemorySave(...)` etc. — wrappers add types and inherit host defaults. |
+| `useMemoryNotes`, `useStorage`, `useEvent`, `useTopics`, `useAgentStream`, `useSystemContext`, `useBridgeCatalog`, `useProjects`, `useManifest`, `useApps`, `useApp`, `useAppActions`, `useAppDiff`, `useAppServer`, `useAppsTrash`, `useBrowser`, `useIntegrationProfile`, `useIntegrationCatalog`, `useIntegrationMcpStatus`, `useMcpServers`, `useSkills`, `useScheduler`, `useSchedulerRuns`, `useSchedulerStats`, `useFs`, `useProjectFiles`, `useNotify`, `useClipboard`, `useDialog`, `usePermissions` | Reactive state. Each wraps a bridge area + `useAsync` cache. |
+| Primitives: `Button`, `Card`, `Section`, `Field`, `Input`, `Textarea`, `Select`, `Badge`, `EmptyState`, `Toolbar`, `StatusLine`, `Tabs`/`Tab`/`TabList`/`TabPanel`, `JsonView`, `Modal` + `useModal`, `ToastProvider` + `useToast`, `Spinner`, `Skeleton`, `DataTable` | Anywhere you would have hand-rolled a `<button>`, `<pre>{JSON.stringify(...)}</pre>`, modal, toast, or table. |
 | Layout: `AppShell`, `SplitGrid` | Top-level utility chrome. Mirrors built-in apps. |
-| Bricks: `MemoryComposer`, `MemoryNoteList`, `TopicsList`, `EventLog`, `StorageBrowser`, `AgentChat`, `BridgeMethodPicker`, `ActionRunner`, `PermissionRequestBanner`, `MarkdownView`, `ProjectPicker` | High-level features. Compose them; do NOT re-implement. |
+| Bricks (memory/topics/events): `MemoryComposer`, `MemoryNoteList`, `TopicsList`, `EventLog`, `StorageBrowser`, `AgentChat`, `BridgeMethodPicker`, `ActionRunner`, `PermissionRequestBanner`, `MarkdownView`, `ProjectPicker` | High-level features. Compose them; do NOT re-implement. |
+| Bricks (apps/browser/scheduler/integration/skills/mcp/fs/dialog/log): `AppsList`, `AppDiffView`, `AppRevisionToolbar`, `AppServerControls`, `BrowserTabBar`, `BrowserSnapshotView`, `SchedulesList`, `SchedulerRunsLog`, `SchedulerStatsCard`, `IntegrationProfileCard`, `SkillsManager`, `McpServerList`, `FsBrowser`, `FilePicker`, `NotifyButton`, `LogViewer` | Same rule. Pull these in instead of re-writing the dashboard, diff viewer, log tail, or server-status panel inline. |
 
 ## Standardised flows
 
@@ -212,8 +213,13 @@ the user sees a single in-place approval dialog. Use
 
 - Do not import `tailwindcss` from this framework — it is a peer. Pin it in
   the utility itself.
-- Do not call `window.reflexMemorySave`/`reflexMemoryList` directly in new
-  code. Always go through `bridge.memory.*` or the hooks.
+- Do not call `window.reflexMemorySave`/`reflexMemoryList`/`reflexAppsInvoke`
+  /`reflexBrowser*`/`reflexIntegration*` directly in new code. Every one of
+  those host helpers has a typed wrapper in `bridge.*` or a hook — using the
+  raw window helper means you skipped the type checks the framework provides.
+- Do not call `bridge.actions.invoke` for cross-app calls — it is a
+  `@deprecated` re-export. Use `bridge.apps.invoke` (or `useApp` /
+  `useAppActions`) instead.
 - Do not write a custom `postMessage` channel to the parent. The framework's
   `reflexInvoke` already handles request/response correlation.
 - Do not gate features on `navigator.language` ad-hoc. The host enforces
@@ -221,6 +227,9 @@ the user sees a single in-place approval dialog. Use
   `prompt`/`description` fields English while UI labels can be localised.
 - Do not store secrets in `storage.*` without explicit user consent — it is
   written to disk under the app folder.
+- Do not roll a bespoke modal, toast, JSON dumper, or data table. `Modal`,
+  `ToastProvider`/`useToast`, `JsonView`, and `DataTable` are already
+  shipped — adding a second one fragments the look-and-feel.
 
 ## Output expectations
 
