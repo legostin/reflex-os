@@ -6616,6 +6616,19 @@ function ProjectDashboard({
     if (editingWidgetId === id) cancelEditCustomWidget();
   };
 
+  const moveCustomWidget = (id: string, direction: -1 | 1) => {
+    setCustomWidgets((prev) => {
+      const index = prev.findIndex((widget) => widget.id === id);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= prev.length) return prev;
+      const next = [...prev];
+      const [widget] = next.splice(index, 1);
+      next.splice(nextIndex, 0, widget);
+      writeCustomDashboardWidgets(project.id, next);
+      return next;
+    });
+  };
+
   return (
     <section className="project-dashboard">
       <div className="section-head">
@@ -6661,7 +6674,7 @@ function ProjectDashboard({
       )}
       {customWidgets.length > 0 && (
         <div className="dashboard-custom-grid">
-          {customWidgets.map((widget) => {
+          {customWidgets.map((widget, widgetIndex) => {
             const spec = widget.spec ?? buildDashboardViewSpec(widget.prompt, widget.title);
             const scored = matchDashboardSourcesForSpec(
               spec,
@@ -6688,6 +6701,24 @@ function ProjectDashboard({
                     <div className="dashboard-widget-prompt">{widget.prompt}</div>
                   </div>
                   <div className="dashboard-custom-actions">
+                    <button
+                      type="button"
+                      className="dashboard-action-refresh"
+                      onClick={() => moveCustomWidget(widget.id, -1)}
+                      disabled={widgetIndex === 0}
+                      title={t("dashboard.moveWidgetUp")}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-action-refresh"
+                      onClick={() => moveCustomWidget(widget.id, 1)}
+                      disabled={widgetIndex === customWidgets.length - 1}
+                      title={t("dashboard.moveWidgetDown")}
+                    >
+                      ↓
+                    </button>
                     <button
                       type="button"
                       className="dashboard-action-refresh"

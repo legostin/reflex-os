@@ -63,6 +63,7 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "function matchDashboardSourcesForSpec(",
   "const saveEditedCustomWidget =",
   "const startEditCustomWidget =",
+  "const moveCustomWidget =",
 ]);
 
 for (const filterId of [
@@ -98,6 +99,8 @@ for (const key of [
   "dashboard.sourceColumn",
   "dashboard.saveChanges",
   "dashboard.editWidget",
+  "dashboard.moveWidgetUp",
+  "dashboard.moveWidgetDown",
   "dashboard.filteredItemsCount",
 ]) {
   const count = [...i18n.matchAll(new RegExp(`"${key}"`, "g"))].length;
