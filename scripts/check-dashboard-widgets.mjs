@@ -97,9 +97,11 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "const pinActionAsWidget =",
   "function buildDashboardWidgetTaskPrompt(",
   "function buildDashboardWidgetRepairPrompt(",
+  "function buildProjectDashboardBootstrapPrompt(",
   "const createWidgetSourceTask =",
   "const createWidgetRepairTask =",
   "const createActionSourceRepairTask =",
+  "const createDashboardBootstrapTask =",
   "dashboard.noSourceHint",
   "dashboard.sourceBlueprintTitle",
   "dashboard.repairSourceTask",
@@ -139,6 +141,9 @@ for (const key of [
   "dashboard.previewMatches",
   "dashboard.previewMatchSignals",
   "dashboard.previewMatchScore",
+  "dashboard.emptyHint",
+  "dashboard.emptyAction",
+  "dashboard.emptyPlanning",
   "dashboard.sourceColumn",
   "dashboard.widgetMeta",
   "dashboard.pinWidget",
@@ -300,6 +305,20 @@ requirePattern(
   dashboardBlock,
   "Dashboard repair prompt must target reusable utility output instead of UI heuristics.",
   /Repair the matched utility integration[\s\S]+Fix the reusable utility output/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Empty dashboards must be actionable and create a bootstrap agent task.",
+  /const createDashboardBootstrapTask =[\s\S]+dashboard\.emptyAction/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard bootstrap prompt must ask for dashboard-ready public no-arg actions.",
+  /Dashboard bootstrap task[\s\S]+public: true actions with no required params/,
 );
 
 const domainLeakPattern = /\b(OpenF1|telegram|Telegram|race)\b|гонк/;

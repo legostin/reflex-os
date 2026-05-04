@@ -4909,6 +4909,7 @@ const DASHBOARD_ACTION_PATTERN =
   /\b(dashboard|summary|snapshot|status|stats|health|overview|today)\b/i;
 const DASHBOARD_REFRESH_MS = 60_000;
 const DASHBOARD_CACHE_TTL_MS = 55_000;
+const DASHBOARD_BOOTSTRAP_TASK_ID = "__dashboard_bootstrap__";
 const DASHBOARD_WIDGET_SIZE_ORDER: DashboardWidgetSize[] = [
   "compact",
   "normal",
@@ -6912,6 +6913,65 @@ function buildDashboardWidgetRepairPrompt(
     .join("\n");
 }
 
+function buildProjectDashboardBootstrapPrompt(
+  project: Project,
+  linkedApps: AppManifest[],
+  publicSources: DashboardActionSource[],
+): string {
+  const linkedAppLines = linkedApps
+    .slice(0, 30)
+    .map((app) => {
+      const publicActions = (app.actions ?? [])
+        .filter((action) => action.public === true && !actionHasRequiredParams(action))
+        .map((action) => action.name || action.id)
+        .slice(0, 8)
+        .join(", ");
+      return [
+        `- ${app.name} (${app.id}): ${app.description || "No description"}`,
+        publicActions ? `  public no-arg actions: ${publicActions}` : null,
+      ]
+        .filter((line): line is string => line != null)
+        .join("\n");
+    })
+    .join("\n");
+  const publicSourceLines = publicSources
+    .slice(0, 30)
+    .map(
+      (source) =>
+        `- ${source.appName} (${source.appId}) / ${source.action.name || source.action.id} (${source.action.id})`,
+    )
+    .join("\n");
+  return [
+    `Project: ${project.name}`,
+    `Project ID: ${project.id}`,
+    `Project root: ${project.root}`,
+    project.description ? `Project description: ${project.description}` : null,
+    "",
+    "Dashboard bootstrap task:",
+    "The project dashboard currently has no custom widgets and no dashboard-ready public no-arg actions.",
+    "",
+    "Create the first useful dashboard sources:",
+    "1. Inspect the project root, project description, linked utilities, app manifests, and available bridge/MCP conventions.",
+    "2. Identify 3 to 5 high-signal operational dashboard widgets that would help this project immediately.",
+    "3. Reuse or extend linked utilities when possible. If none fit, investigate suitable open-source repositories, public APIs, or reusable packages that can be wrapped.",
+    "4. Implement or update utilities so they expose public: true actions with no required params and dashboard-ready structured outputs.",
+    "5. Prefer generic reusable utility outputs over dashboard-specific UI heuristics or hard-coded demo data.",
+    "6. If credentials, network access, runtime.server.listen, or another permission is required, request it explicitly and return setup_required until configured.",
+    "7. Keep internal prompts, manifest action descriptions, generated utility instructions, and implementation comments in English. User-facing UI may remain localized.",
+    "8. Verify that the project dashboard discovers and renders the new public actions without raw JSON dumps.",
+    "",
+    linkedAppLines
+      ? `Linked utilities:\n${linkedAppLines}`
+      : "No utilities are linked to this project yet.",
+    "",
+    publicSourceLines
+      ? `Existing public no-arg actions:\n${publicSourceLines}`
+      : "There are no public no-arg utility actions available yet.",
+  ]
+    .filter((line): line is string => line != null)
+    .join("\n");
+}
+
 function ProjectDashboard({
   project,
   apps,
@@ -6925,6 +6985,10 @@ function ProjectDashboard({
 }) {
   const { t } = useI18n();
   const linkedIds = useMemo(() => new Set(project.apps ?? []), [project.apps]);
+  const linkedApps = useMemo(
+    () => apps.filter((app) => linkedIds.has(app.id)),
+    [apps, linkedIds],
+  );
   const allActionSources = useMemo<DashboardActionSource[]>(() => {
     const out: DashboardActionSource[] = [];
     for (const app of apps) {
@@ -7302,6 +7366,23 @@ function ProjectDashboard({
     }
   };
 
+  const createDashboardBootstrapTask = async () => {
+    if (creatingWidgetTaskId) return;
+    setCreatingWidgetTaskId(DASHBOARD_BOOTSTRAP_TASK_ID);
+    try {
+      await onCreateTopic(
+        buildProjectDashboardBootstrapPrompt(
+          project,
+          linkedApps,
+          allActionSources,
+        ),
+        true,
+      );
+    } finally {
+      setCreatingWidgetTaskId(null);
+    }
+  };
+
   return (
     <section className="project-dashboard">
       <div className="section-head">
@@ -7591,7 +7672,22 @@ function ProjectDashboard({
       )}
       {actionSources.length === 0 ? (
         customWidgets.length === 0 && (
-        <div className="dashboard-empty">{t("dashboard.empty")}</div>
+          <div className="dashboard-empty dashboard-empty-action">
+            <span>{t("dashboard.empty")}</span>
+            <small className="dashboard-empty-hint">
+              {t("dashboard.emptyHint")}
+            </small>
+            <button
+              type="button"
+              className="modal-btn modal-btn-primary"
+              disabled={creatingWidgetTaskId !== null}
+              onClick={() => void createDashboardBootstrapTask()}
+            >
+              {creatingWidgetTaskId === DASHBOARD_BOOTSTRAP_TASK_ID
+                ? t("dashboard.emptyPlanning")
+                : t("dashboard.emptyAction")}
+            </button>
+          </div>
         )
       ) : (
         <div className="dashboard-action-grid">

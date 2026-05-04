@@ -290,6 +290,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "project.dashboard": "Dashboard",
     "dashboard.empty":
       "No cached dashboard summaries yet. Linked utilities can expose public summary/status actions; Reflex refreshes and formats them here.",
+    "dashboard.emptyHint":
+      "Ask the agent to inspect this project and create the first dashboard-ready public actions.",
+    "dashboard.emptyAction": "Plan dashboard sources",
+    "dashboard.emptyPlanning": "Creating task...",
     "dashboard.loading": "Refreshing...",
     "dashboard.error": "Refresh failed.",
     "dashboard.emptyValue": "No value.",
@@ -1114,6 +1118,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "project.dashboard": "Дашборд",
     "dashboard.empty":
       "Кешированных сводок пока нет. Привязанные утилиты могут отдавать public summary/status actions; Reflex обновит и отформатирует их здесь.",
+    "dashboard.emptyHint":
+      "Поручи агенту изучить проект и создать первые dashboard-ready public actions.",
+    "dashboard.emptyAction": "Продумать источники",
+    "dashboard.emptyPlanning": "Создаем задачу...",
     "dashboard.loading": "Обновление...",
     "dashboard.error": "Не удалось обновить.",
     "dashboard.emptyValue": "Нет значения.",
