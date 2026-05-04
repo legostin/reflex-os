@@ -42,6 +42,11 @@ const valueRenderBlock = sliceBetween(
   "function DashboardValueView({",
   "function ProjectDashboard(",
 );
+const recordSearchBlock = sliceBetween(
+  chatThread,
+  "function dashboardSafeSearchText(",
+  "function dashboardSourceScoreForSpec(",
+);
 
 const failures = [];
 
@@ -68,6 +73,7 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "function aggregateDashboardTable(",
   "function DashboardWidgetSpecPreview(",
   "function matchDashboardSourcesForSpec(",
+  "function dashboardSafeSearchText(",
   "const saveEditedCustomWidget =",
   "const startEditCustomWidget =",
   "const moveCustomWidget =",
@@ -135,6 +141,16 @@ if (/allActionSources\.slice\(0,\s*1\)/.test(dashboardBlock)) {
 if (/JSON\.stringify|previewJsonValue/.test(valueRenderBlock)) {
   failures.push("Dashboard value renderer must not display raw JSON dumps.");
 }
+
+if (/JSON\.stringify/.test(recordSearchBlock)) {
+  failures.push("Dashboard source matching must not stringify raw records.");
+}
+requirePattern(
+  failures,
+  recordSearchBlock,
+  "Dashboard source matching must skip secret-bearing keys.",
+  /DASHBOARD_SECRET_KEY_PATTERNS/,
+);
 
 requirePattern(
   failures,

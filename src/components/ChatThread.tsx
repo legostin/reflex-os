@@ -5521,13 +5521,30 @@ function dashboardSourceSearchText(source: DashboardActionSource): string {
     .toLowerCase();
 }
 
+function dashboardSafeSearchText(value: unknown, depth = 0): string {
+  if (value == null || depth > 4) return "";
+  if (typeof value !== "object") return String(value).toLowerCase();
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, 60)
+      .map((item) => dashboardSafeSearchText(item, depth + 1))
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (!isJsonObject(value)) return "";
+  return Object.entries(value)
+    .slice(0, 100)
+    .flatMap(([key, item]) => {
+      if (dashboardKeyMatches(key, DASHBOARD_SECRET_KEY_PATTERNS)) return [];
+      return [key.toLowerCase(), dashboardSafeSearchText(item, depth + 1)];
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
 function dashboardRecordSearchText(record?: DashboardRecord): string {
   if (!record) return "";
-  try {
-    return JSON.stringify(record.value ?? record.preview ?? "").toLowerCase();
-  } catch {
-    return String(record.preview ?? "").toLowerCase();
-  }
+  return dashboardSafeSearchText(record.value ?? record.preview ?? "");
 }
 
 function dashboardSourceScoreForSpec(
