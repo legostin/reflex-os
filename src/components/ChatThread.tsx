@@ -5520,6 +5520,20 @@ function inferDashboardSort(prompt: string, tokens: string[]): DashboardSortMode
   return "relevance";
 }
 
+function clampDashboardMaxItems(value: number): number {
+  return Math.max(1, Math.min(20, value));
+}
+
+function inferDashboardMaxItems(prompt: string): number {
+  const explicit =
+    prompt.match(/\b(?:top|first|last|latest|recent|limit|show)\s+(\d{1,2})\b/i) ??
+    prompt.match(/\b(\d{1,2})\s+(?:items?|rows?|events?|tasks?|issues?|jobs?)\b/i) ??
+    prompt.match(/(?:топ|первые|последние|последних|показать|лимит)\s+(\d{1,2})/iu) ??
+    prompt.match(/(\d{1,2})\s+(?:элемент|элемента|элементов|строк|строки|событ|задач)/iu);
+  const value = explicit?.[1] ? Number(explicit[1]) : NaN;
+  return Number.isFinite(value) ? clampDashboardMaxItems(value) : 5;
+}
+
 function shouldShowDashboardMeta(prompt: string, tokens: string[]): boolean {
   const lower = prompt.toLowerCase();
   return (
@@ -5552,7 +5566,7 @@ function buildDashboardViewSpec(
     layout,
     sort: inferDashboardSort(prompt, tokens),
     size: inferDashboardSize(prompt, tokens, layout),
-    maxItems: 5,
+    maxItems: inferDashboardMaxItems(prompt),
     showMeta: shouldShowDashboardMeta(prompt, tokens),
   };
 }
@@ -6731,6 +6745,10 @@ function DashboardWidgetSpecPreview({
       <div className="dashboard-widget-preview-row">
         <span>{t("dashboard.previewSize")}</span>
         <span>{t(`dashboard.size.${spec.size}`)}</span>
+      </div>
+      <div className="dashboard-widget-preview-row">
+        <span>{t("dashboard.previewMaxItems")}</span>
+        <span>{t("dashboard.maxItems", { count: spec.maxItems })}</span>
       </div>
       <div className="dashboard-widget-preview-row">
         <span>{t("dashboard.previewFilters")}</span>

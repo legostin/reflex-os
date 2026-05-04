@@ -191,6 +191,8 @@ assert(
   latestErrorsSpec.filters.some((filter) => filter.id === "failed"),
   "latest errors list should infer failed/error filter",
 );
+const latestOneErrorSpec = dashboard.buildDashboardViewSpec("latest 1 errors list");
+assert(latestOneErrorSpec.maxItems === 1, "latest 1 errors list should infer max item count");
 const latestErrorsProjection = dashboard.projectDashboardValue(
   {
     events: [
@@ -205,6 +207,19 @@ assert(latestErrorsProjection.lists[0]?.count === 2, "latest errors should keep 
 assert(
   latestErrorsProjection.lists[0]?.items[0]?.includes("New crash"),
   "latest errors should sort matching events newest first",
+);
+const latestOneErrorProjection = dashboard.projectDashboardValue(
+  {
+    events: [
+      { title: "Old crash", status: "error", updated_at: "2026-05-04T09:00:00Z" },
+      { title: "New crash", status: "error", updated_at: "2026-05-04T12:00:00Z" },
+    ],
+  },
+  latestOneErrorSpec,
+);
+assert(
+  latestOneErrorProjection.lists[0]?.items.length === 1,
+  "latest 1 errors should limit rendered list items",
 );
 
 const safeRecord = {

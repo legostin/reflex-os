@@ -72,6 +72,7 @@ requireIncludes(failures, dashboardBlock, "Dashboard view spec contract is incom
   "DASHBOARD_WIDGET_SORT_ORDER",
   "function inferDashboardFilters(",
   "function inferDashboardSort(",
+  "function inferDashboardMaxItems(",
   "function projectDashboardValue(",
 ]);
 
@@ -137,6 +138,8 @@ for (const key of [
   "dashboard.previewTitle",
   "dashboard.previewSort",
   "dashboard.previewSize",
+  "dashboard.previewMaxItems",
+  "dashboard.maxItems",
   "dashboard.previewFilters",
   "dashboard.previewMatches",
   "dashboard.previewMatchSignals",
