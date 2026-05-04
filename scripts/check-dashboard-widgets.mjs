@@ -73,6 +73,7 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "function aggregateDashboardMetrics(",
   "function aggregateDashboardTable(",
   "function DashboardWidgetSpecPreview(",
+  "function DashboardSourceBlueprintView(",
   "function matchDashboardSourcesForSpec(",
   "function dashboardSafeSearchText(",
   "function buildDashboardSourceBlueprint(",
@@ -150,6 +151,7 @@ requireIncludes(failures, chatCss, "Dashboard widget preview styles are incomple
   ".dashboard-empty-hint",
   ".dashboard-source-blueprint",
   ".dashboard-source-blueprint-chip",
+  ".dashboard-widget-preview-missing",
 ]);
 
 if (/allActionSources\.slice\(0,\s*1\)/.test(dashboardBlock)) {
@@ -210,6 +212,13 @@ requirePattern(
   dashboardBlock,
   "Dashboard source task prompt must include the inferred source contract.",
   /Recommended source contract[\s\S]+Expected fields/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard widget preview must show the inferred source contract when no source matches.",
+  /missingSourceBlueprint[\s\S]+DashboardSourceBlueprintView/,
 );
 
 const domainLeakPattern = /\b(OpenF1|telegram|Telegram|race)\b|гонк/;

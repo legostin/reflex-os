@@ -6546,6 +6546,37 @@ function DashboardCompositeValueView({
   );
 }
 
+function DashboardSourceBlueprintView({
+  blueprint,
+}: {
+  blueprint: DashboardSourceBlueprint;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="dashboard-source-blueprint">
+      <div className="dashboard-source-blueprint-head">
+        <span>{t("dashboard.sourceBlueprintTitle")}</span>
+        <code>{blueprint.actionId}</code>
+      </div>
+      <div className="dashboard-source-blueprint-meta">
+        {t("dashboard.sourceBlueprintKind", {
+          kind: t(`dashboard.layout.${blueprint.resultKind}`),
+        })}
+      </div>
+      <div className="dashboard-source-blueprint-fields">
+        <span>{t("dashboard.sourceBlueprintFields")}</span>
+        <div className="dashboard-source-blueprint-chips">
+          {blueprint.fields.map((field) => (
+            <code key={field} className="dashboard-source-blueprint-chip">
+              {field}
+            </code>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardWidgetSpecPreview({
   spec,
   matches,
@@ -6554,6 +6585,8 @@ function DashboardWidgetSpecPreview({
   matches: DashboardSourceMatch[];
 }) {
   const { t } = useI18n();
+  const missingSourceBlueprint =
+    matches.length === 0 ? buildDashboardSourceBlueprint(spec) : null;
   return (
     <div className="dashboard-widget-preview">
       <div className="dashboard-widget-preview-head">
@@ -6590,9 +6623,16 @@ function DashboardWidgetSpecPreview({
             ))}
           </div>
         ) : (
-          <span className="dashboard-widget-preview-empty">
-            {t("dashboard.previewNoMatches")}
-          </span>
+          <div className="dashboard-widget-preview-missing">
+            <span className="dashboard-widget-preview-empty">
+              {t("dashboard.previewNoMatches")}
+            </span>
+            {missingSourceBlueprint && (
+              <DashboardSourceBlueprintView
+                blueprint={missingSourceBlueprint}
+              />
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -7067,30 +7107,9 @@ function ProjectDashboard({
                       </small>
                     )}
                     {!hasPendingSources && (
-                      <div className="dashboard-source-blueprint">
-                        <div className="dashboard-source-blueprint-head">
-                          <span>{t("dashboard.sourceBlueprintTitle")}</span>
-                          <code>{sourceBlueprint.actionId}</code>
-                        </div>
-                        <div className="dashboard-source-blueprint-meta">
-                          {t("dashboard.sourceBlueprintKind", {
-                            kind: t(`dashboard.layout.${sourceBlueprint.resultKind}`),
-                          })}
-                        </div>
-                        <div className="dashboard-source-blueprint-fields">
-                          <span>{t("dashboard.sourceBlueprintFields")}</span>
-                          <div className="dashboard-source-blueprint-chips">
-                            {sourceBlueprint.fields.map((field) => (
-                              <code
-                                key={field}
-                                className="dashboard-source-blueprint-chip"
-                              >
-                                {field}
-                              </code>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
+                      <DashboardSourceBlueprintView
+                        blueprint={sourceBlueprint}
+                      />
                     )}
                     {!hasPendingSources && (
                       <button

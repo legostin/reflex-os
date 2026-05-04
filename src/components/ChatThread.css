@@ -1712,6 +1712,15 @@
   color: rgba(180, 185, 195, 0.58);
 }
 
+.dashboard-widget-preview-missing {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-widget-preview-missing .dashboard-source-blueprint {
+  padding-top: 0;
+}
+
 .dashboard-custom-grid,
 .dashboard-action-grid {
   display: grid;
