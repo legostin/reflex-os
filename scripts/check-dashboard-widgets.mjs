@@ -57,6 +57,7 @@ requireIncludes(failures, dashboardBlock, "Dashboard view spec contract is incom
   "type DashboardValueFilter =",
   "type DashboardViewSpec =",
   "type DashboardSourceBlueprint =",
+  "sourceKey?: string;",
   "filters: DashboardValueFilter[];",
   "sort: DashboardSortMode;",
   "size: DashboardWidgetSize;",
@@ -82,6 +83,7 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "const saveEditedCustomWidget =",
   "const startEditCustomWidget =",
   "const moveCustomWidget =",
+  "const pinActionAsWidget =",
   "function buildDashboardWidgetTaskPrompt(",
   "function buildDashboardWidgetRepairPrompt(",
   "const createWidgetSourceTask =",
@@ -127,6 +129,8 @@ for (const key of [
   "dashboard.previewMatchScore",
   "dashboard.sourceColumn",
   "dashboard.widgetMeta",
+  "dashboard.pinWidget",
+  "dashboard.pinnedWidget",
   "dashboard.saveChanges",
   "dashboard.editWidget",
   "dashboard.moveWidgetUp",
@@ -154,6 +158,7 @@ requireIncludes(failures, chatCss, "Dashboard widget preview styles are incomple
   ".dashboard-widget-preview",
   ".dashboard-widget-preview-chip",
   ".dashboard-widget-preview-chip-signals",
+  ".dashboard-action-card-actions",
   ".dashboard-widget-wide",
   ".dashboard-widget-full",
   ".dashboard-custom-actions",
@@ -187,6 +192,13 @@ requirePattern(
   dashboardBlock,
   "Dashboard source matches must preserve the matched signals for explainability.",
   /matchedTokens: string\[\][\s\S]+dashboardSourceMatchedTokensForSpec/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard action cards must be pinnable as editable custom widgets.",
+  /sourceKey: dashboardSourceKey\(source\)|sourceKey,\s*[\s\S]+spec: dashboardSpecForSource\(source\)/,
 );
 
 requirePattern(

@@ -1794,6 +1794,12 @@
   gap: 6px;
 }
 
+.dashboard-action-card-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
 .dashboard-action-source,
 .dashboard-action-refresh {
   border: 0;

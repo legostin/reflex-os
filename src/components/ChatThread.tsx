@@ -4901,6 +4901,7 @@ type CustomDashboardWidget = {
   title: string;
   prompt: string;
   createdAtMs: number;
+  sourceKey?: string;
   spec?: DashboardViewSpec;
 };
 
@@ -4966,6 +4967,7 @@ function readCustomDashboardWidgets(projectId: string): CustomDashboardWidget[] 
         title: item.title,
         prompt: item.prompt,
         createdAtMs: item.createdAtMs,
+        sourceKey: typeof item.sourceKey === "string" ? item.sourceKey : undefined,
         spec,
       });
     }
@@ -5631,6 +5633,14 @@ function titleFromWidgetPrompt(prompt: string): string {
   const normalized = prompt.replace(/\s+/g, " ").trim();
   if (!normalized) return "Widget";
   return normalized.length > 44 ? `${normalized.slice(0, 41)}...` : normalized;
+}
+
+function dashboardWidgetPromptForSource(source: DashboardActionSource): string {
+  const actionLabel = source.action.name || source.action.id;
+  const description = source.action.description?.trim();
+  return description
+    ? `${source.appName} ${actionLabel}: ${description}`
+    : `${source.appName} ${actionLabel} dashboard summary`;
 }
 
 function formatDashboardLabel(key: string): string {
@@ -6893,6 +6903,15 @@ function ProjectDashboard({
       ]),
     [actionSources, allActionSources, customWidgets.length],
   );
+  const pinnedSourceKeys = useMemo(
+    () =>
+      new Set(
+        customWidgets
+          .map((widget) => widget.sourceKey)
+          .filter((key): key is string => !!key),
+      ),
+    [customWidgets],
+  );
 
   useEffect(() => {
     setRecords(readDashboardCache(project.id));
@@ -6998,6 +7017,7 @@ function ProjectDashboard({
               ...widget,
               title: titleFromWidgetPrompt(prompt),
               prompt,
+              sourceKey: undefined,
               spec: buildDashboardViewSpec(prompt),
             }
           : widget,
@@ -7028,6 +7048,35 @@ function ProjectDashboard({
       writeCustomDashboardWidgets(project.id, next);
       return next;
     });
+  };
+
+  const pinActionAsWidget = (source: DashboardActionSource) => {
+    const sourceKey = dashboardSourceKey(source);
+    const prompt = dashboardWidgetPromptForSource(source);
+    const widget: CustomDashboardWidget = {
+      id: `pinned_${Date.now().toString(36)}`,
+      title: titleFromWidgetPrompt(source.action.name || source.action.id),
+      prompt,
+      createdAtMs: Date.now(),
+      sourceKey,
+      spec: dashboardSpecForSource(source),
+    };
+    setCustomWidgets((prev) => {
+      if (
+        prev.some(
+          (item) => item.sourceKey === sourceKey || item.prompt === prompt,
+        )
+      ) {
+        return prev;
+      }
+      const next = [widget, ...prev];
+      writeCustomDashboardWidgets(project.id, next);
+      return next;
+    });
+    setAddingWidget(false);
+    setWidgetPrompt("");
+    setEditingWidgetId(null);
+    setEditingWidgetPrompt("");
   };
 
   const createWidgetSourceTask = async (
@@ -7323,6 +7372,7 @@ function ProjectDashboard({
             const key = dashboardSourceKey(source);
             const record = records[key] ?? { status: "loading", preview: "" };
             const spec = dashboardSpecForSource(source);
+            const pinned = pinnedSourceKeys.has(key);
             return (
               <article
                 key={key}
@@ -7338,14 +7388,29 @@ function ProjectDashboard({
                     <span>{source.appIcon ?? "U"}</span>
                     <span>{source.appName}</span>
                   </button>
-                  <button
-                    type="button"
-                    className="dashboard-action-refresh"
-                    onClick={() => void refreshOne(source)}
-                    title={t("dashboard.refresh")}
-                  >
-                    ↻
-                  </button>
+                  <div className="dashboard-action-card-actions">
+                    <button
+                      type="button"
+                      className="dashboard-action-refresh"
+                      onClick={() => pinActionAsWidget(source)}
+                      disabled={pinned}
+                      title={
+                        pinned
+                          ? t("dashboard.pinnedWidget")
+                          : t("dashboard.pinWidget")
+                      }
+                    >
+                      {pinned ? "✓" : "+"}
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-action-refresh"
+                      onClick={() => void refreshOne(source)}
+                      title={t("dashboard.refresh")}
+                    >
+                      ↻
+                    </button>
+                  </div>
                 </header>
                 <div className="dashboard-action-name">
                   {source.action.name || source.action.id}
