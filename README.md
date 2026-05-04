@@ -22,6 +22,32 @@ automations.
 - **Automations**: manifest-defined schedules and actions executed through the
   same bridge methods that apps use.
 
+## Building New Utilities
+
+Reflex utilities (built-in apps in `src-tauri/builtin_apps/*` and generated
+apps under `.reflex/apps/<id>/`) standardise on the
+[**reflex-os-utility-framework**](https://github.com/legostin/reflex-os-utility-framework)
+npm package: a typed `window.reflexInvoke` wrapper, React hooks for every
+bridge area (`useMemoryNotes`, `useTopics`, `useStorage`, `useEvent`,
+`useAgentStream`, `useSystemContext`, …), and Tailwind components built from
+the same dark surface tokens used by the host shell. High-level "bricks"
+(`MemoryComposer`, `MemoryNoteList`, `TopicsList`, `EventLog`,
+`StorageBrowser`, `AgentChat`, `BridgeMethodPicker`, `ActionRunner`,
+`PermissionRequestBanner`, `ProjectPicker`) cover the recurring shapes a
+utility needs without re-deriving the bridge plumbing.
+
+```sh
+pnpm add reflex-os-utility-framework
+```
+
+The agent skill at
+[`.codex/skills/reflex-utility-framework/SKILL.md`](.codex/skills/reflex-utility-framework/SKILL.md)
+tells Codex when to scaffold with the framework, which bricks to compose,
+and which `manifest.permissions` entries to set per bridge area.
+Pin the skill on a project with
+`project.skills.ensure({ skills: ["reflex-utility-framework"] })` so every
+new utility generated for that project picks it up.
+
 ## Built-In System Utilities
 
 Reflex installs a starter utility suite on first launch. Existing utility
