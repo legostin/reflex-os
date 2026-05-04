@@ -184,6 +184,20 @@ assert(
   "open tasks table should include the open task title",
 );
 
+const withoutOwnerSpec = dashboard.buildDashboardViewSpec("summary without owner");
+assert(
+  withoutOwnerSpec.excludeKeys.includes("owner"),
+  "without owner should infer owner exclusion",
+);
+const withoutOwnerProjection = dashboard.projectDashboardValue(
+  { owner: "Alice", status: "ok" },
+  withoutOwnerSpec,
+);
+assert(
+  !withoutOwnerProjection.rows.some((row) => row.value.includes("Alice")),
+  "excluded owner field should not render",
+);
+
 const latestErrorsSpec = dashboard.buildDashboardViewSpec("latest errors list");
 assert(latestErrorsSpec.layout === "list", "latest errors list should infer list layout");
 assert(latestErrorsSpec.sort === "latest", "latest errors list should infer latest sort");

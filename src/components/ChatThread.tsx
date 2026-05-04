@@ -5534,6 +5534,23 @@ function inferDashboardMaxItems(prompt: string): number {
   return Number.isFinite(value) ? clampDashboardMaxItems(value) : 5;
 }
 
+function inferDashboardExcludeKeys(prompt: string): string[] {
+  const out = new Set<string>();
+  const patterns = [
+    /\b(?:without|exclude|hide)\s+([a-z0-9_,\s-]{2,80})/gi,
+    /(?:без|скрыть|исключить)\s+([\p{L}\p{N}_,\s-]{2,80})/giu,
+  ];
+  for (const pattern of patterns) {
+    for (const match of prompt.matchAll(pattern)) {
+      const value = match[1] ?? "";
+      for (const token of dashboardTokens(value)) {
+        if (!DASHBOARD_STOP_TOKENS.has(token)) out.add(token);
+      }
+    }
+  }
+  return Array.from(out).slice(0, 8);
+}
+
 function shouldShowDashboardMeta(prompt: string, tokens: string[]): boolean {
   const lower = prompt.toLowerCase();
   return (
@@ -5561,7 +5578,7 @@ function buildDashboardViewSpec(
     query: prompt,
     tokens,
     includeTokens,
-    excludeKeys: [],
+    excludeKeys: inferDashboardExcludeKeys(prompt),
     filters: inferDashboardFilters(prompt, tokens),
     layout,
     sort: inferDashboardSort(prompt, tokens),
@@ -6758,6 +6775,14 @@ function DashboardWidgetSpecPreview({
                 .map((filter) => t(`dashboard.filter.${filter.id}`))
                 .join(", ")
             : t("dashboard.previewNoFilters")}
+        </span>
+      </div>
+      <div className="dashboard-widget-preview-row">
+        <span>{t("dashboard.previewExcluded")}</span>
+        <span>
+          {spec.excludeKeys.length > 0
+            ? spec.excludeKeys.join(", ")
+            : t("dashboard.previewNoExcluded")}
         </span>
       </div>
       <div className="dashboard-widget-preview-matches">
