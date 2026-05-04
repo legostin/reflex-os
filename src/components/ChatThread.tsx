@@ -6030,19 +6030,109 @@ function dashboardCountLabel(
     : t("dashboard.filteredItemsCount", { count, total: totalCount });
 }
 
-function DashboardValueView({
-  value,
+function dashboardMetricValue(count: number, totalCount: number): string {
+  return count === totalCount ? count.toString() : `${count}/${totalCount}`;
+}
+
+function dashboardProjectedHasContent(projected: DashboardProjectedView): boolean {
+  return Boolean(
+    projected.text ||
+      projected.metrics.length > 0 ||
+      projected.table ||
+      projected.lists.length > 0 ||
+      projected.rows.length > 0,
+  );
+}
+
+function DashboardMetricsView({ metrics }: { metrics: DashboardProjectedMetric[] }) {
+  if (metrics.length === 0) return null;
+  return (
+    <div className="dashboard-value-metrics">
+      {metrics.map((metric) => (
+        <div key={`${metric.label}:${metric.value}`} className="dashboard-value-metric">
+          <span className="dashboard-value-metric-value">{metric.value}</span>
+          <span className="dashboard-value-label">{metric.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DashboardTableView({ table }: { table: DashboardProjectedTable }) {
+  const { t } = useI18n();
+  return (
+    <div className="dashboard-value-table-wrap">
+      <div className="dashboard-value-count">
+        {table.label} · {dashboardCountLabel(t, table.count, table.totalCount)}
+      </div>
+      <table className="dashboard-value-table">
+        <thead>
+          <tr>
+            {table.columns.map((column) => (
+              <th key={column.key}>{column.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {table.columns.map((column) => (
+                <td key={column.key}>{row[column.key]}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DashboardListsView({ lists }: { lists: DashboardListSummary[] }) {
+  const { t } = useI18n();
+  if (lists.length === 0) return null;
+  return (
+    <div className="dashboard-value-lists">
+      {lists.map((list) => (
+        <div key={list.path} className="dashboard-value-list">
+          <div className="dashboard-value-count">
+            {list.label} · {dashboardCountLabel(t, list.count, list.totalCount)}
+          </div>
+          {list.items.length > 0 && (
+            <ul>
+              {list.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DashboardRowsView({ rows }: { rows: DashboardFlatField[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="dashboard-value-rows">
+      {rows.map((row) => (
+        <div key={row.path} className="dashboard-value-row">
+          <span className="dashboard-value-label">{row.label}</span>
+          <span className="dashboard-value-scalar">{row.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DashboardProjectedViewContent({
+  projected,
   fallback,
-  spec,
 }: {
-  value: unknown;
+  projected: DashboardProjectedView;
   fallback?: string;
-  spec?: DashboardViewSpec;
 }) {
   const { t } = useI18n();
-  const viewSpec = spec ?? buildDashboardViewSpec("summary status overview");
-  const projected = projectDashboardValue(value, viewSpec);
-  if (!projected.text && projected.rows.length === 0 && projected.lists.length === 0) {
+  if (!dashboardProjectedHasContent(projected)) {
     return (
       <div className="dashboard-value-empty">
         {fallback ?? t("dashboard.noDisplayableData")}
@@ -6054,74 +6144,196 @@ function DashboardValueView({
   }
   return (
     <div className={`dashboard-value-object dashboard-value-${projected.layout}`}>
-      {projected.metrics.length > 0 && (
-        <div className="dashboard-value-metrics">
-          {projected.metrics.map((metric) => (
-            <div key={`${metric.label}:${metric.value}`} className="dashboard-value-metric">
-              <span className="dashboard-value-metric-value">{metric.value}</span>
-              <span className="dashboard-value-label">{metric.label}</span>
-            </div>
-          ))}
-        </div>
+      <DashboardMetricsView metrics={projected.metrics} />
+      {projected.table && <DashboardTableView table={projected.table} />}
+      {projected.layout !== "table" && <DashboardListsView lists={projected.lists} />}
+      <DashboardRowsView rows={projected.rows} />
+    </div>
+  );
+}
+
+function DashboardValueView({
+  value,
+  fallback,
+  spec,
+}: {
+  value: unknown;
+  fallback?: string;
+  spec?: DashboardViewSpec;
+}) {
+  const viewSpec = spec ?? buildDashboardViewSpec("summary status overview");
+  return (
+    <DashboardProjectedViewContent
+      projected={projectDashboardValue(value, viewSpec)}
+      fallback={fallback}
+    />
+  );
+}
+
+type DashboardCompositeEntry = {
+  key: string;
+  source: DashboardActionSource;
+  record: DashboardRecord;
+};
+
+type DashboardProjectedSource = {
+  key: string;
+  label: string;
+  status: DashboardRecord["status"];
+  error?: string;
+  projected?: DashboardProjectedView;
+};
+
+function dashboardCompositeSourceLabel(source: DashboardActionSource): string {
+  return `${source.appIcon ?? "U"} ${source.appName} · ${source.action.name || source.action.id}`;
+}
+
+function projectDashboardCompositeEntries(
+  entries: DashboardCompositeEntry[],
+  spec: DashboardViewSpec,
+): DashboardProjectedSource[] {
+  return entries.map((entry) => ({
+    key: entry.key,
+    label: dashboardCompositeSourceLabel(entry.source),
+    status: entry.record.status,
+    error: entry.record.error,
+    projected:
+      entry.record.status === "ok"
+        ? projectDashboardValue(entry.record.value ?? entry.record.preview, spec)
+        : undefined,
+  }));
+}
+
+function aggregateDashboardMetrics(
+  sources: DashboardProjectedSource[],
+): DashboardProjectedMetric[] {
+  const listTotals = new Map<string, { count: number; totalCount: number }>();
+  const projectedSources = sources.filter((source) => source.projected);
+  for (const source of projectedSources) {
+    for (const list of source.projected?.lists ?? []) {
+      const current = listTotals.get(list.label) ?? { count: 0, totalCount: 0 };
+      current.count += list.count;
+      current.totalCount += list.totalCount;
+      listTotals.set(list.label, current);
+    }
+  }
+  const metrics = Array.from(listTotals.entries()).map(([label, value]) => ({
+    label,
+    value: dashboardMetricValue(value.count, value.totalCount),
+  }));
+  if (metrics.length > 0) return metrics.slice(0, 4);
+
+  const multipleSources = projectedSources.length > 1;
+  const seen = new Set<string>();
+  for (const source of projectedSources) {
+    for (const metric of source.projected?.metrics ?? []) {
+      const label = multipleSources ? `${source.label} · ${metric.label}` : metric.label;
+      const key = `${label}:${metric.value}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      metrics.push({ label, value: metric.value });
+      if (metrics.length >= 4) return metrics;
+    }
+  }
+  return metrics;
+}
+
+function aggregateDashboardTable(
+  sources: DashboardProjectedSource[],
+  sourceColumnLabel: string,
+): DashboardProjectedTable | undefined {
+  const tableSources = sources.flatMap((source) =>
+    source.projected?.table
+      ? [{ sourceLabel: source.label, table: source.projected.table }]
+      : [],
+  );
+  if (tableSources.length === 0) return undefined;
+
+  const columns = new Map<string, { key: string; label: string }>();
+  if (tableSources.length > 1) {
+    columns.set("__source", { key: "__source", label: sourceColumnLabel });
+  }
+  for (const { table } of tableSources) {
+    for (const column of table.columns) {
+      if (columns.size >= 5) break;
+      if (!columns.has(column.key)) columns.set(column.key, column);
+    }
+  }
+
+  const columnList = Array.from(columns.values());
+  return {
+    label: tableSources[0].table.label,
+    count: tableSources.reduce((sum, item) => sum + item.table.count, 0),
+    totalCount: tableSources.reduce((sum, item) => sum + item.table.totalCount, 0),
+    columns: columnList,
+    rows: tableSources.flatMap(({ sourceLabel, table }) =>
+      table.rows.map((row) => {
+        const next: Record<string, string> = {};
+        for (const column of columnList) {
+          next[column.key] =
+            column.key === "__source" ? sourceLabel : row[column.key] || "—";
+        }
+        return next;
+      }),
+    ),
+  };
+}
+
+function DashboardCompositeValueView({
+  entries,
+  spec,
+}: {
+  entries: DashboardCompositeEntry[];
+  spec: DashboardViewSpec;
+}) {
+  const { t } = useI18n();
+  const sources = projectDashboardCompositeEntries(entries, spec);
+  const contentSources = sources.filter(
+    (source) => source.projected && dashboardProjectedHasContent(source.projected),
+  );
+  if (contentSources.length === 0) {
+    const loading = sources.some((source) => source.status === "loading");
+    const error = sources.find((source) => source.status === "error")?.error;
+    return (
+      <div className="dashboard-value-empty">
+        {loading ? t("dashboard.loading") : error || t("dashboard.emptyValue")}
+      </div>
+    );
+  }
+
+  const metrics = spec.layout === "metric" ? aggregateDashboardMetrics(contentSources) : [];
+  const table =
+    spec.layout === "table"
+      ? aggregateDashboardTable(contentSources, t("dashboard.sourceColumn"))
+      : undefined;
+  const listBlocks = contentSources.flatMap((source) =>
+    (source.projected?.lists ?? []).map((list) => ({
+      list: {
+        ...list,
+        path: `${source.key}:${list.path}`,
+        label: contentSources.length > 1 ? `${source.label} · ${list.label}` : list.label,
+      },
+    })),
+  );
+  const rowBlocks = contentSources
+    .filter((source) => (source.projected?.rows.length ?? 0) > 0)
+    .slice(0, 4);
+
+  return (
+    <div className="dashboard-composite-value">
+      <DashboardMetricsView metrics={metrics} />
+      {table && <DashboardTableView table={table} />}
+      {spec.layout !== "table" && (
+        <DashboardListsView lists={listBlocks.map((block) => block.list)} />
       )}
-      {projected.table && (
-        <div className="dashboard-value-table-wrap">
-          <div className="dashboard-value-count">
-            {projected.table.label} ·{" "}
-            {dashboardCountLabel(
-              t,
-              projected.table.count,
-              projected.table.totalCount,
-            )}
-          </div>
-          <table className="dashboard-value-table">
-            <thead>
-              <tr>
-                {projected.table.columns.map((column) => (
-                  <th key={column.key}>{column.label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {projected.table.rows.map((row, rowIndex) => (
-                <tr key={rowIndex}>
-                  {projected.table?.columns.map((column) => (
-                    <td key={column.key}>{row[column.key]}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {rowBlocks.map((source) => (
+        <div key={source.key} className="dashboard-composite-source">
+          {contentSources.length > 1 && (
+            <div className="dashboard-custom-source-title">{source.label}</div>
+          )}
+          <DashboardRowsView rows={source.projected?.rows ?? []} />
         </div>
-      )}
-      {projected.lists.length > 0 && projected.layout !== "table" && (
-        <div className="dashboard-value-lists">
-          {projected.lists.map((list) => (
-            <div key={list.path} className="dashboard-value-list">
-              <div className="dashboard-value-count">
-                {list.label} · {dashboardCountLabel(t, list.count, list.totalCount)}
-              </div>
-              {list.items.length > 0 && (
-                <ul>
-                  {list.items.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      {projected.rows.length > 0 && (
-        <div className="dashboard-value-rows">
-          {projected.rows.map((row) => (
-            <div key={row.path} className="dashboard-value-row">
-              <span className="dashboard-value-label">{row.label}</span>
-              <span className="dashboard-value-scalar">{row.value}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -6352,35 +6564,17 @@ function ProjectDashboard({
                       : t("dashboard.noSource")}
                   </div>
                 ) : (
-                  <div className="dashboard-custom-sources">
-                    {scored.map(({ source, key }) => {
-                      const record = records[key] ?? {
+                  <DashboardCompositeValueView
+                    spec={spec}
+                    entries={scored.map(({ source, key }) => ({
+                      key,
+                      source,
+                      record: records[key] ?? {
                         status: "loading",
                         preview: "",
-                      };
-                      return (
-                        <div key={key} className="dashboard-custom-source">
-                          <div className="dashboard-custom-source-title">
-                            {source.appIcon ?? "U"} {source.appName} ·{" "}
-                            {source.action.name || source.action.id}
-                          </div>
-                          <DashboardValueView
-                            value={
-                              record.status === "ok"
-                                ? record.value ?? record.preview
-                                : null
-                            }
-                            spec={spec}
-                            fallback={
-                              record.status === "loading"
-                                ? t("dashboard.loading")
-                                : record.error || t("dashboard.emptyValue")
-                            }
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
+                      },
+                    }))}
+                  />
                 )}
               </article>
             );

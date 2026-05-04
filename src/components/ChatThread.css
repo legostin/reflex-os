@@ -1693,6 +1693,13 @@
   gap: 6px;
 }
 
+.dashboard-composite-value,
+.dashboard-composite-source {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
 .dashboard-custom-source-title {
   color: rgba(245, 245, 247, 0.72);
   font-size: 11px;
