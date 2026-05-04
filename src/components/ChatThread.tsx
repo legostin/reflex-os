@@ -5568,8 +5568,12 @@ function buildDashboardViewSpec(
   fallbackTitle?: string,
 ): DashboardViewSpec {
   const tokens = dashboardTokens(prompt);
+  const excludeKeys = inferDashboardExcludeKeys(prompt);
   const includeTokens = expandDashboardTokens(
-    tokens.filter((token) => !DASHBOARD_STOP_TOKENS.has(token)),
+    tokens.filter(
+      (token) =>
+        !DASHBOARD_STOP_TOKENS.has(token) && !excludeKeys.includes(token),
+    ),
   );
   const layout = inferDashboardLayout(prompt);
   return {
@@ -5578,7 +5582,7 @@ function buildDashboardViewSpec(
     query: prompt,
     tokens,
     includeTokens,
-    excludeKeys: inferDashboardExcludeKeys(prompt),
+    excludeKeys,
     filters: inferDashboardFilters(prompt, tokens),
     layout,
     sort: inferDashboardSort(prompt, tokens),

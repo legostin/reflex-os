@@ -189,6 +189,10 @@ assert(
   withoutOwnerSpec.excludeKeys.includes("owner"),
   "without owner should infer owner exclusion",
 );
+assert(
+  !withoutOwnerSpec.includeTokens.includes("owner"),
+  "excluded owner field should not remain a source matching token",
+);
 const withoutOwnerProjection = dashboard.projectDashboardValue(
   { owner: "Alice", status: "ok" },
   withoutOwnerSpec,
