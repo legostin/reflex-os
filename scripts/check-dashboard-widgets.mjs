@@ -82,9 +82,12 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "const startEditCustomWidget =",
   "const moveCustomWidget =",
   "function buildDashboardWidgetTaskPrompt(",
+  "function buildDashboardWidgetRepairPrompt(",
   "const createWidgetSourceTask =",
+  "const createWidgetRepairTask =",
   "dashboard.noSourceHint",
   "dashboard.sourceBlueprintTitle",
+  "dashboard.repairSourceTask",
   "dashboard.createSourceTask",
 ]);
 
@@ -132,6 +135,9 @@ for (const key of [
   "dashboard.sourceBlueprintFields",
   "dashboard.createSourceTask",
   "dashboard.creatingSourceTask",
+  "dashboard.repairSourceHint",
+  "dashboard.repairSourceTask",
+  "dashboard.repairingSourceTask",
   "dashboard.size.compact",
   "dashboard.size.normal",
   "dashboard.size.wide",
@@ -152,6 +158,7 @@ requireIncludes(failures, chatCss, "Dashboard widget preview styles are incomple
   ".dashboard-source-blueprint",
   ".dashboard-source-blueprint-chip",
   ".dashboard-widget-preview-missing",
+  ".dashboard-value-empty-action",
 ]);
 
 if (/allActionSources\.slice\(0,\s*1\)/.test(dashboardBlock)) {
@@ -219,6 +226,20 @@ requirePattern(
   dashboardBlock,
   "Dashboard widget preview must show the inferred source contract when no source matches.",
   /missingSourceBlueprint[\s\S]+DashboardSourceBlueprintView/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard widgets must offer a repair task for matched but unusable sources.",
+  /emptyAction[\s\S]+createWidgetRepairTask/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Dashboard repair prompt must target reusable utility output instead of UI heuristics.",
+  /Repair the matched utility integration[\s\S]+Fix the reusable utility output/,
 );
 
 const domainLeakPattern = /\b(OpenF1|telegram|Telegram|race)\b|гонк/;

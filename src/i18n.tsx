@@ -350,6 +350,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "dashboard.sourceBlueprintFields": "Fields",
     "dashboard.createSourceTask": "Plan data source",
     "dashboard.creatingSourceTask": "Creating task...",
+    "dashboard.repairSourceHint":
+      "Matched data exists, but it is empty, errored, or not dashboard-ready.",
+    "dashboard.repairSourceTask": "Repair source",
+    "dashboard.repairingSourceTask": "Creating repair task...",
     "project.linkedUtilities": "Linked utilities",
     "project.createUtility": "+ Create utility",
     "project.linkUtility": "+ Link",
@@ -1162,6 +1166,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "dashboard.sourceBlueprintFields": "Поля",
     "dashboard.createSourceTask": "Продумать источник",
     "dashboard.creatingSourceTask": "Создаем задачу...",
+    "dashboard.repairSourceHint":
+      "Данные совпали с виджетом, но они пустые, ошибочные или не готовы для dashboard.",
+    "dashboard.repairSourceTask": "Починить источник",
+    "dashboard.repairingSourceTask": "Создаем задачу...",
     "project.linkedUtilities": "Привязанные утилиты",
     "project.createUtility": "+ Создать утилиту",
     "project.linkUtility": "+ Привязать",

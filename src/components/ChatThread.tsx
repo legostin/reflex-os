@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
@@ -6479,9 +6486,11 @@ function aggregateDashboardTable(
 function DashboardCompositeValueView({
   entries,
   spec,
+  emptyAction,
 }: {
   entries: DashboardCompositeEntry[];
   spec: DashboardViewSpec;
+  emptyAction?: ReactNode;
 }) {
   const { t } = useI18n();
   const sources = projectDashboardCompositeEntries(entries, spec);
@@ -6492,8 +6501,13 @@ function DashboardCompositeValueView({
     const loading = sources.some((source) => source.status === "loading");
     const error = sources.find((source) => source.status === "error")?.error;
     return (
-      <div className="dashboard-value-empty">
-        {loading ? t("dashboard.loading") : error || t("dashboard.emptyValue")}
+      <div className="dashboard-value-empty dashboard-value-empty-stack">
+        <span>
+          {loading ? t("dashboard.loading") : error || t("dashboard.emptyValue")}
+        </span>
+        {!loading && emptyAction && (
+          <div className="dashboard-value-empty-action">{emptyAction}</div>
+        )}
       </div>
     );
   }
@@ -6687,6 +6701,82 @@ function buildDashboardWidgetTaskPrompt(
     linkedSources
       ? `Currently linked public actions:\n${linkedSources}`
       : "There are no linked public actions in this project yet.",
+  ]
+    .filter((line): line is string => line != null)
+    .join("\n");
+}
+
+function dashboardRecordSafeShape(record?: DashboardRecord): string {
+  if (!record) return "not fetched";
+  if (record.status === "loading") return "loading";
+  if (record.status === "error") {
+    return `error: ${record.error || "unknown error"}`;
+  }
+  const value = normalizeDashboardValue(record.value);
+  if (Array.isArray(value)) return `array with ${value.length} items`;
+  if (isJsonObject(value)) {
+    const keys = Object.keys(value)
+      .filter((key) => !dashboardKeyMatches(key, DASHBOARD_SECRET_KEY_PATTERNS))
+      .slice(0, 12);
+    return keys.length > 0
+      ? `object keys: ${keys.join(", ")}`
+      : "object with no safe visible keys";
+  }
+  if (value == null) return "null or missing value";
+  return `${typeof value} value`;
+}
+
+function buildDashboardWidgetRepairPrompt(
+  project: Project,
+  widget: CustomDashboardWidget,
+  spec: DashboardViewSpec,
+  blueprint: DashboardSourceBlueprint,
+  matches: DashboardSourceMatch[],
+  records: Record<string, DashboardRecord>,
+): string {
+  const matchedSources = matches
+    .map(({ source, key, score }) => {
+      const actionName = source.action.name || source.action.id;
+      return [
+        `- ${source.appName} (${source.appId}) / ${actionName} (${source.action.id})`,
+        `  match score: ${score}`,
+        `  observed shape: ${dashboardRecordSafeShape(records[key])}`,
+      ].join("\n");
+    })
+    .join("\n");
+  return [
+    `Project: ${project.name}`,
+    `Project ID: ${project.id}`,
+    `Project root: ${project.root}`,
+    project.description ? `Project description: ${project.description}` : null,
+    "",
+    "Dashboard widget source repair:",
+    `- User requested widget: ${widget.prompt}`,
+    `- Widget title: ${widget.title}`,
+    `- Interpreted widget spec: layout=${spec.layout}, sort=${spec.sort}, size=${spec.size}, filters=${spec.filters.map((filter) => filter.id).join(", ") || "none"}.`,
+    "",
+    "Expected source contract:",
+    `- Action id target: ${blueprint.actionId}`,
+    `- Action name target: ${blueprint.actionName}`,
+    `- Result kind: ${blueprint.resultKind}`,
+    `- Expected fields: ${blueprint.fields.join(", ")}`,
+    `- Contract notes: ${blueprint.notes.join("; ")}`,
+    "",
+    "A public action already matched this widget, but its current output is empty, errored, or not dashboard-ready.",
+    "",
+    "Repair the matched utility integration:",
+    "1. Inspect the matched utility action, manifest, bridge/MCP layer, and runtime logs.",
+    "2. Compare the current action result with the expected source contract above.",
+    "3. Update the action implementation or transform layer so it returns dashboard-ready structured data for this widget.",
+    "4. Preserve public: true and no required params, and keep the action safe for automatic refresh.",
+    "5. Do not add hard-coded demo data or dashboard-specific UI heuristics. Fix the reusable utility output.",
+    "6. If credentials, network access, runtime.server.listen, or another permission is required, request it explicitly and return setup_required until configured.",
+    "7. Keep internal prompts, manifest action descriptions, generated utility instructions, and implementation comments in English. User-facing UI may remain localized.",
+    "8. Verify that the dashboard widget renders useful data without raw JSON dumps.",
+    "",
+    matchedSources
+      ? `Matched public actions:\n${matchedSources}`
+      : "No matched public actions were available by the time this task was created.",
   ]
     .filter((line): line is string => line != null)
     .join("\n");
@@ -6935,6 +7025,31 @@ function ProjectDashboard({
     }
   };
 
+  const createWidgetRepairTask = async (
+    widget: CustomDashboardWidget,
+    spec: DashboardViewSpec,
+    blueprint: DashboardSourceBlueprint,
+    matches: DashboardSourceMatch[],
+  ) => {
+    if (creatingWidgetTaskId) return;
+    setCreatingWidgetTaskId(widget.id);
+    try {
+      await onCreateTopic(
+        buildDashboardWidgetRepairPrompt(
+          project,
+          widget,
+          spec,
+          blueprint,
+          matches,
+          records,
+        ),
+        true,
+      );
+    } finally {
+      setCreatingWidgetTaskId(null);
+    }
+  };
+
   return (
     <section className="project-dashboard">
       <div className="section-head">
@@ -7115,7 +7230,7 @@ function ProjectDashboard({
                       <button
                         type="button"
                         className="modal-btn modal-btn-primary"
-                        disabled={creatingWidgetTaskId === widget.id}
+                        disabled={creatingWidgetTaskId !== null}
                         onClick={() =>
                           void createWidgetSourceTask(
                             widget,
@@ -7141,6 +7256,28 @@ function ProjectDashboard({
                         preview: "",
                       },
                     }))}
+                    emptyAction={
+                      <>
+                        <small>{t("dashboard.repairSourceHint")}</small>
+                        <button
+                          type="button"
+                          className="modal-btn modal-btn-primary"
+                          disabled={creatingWidgetTaskId !== null}
+                          onClick={() =>
+                            void createWidgetRepairTask(
+                              widget,
+                              spec,
+                              sourceBlueprint,
+                              scored,
+                            )
+                          }
+                        >
+                          {creatingWidgetTaskId === widget.id
+                            ? t("dashboard.repairingSourceTask")
+                            : t("dashboard.repairSourceTask")}
+                        </button>
+                      </>
+                    }
                   />
                 )}
               </article>

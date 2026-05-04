@@ -1880,6 +1880,26 @@
   color: rgba(180, 185, 195, 0.58);
 }
 
+.dashboard-value-empty-stack,
+.dashboard-value-empty-action {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-value-empty-action {
+  align-items: start;
+}
+
+.dashboard-value-empty-action small {
+  max-width: 540px;
+  color: rgba(190, 195, 205, 0.78);
+  line-height: 1.45;
+}
+
+.dashboard-value-empty-action .modal-btn {
+  width: fit-content;
+}
+
 .dashboard-value-object,
 .dashboard-value-rows,
 .dashboard-value-lists {
