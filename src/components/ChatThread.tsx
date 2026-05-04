@@ -5657,6 +5657,36 @@ function matchDashboardSourcesForSpec(
     .slice(0, limit);
 }
 
+function matchDashboardSourcesForWidget(
+  widget: CustomDashboardWidget,
+  spec: DashboardViewSpec,
+  sources: DashboardActionSource[],
+  records: Record<string, DashboardRecord>,
+  limit: number,
+): DashboardSourceMatch[] {
+  const matches = matchDashboardSourcesForSpec(spec, sources, records, limit);
+  if (!widget.sourceKey) return matches;
+  if (matches.some((match) => match.key === widget.sourceKey)) return matches;
+  const pinnedSource = sources.find(
+    (source) => dashboardSourceKey(source) === widget.sourceKey,
+  );
+  if (!pinnedSource) return matches;
+  const matchedTokens = dashboardSourceMatchedTokensForSpec(
+    spec,
+    pinnedSource,
+    records[widget.sourceKey],
+  );
+  return [
+    {
+      source: pinnedSource,
+      key: widget.sourceKey,
+      score: matchedTokens.length,
+      matchedTokens,
+    },
+    ...matches,
+  ].slice(0, limit);
+}
+
 function uniqueDashboardSources(
   sources: DashboardActionSource[],
 ): DashboardActionSource[] {
@@ -7320,7 +7350,8 @@ function ProjectDashboard({
           {customWidgets.map((widget, widgetIndex) => {
             const spec = widget.spec ?? buildDashboardViewSpec(widget.prompt, widget.title);
             const sourceBlueprint = buildDashboardSourceBlueprint(spec);
-            const scored = matchDashboardSourcesForSpec(
+            const scored = matchDashboardSourcesForWidget(
+              widget,
               spec,
               allActionSources,
               records,

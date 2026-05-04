@@ -83,6 +83,7 @@ requireIncludes(failures, dashboardBlock, "Widget rendering capabilities are inc
   "function DashboardSourceBlueprintView(",
   "function customDashboardWidgetFromSource(",
   "function matchDashboardSourcesForSpec(",
+  "function matchDashboardSourcesForWidget(",
   "function dashboardSourceMatchedTokensForSpec(",
   "function dashboardSafeSearchText(",
   "function buildDashboardSourceBlueprint(",
@@ -213,6 +214,13 @@ requirePattern(
   dashboardBlock,
   "Dashboard action cards must be pinnable as editable custom widgets.",
   /sourceKey: dashboardSourceKey\(source\)|sourceKey,\s*[\s\S]+spec: dashboardSpecForSource\(source\)/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Pinned dashboard widgets must preserve source affinity even with weak matching.",
+  /widget\.sourceKey[\s\S]+pinnedSource[\s\S]+matchedTokens/,
 );
 
 requirePattern(
