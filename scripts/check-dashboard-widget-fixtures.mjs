@@ -66,6 +66,7 @@ ${prelude}
 ${projectionCore}
 return {
   buildDashboardViewSpec,
+  buildDashboardSourceBlueprint,
   dashboardRecordSearchText,
   dashboardSourceScoreForSpec,
   matchDashboardSourcesForSpec,
@@ -90,6 +91,16 @@ assert(
   failedJobsSpec.filters.some((filter) => filter.id === "failed"),
   "failed jobs count should infer failed filter",
 );
+const failedJobsBlueprint = dashboard.buildDashboardSourceBlueprint(failedJobsSpec);
+assert(failedJobsBlueprint.resultKind === "metric", "failed jobs blueprint should be metric");
+assert(
+  failedJobsBlueprint.actionId.includes("failed"),
+  "failed jobs blueprint action id should carry failed signal",
+);
+assert(
+  failedJobsBlueprint.fields.includes("value"),
+  "metric blueprint should require a value field",
+);
 const failedJobsProjection = dashboard.projectDashboardValue(
   {
     jobs: [
@@ -109,6 +120,16 @@ assert(openTasksSpec.size === "wide", "wide table should infer wide size");
 assert(
   openTasksSpec.filters.some((filter) => filter.id === "open"),
   "open tasks table should infer open filter",
+);
+const openTasksBlueprint = dashboard.buildDashboardSourceBlueprint(openTasksSpec);
+assert(openTasksBlueprint.resultKind === "table", "open tasks blueprint should be table");
+assert(
+  openTasksBlueprint.fields.includes("items[].title"),
+  "table blueprint should require item titles",
+);
+assert(
+  openTasksBlueprint.fields.includes("status"),
+  "open tasks blueprint should include filter status hints",
 );
 const openTasksMatches = dashboard.matchDashboardSourcesForSpec(openTasksSpec, [
   {

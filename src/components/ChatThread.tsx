@@ -5786,9 +5786,7 @@ function buildDashboardSourceBlueprint(
   const actionId =
     slugParts.join("_").slice(0, 72).replace(/_+$/g, "") ||
     "dashboard_source";
-  const filterFields = spec.filters.flatMap((filter) =>
-    filter.keyHints.slice(0, 3),
-  );
+  const filterFields = spec.filters.flatMap((filter) => filter.keyHints);
   const fields = uniqueDashboardText([
     ...DASHBOARD_SOURCE_BLUEPRINT_FIELDS[spec.layout],
     ...filterFields,
