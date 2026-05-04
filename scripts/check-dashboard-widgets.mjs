@@ -222,6 +222,12 @@ if (/[А-Яа-яЁё]/.test(dashboardPromptBlock)) {
 }
 requirePattern(
   failures,
+  dashboardPromptBlock,
+  "Dashboard prompt builders must translate non-English widget intent before reuse.",
+  /translate its intent/,
+);
+requirePattern(
+  failures,
   recordSearchBlock,
   "Dashboard source matching must skip secret-bearing keys.",
   /DASHBOARD_SECRET_KEY_PATTERNS/,
