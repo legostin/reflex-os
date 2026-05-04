@@ -4857,6 +4857,7 @@ type DashboardRecord = {
 
 type DashboardViewLayout = "summary" | "list" | "table" | "metric";
 type DashboardSortMode = "relevance" | "latest" | "oldest" | "largest" | "smallest";
+type DashboardWidgetSize = "compact" | "normal" | "wide" | "full";
 
 type DashboardValueFilter = {
   id: string;
@@ -4875,6 +4876,7 @@ type DashboardViewSpec = {
   filters: DashboardValueFilter[];
   layout: DashboardViewLayout;
   sort: DashboardSortMode;
+  size: DashboardWidgetSize;
   maxItems: number;
   showMeta: boolean;
 };
@@ -5306,6 +5308,15 @@ function isDashboardSortMode(value: unknown): value is DashboardSortMode {
   );
 }
 
+function isDashboardWidgetSize(value: unknown): value is DashboardWidgetSize {
+  return (
+    value === "compact" ||
+    value === "normal" ||
+    value === "wide" ||
+    value === "full"
+  );
+}
+
 function isDashboardValueFilter(value: unknown): value is DashboardValueFilter {
   return (
     isJsonObject(value) &&
@@ -5334,6 +5345,7 @@ function isDashboardViewSpec(value: unknown): value is DashboardViewSpec {
     value.filters.every(isDashboardValueFilter) &&
     isDashboardViewLayout(value.layout) &&
     isDashboardSortMode(value.sort) &&
+    isDashboardWidgetSize(value.size) &&
     typeof value.maxItems === "number" &&
     typeof value.showMeta === "boolean"
   );
@@ -5363,6 +5375,34 @@ function inferDashboardLayout(prompt: string): DashboardViewLayout {
     return "list";
   }
   return "summary";
+}
+
+function inferDashboardSize(
+  prompt: string,
+  tokens: string[],
+  layout: DashboardViewLayout,
+): DashboardWidgetSize {
+  if (
+    /\b(full|fullscreen|large|big)\b/i.test(prompt) ||
+    tokens.some((token) => ["больш", "полноэкран", "полный"].some((prefix) => token.startsWith(prefix)))
+  ) {
+    return "full";
+  }
+  if (
+    /\b(wide|expanded|table)\b/i.test(prompt) ||
+    tokens.some((token) => ["широк", "табли"].some((prefix) => token.startsWith(prefix))) ||
+    layout === "table"
+  ) {
+    return "wide";
+  }
+  if (
+    /\b(compact|small|mini|tiny)\b/i.test(prompt) ||
+    tokens.some((token) => ["компакт", "мал", "мини"].some((prefix) => token.startsWith(prefix))) ||
+    layout === "metric"
+  ) {
+    return "compact";
+  }
+  return "normal";
 }
 
 function dashboardPromptHasTerm(prompt: string, tokens: string[], term: string): boolean {
@@ -5440,6 +5480,7 @@ function buildDashboardViewSpec(
   const includeTokens = expandDashboardTokens(
     tokens.filter((token) => !DASHBOARD_STOP_TOKENS.has(token)),
   );
+  const layout = inferDashboardLayout(prompt);
   return {
     version: 1,
     title: fallbackTitle || titleFromWidgetPrompt(prompt),
@@ -5448,8 +5489,9 @@ function buildDashboardViewSpec(
     includeTokens,
     excludeKeys: [],
     filters: inferDashboardFilters(prompt, tokens),
-    layout: inferDashboardLayout(prompt),
+    layout,
     sort: inferDashboardSort(prompt, tokens),
+    size: inferDashboardSize(prompt, tokens, layout),
     maxItems: 5,
     showMeta: shouldShowDashboardMeta(prompt, tokens),
   };
@@ -6383,6 +6425,10 @@ function DashboardWidgetSpecPreview({
         <span>{t(`dashboard.sort.${spec.sort}`)}</span>
       </div>
       <div className="dashboard-widget-preview-row">
+        <span>{t("dashboard.previewSize")}</span>
+        <span>{t(`dashboard.size.${spec.size}`)}</span>
+      </div>
+      <div className="dashboard-widget-preview-row">
         <span>{t("dashboard.previewFilters")}</span>
         <span>
           {spec.filters.length > 0
@@ -6694,7 +6740,10 @@ function ProjectDashboard({
               return !record || record.status === "loading";
             });
             return (
-              <article key={widget.id} className="dashboard-custom-card">
+              <article
+                key={widget.id}
+                className={`dashboard-custom-card dashboard-widget-${spec.size}`}
+              >
                 <header className="dashboard-custom-header">
                   <div>
                     <div className="dashboard-action-name">{widget.title}</div>

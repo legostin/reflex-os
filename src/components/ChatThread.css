@@ -1670,6 +1670,18 @@
   background: rgba(74, 140, 255, 0.055);
 }
 
+.dashboard-widget-compact {
+  min-height: 110px;
+}
+
+.dashboard-widget-wide {
+  grid-column: span 2;
+}
+
+.dashboard-widget-full {
+  grid-column: 1 / -1;
+}
+
 .dashboard-action-card.dashboard-action-error {
   border-color: rgba(255, 112, 112, 0.32);
 }
@@ -3149,6 +3161,11 @@
   .home-guide-grid,
   .project-start-panel {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-widget-wide,
+  .dashboard-widget-full {
+    grid-column: auto;
   }
 
   .connected-apps-head {

@@ -23,6 +23,10 @@ function requirePattern(failures, source, title, pattern) {
   if (!pattern.test(source)) failures.push(title);
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 const chatThread = read("src/components/ChatThread.tsx");
 const chatCss = read("src/components/ChatThread.css");
 const i18n = read("src/i18n.tsx");
@@ -44,12 +48,15 @@ const failures = [];
 requireIncludes(failures, dashboardBlock, "Dashboard view spec contract is incomplete", [
   "type DashboardViewLayout =",
   "type DashboardSortMode =",
+  "type DashboardWidgetSize =",
   "type DashboardValueFilter =",
   "type DashboardViewSpec =",
   "filters: DashboardValueFilter[];",
   "sort: DashboardSortMode;",
+  "size: DashboardWidgetSize;",
   "showMeta: boolean;",
   "function buildDashboardViewSpec(",
+  "function inferDashboardSize(",
   "function inferDashboardFilters(",
   "function inferDashboardSort(",
   "function projectDashboardValue(",
@@ -94,6 +101,7 @@ for (const filterId of [
 for (const key of [
   "dashboard.previewTitle",
   "dashboard.previewSort",
+  "dashboard.previewSize",
   "dashboard.previewFilters",
   "dashboard.previewMatches",
   "dashboard.sourceColumn",
@@ -102,14 +110,20 @@ for (const key of [
   "dashboard.moveWidgetUp",
   "dashboard.moveWidgetDown",
   "dashboard.filteredItemsCount",
+  "dashboard.size.compact",
+  "dashboard.size.normal",
+  "dashboard.size.wide",
+  "dashboard.size.full",
 ]) {
-  const count = [...i18n.matchAll(new RegExp(`"${key}"`, "g"))].length;
+  const count = [...i18n.matchAll(new RegExp(`"${escapeRegExp(key)}"`, "g"))].length;
   if (count < 2) failures.push(`Dashboard i18n key is not translated in both locales: ${key}`);
 }
 
 requireIncludes(failures, chatCss, "Dashboard widget preview styles are incomplete", [
   ".dashboard-widget-preview",
   ".dashboard-widget-preview-chip",
+  ".dashboard-widget-wide",
+  ".dashboard-widget-full",
   ".dashboard-custom-actions",
   ".dashboard-composite-value",
 ]);
