@@ -1855,6 +1855,24 @@
   white-space: nowrap;
 }
 
+.dashboard-widget-spec-line {
+  max-width: 100%;
+  margin-top: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.dashboard-widget-spec-line span {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(190, 198, 214, 0.78);
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .dashboard-widget-source-lock {
   max-width: 100%;
   margin-top: 7px;

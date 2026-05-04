@@ -144,6 +144,7 @@ for (const key of [
   "dashboard.previewFilters",
   "dashboard.previewExcluded",
   "dashboard.previewNoExcluded",
+  "dashboard.hiddenCount",
   "dashboard.previewMatches",
   "dashboard.previewMatchSignals",
   "dashboard.previewMatchScore",
@@ -188,6 +189,7 @@ requireIncludes(failures, chatCss, "Dashboard widget preview styles are incomple
   ".dashboard-action-card-actions",
   ".dashboard-widget-wide",
   ".dashboard-widget-full",
+  ".dashboard-widget-spec-line",
   ".dashboard-widget-source-lock",
   ".dashboard-custom-actions",
   ".dashboard-composite-value",
@@ -241,6 +243,13 @@ requirePattern(
   dashboardBlock,
   "Pinned dashboard widgets must surface their pinned source in the card UI.",
   /dashboard-widget-source-lock[\s\S]+dashboard\.pinnedSource/,
+);
+
+requirePattern(
+  failures,
+  dashboardBlock,
+  "Custom dashboard widgets must show their current projection spec.",
+  /dashboard-widget-spec-line[\s\S]+dashboard\.maxItems[\s\S]+dashboard\.hiddenCount/,
 );
 
 requirePattern(

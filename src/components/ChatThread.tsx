@@ -7506,6 +7506,19 @@ function ProjectDashboard({
                   <div>
                     <div className="dashboard-action-name">{widget.title}</div>
                     <div className="dashboard-widget-prompt">{widget.prompt}</div>
+                    <div className="dashboard-widget-spec-line">
+                      <span>{t(`dashboard.layout.${spec.layout}`)}</span>
+                      <span>{t(`dashboard.sort.${spec.sort}`)}</span>
+                      <span>{t(`dashboard.size.${spec.size}`)}</span>
+                      <span>{t("dashboard.maxItems", { count: spec.maxItems })}</span>
+                      {spec.excludeKeys.length > 0 && (
+                        <span>
+                          {t("dashboard.hiddenCount", {
+                            count: spec.excludeKeys.length,
+                          })}
+                        </span>
+                      )}
+                    </div>
                     {pinnedSource && (
                       <button
                         type="button"
