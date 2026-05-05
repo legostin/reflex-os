@@ -214,6 +214,13 @@ The injected runtime overlay provides:
 - `window.reflexMemoryPathStatus(pathOrParams)`
 - `window.reflexMemoryPathStatusBatch(pathsOrParams)`
 - `window.reflexMemoryForgetPath(pathOrParams)`
+- `window.reflexSecretsList(params)`
+- `window.reflexSecretsGet(params)`
+- `window.reflexSecretsHas(params)`
+- `window.reflexSecretsSet(params)`
+- `window.reflexSecretsDelete(params)`
+- `window.reflexSecretsResolve(keyOrParams, projectId?)`
+- `window.reflexSecretsScopes()`
 - `window.reflexAppsList(params)`
 - `window.reflexAppsCreate(descriptionOrParams, template?)`; pass
   `{description, template: "repo-wrapper", sourceRepoUrl}` to wrap an
@@ -525,6 +532,32 @@ project memory targets that project; otherwise it targets the app's own project.
 For a specific project, call `system.context()` and pass a `projectId` from
 `linked_projects`. Global memory requires `memory.global.read` or
 `memory.global.write` in `manifest.permissions`.
+
+Secrets methods:
+
+- `secrets.list({ scope?, projectId? })` -> `{ entries: [{ key, scope, project_id?,
+  updated_at_ms, source_app_id }] }`. Values are not included.
+- `secrets.get({ scope, key, projectId? })` -> `{ key, scope, project_id?, value,
+  updated_at_ms, source_app_id }`; requires `secrets.read:<projectId>` (or wildcard)
+  for project scope, `secrets.global.read` for global.
+- `secrets.has({ scope, key, projectId? })` -> `{ exists }` without revealing the
+  value. Linked-project lookups don't require an explicit grant.
+- `secrets.set({ scope, key, value, projectId? })` -> `{ key, scope, ... }`;
+  requires `secrets.write:<projectId>` or `secrets.global.write`.
+- `secrets.delete({ scope, key, projectId? })` -> `{ ok, removed }`; same write
+  grant as `set`.
+- `secrets.resolve({ key, projectId? })` -> first match in the cascade
+  `explicit projectId -> linked projects -> global`. Linked-project hits do not
+  require an explicit grant; explicit foreign projects require
+  `secrets.read:<id>` and global fallback requires `secrets.global.read`.
+- `secrets.scopes()` -> `{ scopes: [{ scope: "global" }, { scope: "project",
+  projects: [...] }] }` so utilities can render scope pickers without listing
+  registered projects manually.
+
+`scope` defaults to `project`. Secrets are encrypted at rest with AES-GCM; the
+master key is stored in macOS Keychain (`com.reflex.os.secrets` /
+`master-key`). Values never appear in `logs.list` — only an audit line of
+the form `[<app>] <action> <scope>:<project>/<key>`.
 
 ## Manifest Automation
 

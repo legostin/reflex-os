@@ -142,6 +142,18 @@ export const BRIDGE_API_GROUPS = [
     ],
   },
   {
+    title: "Secrets",
+    methods: [
+      "secrets.list",
+      "secrets.get",
+      "secrets.has",
+      "secrets.set",
+      "secrets.delete",
+      "secrets.resolve",
+      "secrets.scopes",
+    ],
+  },
+  {
     title: "Automations",
     methods: [
       "scheduler.list",
@@ -322,6 +334,13 @@ export const BRIDGE_HELPER_GROUPS = [
       "reflexMemoryPathStatus",
       "reflexMemoryPathStatusBatch",
       "reflexMemoryForgetPath",
+      "reflexSecretsList",
+      "reflexSecretsGet",
+      "reflexSecretsHas",
+      "reflexSecretsSet",
+      "reflexSecretsDelete",
+      "reflexSecretsResolve",
+      "reflexSecretsScopes",
       "reflexSchedulerList",
       "reflexSchedulerUpsert",
       "reflexSchedulerDelete",

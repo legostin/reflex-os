@@ -1846,6 +1846,29 @@ pub const RUNTIME_OVERLAY_JS: &str = r#"<script>
     var params = (typeof pathOrParams === 'string') ? {path: pathOrParams} : (pathOrParams || {});
     return reflexInvokeRaw('memory.forgetPath', params);
   };
+  window.reflexSecretsList = function(params) {
+    return reflexInvokeRaw('secrets.list', params || {});
+  };
+  window.reflexSecretsGet = function(params) {
+    return reflexInvokeRaw('secrets.get', params || {});
+  };
+  window.reflexSecretsHas = function(params) {
+    return reflexInvokeRaw('secrets.has', params || {});
+  };
+  window.reflexSecretsSet = function(params) {
+    return reflexInvokeRaw('secrets.set', params || {});
+  };
+  window.reflexSecretsDelete = function(params) {
+    return reflexInvokeRaw('secrets.delete', params || {});
+  };
+  window.reflexSecretsResolve = function(keyOrParams, projectId) {
+    var params = (typeof keyOrParams === 'string') ? {key: keyOrParams} : (keyOrParams || {});
+    if (projectId !== undefined && params.projectId === undefined) params.projectId = projectId;
+    return reflexInvokeRaw('secrets.resolve', params);
+  };
+  window.reflexSecretsScopes = function() {
+    return reflexInvokeRaw('secrets.scopes', {});
+  };
 
   window.addEventListener('message', function(ev){
     var m = ev.data;

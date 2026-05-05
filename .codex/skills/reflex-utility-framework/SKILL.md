@@ -187,6 +187,47 @@ permissions, network hosts), call `bridge.manifest.update({ patch })` —
 the framework's hooks will see fresh manifest data on the next render via
 `useManifest().reload()`.
 
+### Secrets
+
+Two scopes: `global` and `project:<id>`. Values are encrypted at rest
+(AES-GCM, master key in macOS Keychain) and never leak through `logs.list`,
+`events.recent`, or screenshots — only an audit line `[<app>] <action>
+<scope>:<project>/<key>` is recorded.
+
+The standard pattern when a utility opens in a project: ask the bridge to
+**resolve** a key using its cascade (explicit projectId → linked projects →
+global). Do *not* call `secrets.get` directly unless you know exactly which
+scope to read.
+
+```ts
+import { useSecretValue } from "reflex-os-utility-framework";
+
+const { value, origin, found, loading } = useSecretValue("OPENAI_API_KEY");
+// origin.scope is "project" | "global"; origin.project_id tells you which
+// project (if any) provided the value.
+```
+
+For setup/management UI:
+
+- `<RequireSecrets required={[{ key: "OPENAI_API_KEY", description: "…" }]}>`
+  renders a setup banner when any required key is missing and lets the user
+  set it inline. Use `blocking` to gate the children entirely.
+- `<SecretsManager />` is the full CRUD editor — useful inside dedicated
+  settings panels (e.g. `system-secrets`-style utilities).
+- `useSecrets({ scope, projectId })` exposes a metadata list + `set` /
+  `remove` callbacks for custom UIs.
+
+Manifest grants (declare only the ones the utility actually uses):
+
+- `secrets.read:<projectId>`, `secrets.read:*`
+- `secrets.write:<projectId>`, `secrets.write:*`
+- `secrets.global.read`, `secrets.global.write`, `secrets.global` (read+write)
+- `secrets:*` (all of the above — only for power-user utilities)
+
+Linked-project reads via `secrets.resolve` and `secrets.has` work without
+any of these grants. Cross-project reads, all writes, and direct `secrets.get`
+require the explicit grant.
+
 ## Permission discipline
 
 When new bridge methods enter the utility, update `manifest.permissions`
@@ -202,6 +243,10 @@ document the required grants — a quick reference:
 | `project.files.write` | `project.files.write:<id>` or `…:*` |
 | `scheduler.runNow` (foreign app) | `scheduler.run:<app>` or `scheduler:*` |
 | `mcp.servers` raw config | `mcp.read:<id>` or `mcp.read:*` |
+| `secrets.get` (project) | `secrets.read:<id>` or `secrets.read:*` |
+| `secrets.get` (global) | `secrets.global.read` |
+| `secrets.set` / `delete` (project) | `secrets.write:<id>` or `secrets.write:*` |
+| `secrets.set` / `delete` (global) | `secrets.global.write` |
 | `apps.create` | `apps.create` or `apps:*` |
 | `apps.manage` (commit/diff/revert/server) | `apps.manage` or `apps:*` |
 

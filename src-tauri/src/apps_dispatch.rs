@@ -6,7 +6,7 @@ use crate::memory::files;
 use crate::memory::rag;
 use crate::memory::schema::{MemoryKind, MemoryScope, ScopeRoots};
 use crate::memory::store::{self, ListFilter, SaveRequest};
-use crate::{browser, logs, memory, project, storage};
+use crate::{browser, logs, memory, project, secrets, storage};
 use crate::scheduler;
 use crate::QuickContext;
 use std::path::{Component, Path, PathBuf};
@@ -741,6 +741,13 @@ pub async fn dispatch_app_method(
         "memory.forgetPath" | "memory.forget_path" => {
             memory_forget_path_for_app(app, app_id, params).await
         }
+        "secrets.list" => secrets_list_for_app(app, app_id, params),
+        "secrets.get" => secrets_get_for_app(app, app_id, params),
+        "secrets.has" => secrets_has_for_app(app, app_id, params),
+        "secrets.set" => secrets_set_for_app(app, app_id, params),
+        "secrets.delete" => secrets_delete_for_app(app, app_id, params),
+        "secrets.resolve" => secrets_resolve_for_app(app, app_id, params),
+        "secrets.scopes" => secrets_scopes_for_app(app, app_id),
         other => Err(format!("unknown method: {other}")),
     }
 }
@@ -2088,6 +2095,18 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
             ],
         ),
         bridge_group(
+            "Secrets",
+            &[
+                "secrets.list",
+                "secrets.get",
+                "secrets.has",
+                "secrets.set",
+                "secrets.delete",
+                "secrets.resolve",
+                "secrets.scopes",
+            ],
+        ),
+        bridge_group(
             "Automations",
             &[
                 "scheduler.list",
@@ -2267,6 +2286,13 @@ fn bridge_catalog_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::V
                 "reflexMemoryPathStatus",
                 "reflexMemoryPathStatusBatch",
                 "reflexMemoryForgetPath",
+                "reflexSecretsList",
+                "reflexSecretsGet",
+                "reflexSecretsHas",
+                "reflexSecretsSet",
+                "reflexSecretsDelete",
+                "reflexSecretsResolve",
+                "reflexSecretsScopes",
                 "reflexSchedulerList",
                 "reflexSchedulerUpsert",
                 "reflexSchedulerDelete",
@@ -6669,6 +6695,387 @@ fn scheduler_permission_allowed(
                 .map(|exact| permission == exact)
                 .unwrap_or(false)
     })
+}
+
+// ---------------------------------------------------------------------------
+// secrets.* dispatch
+// ---------------------------------------------------------------------------
+
+fn parse_secret_scope(params: &serde_json::Value) -> Result<String, String> {
+    let raw = params
+        .get("scope")
+        .and_then(|v| v.as_str())
+        .unwrap_or("project");
+    match raw {
+        "global" | "project" => Ok(raw.to_string()),
+        other => Err(format!(
+            "unknown scope '{other}' (expected 'global' or 'project')"
+        )),
+    }
+}
+
+fn parse_secret_key(params: &serde_json::Value) -> Result<String, String> {
+    let key = params
+        .get("key")
+        .and_then(|v| v.as_str())
+        .ok_or("missing key")?
+        .trim()
+        .to_string();
+    if key.is_empty() {
+        return Err("key must be non-empty".into());
+    }
+    Ok(key)
+}
+
+fn linked_project_ids(app: &AppHandle, app_id: &str) -> Vec<String> {
+    project::list_registered(app)
+        .map(|projects| {
+            projects
+                .into_iter()
+                .filter(|p| p.apps.iter().any(|id| id == app_id))
+                .map(|p| p.id)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn resolve_secret_project_id(
+    app: &AppHandle,
+    app_id: &str,
+    params: &serde_json::Value,
+) -> Result<String, String> {
+    if let Some(project_id) = params
+        .get("project_id")
+        .or_else(|| params.get("projectId"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+    {
+        return Ok(project_id);
+    }
+    let linked = linked_project_ids(app, app_id);
+    if linked.len() == 1 {
+        return Ok(linked.into_iter().next().expect("len==1"));
+    }
+    if linked.is_empty() {
+        return Err("project secrets require projectId (no linked project found)".into());
+    }
+    Err(format!(
+        "ambiguous project secrets: pass projectId (linked candidates: {})",
+        linked.join(", ")
+    ))
+}
+
+fn ensure_secret_grant(
+    app: &AppHandle,
+    app_id: &str,
+    scope: &str,
+    project_id: Option<&str>,
+    write: bool,
+) -> Result<(), String> {
+    let action = if write { "write" } else { "read" };
+    if scope == "global" {
+        let specific = format!("secrets.global.{action}");
+        if app_has_permission(app, app_id, &specific)
+            || app_has_permission(app, app_id, "secrets.global")
+            || app_has_permission(app, app_id, "secrets:*")
+        {
+            return Ok(());
+        }
+        return Err(format!(
+            "permission denied: global secrets require manifest.permissions entry '{specific}' or 'secrets:*'"
+        ));
+    }
+    let pid = project_id.ok_or("project secrets require projectId")?;
+    let specific = format!("secrets.{action}:{pid}");
+    let wildcard = format!("secrets.{action}:*");
+    if app_has_permission(app, app_id, &specific)
+        || app_has_permission(app, app_id, &wildcard)
+        || app_has_permission(app, app_id, "secrets:*")
+    {
+        return Ok(());
+    }
+    let linked = linked_project_ids(app, app_id);
+    if !write && linked.iter().any(|id| id == pid) {
+        return Ok(());
+    }
+    Err(format!(
+        "permission denied: secrets.{action} on project '{pid}' requires '{specific}' or '{wildcard}'"
+    ))
+}
+
+fn secrets_scope_for(
+    scope_label: &str,
+    project_id: Option<&str>,
+) -> Result<secrets::Scope<'static>, String> {
+    match scope_label {
+        "global" => Ok(secrets::Scope::Global),
+        "project" => {
+            let id = project_id.ok_or("project secrets require projectId")?;
+            // SAFETY: leaks the id string for the duration of the call. We
+            // accept this rather than threading lifetimes through every call
+            // site — secret operations are infrequent and the leaked
+            // payload is bounded by project ids.
+            Ok(secrets::Scope::Project(Box::leak(
+                id.to_string().into_boxed_str(),
+            )))
+        }
+        other => Err(format!("unknown scope '{other}'")),
+    }
+}
+
+fn secrets_log(
+    app: &AppHandle,
+    app_id: &str,
+    action: &str,
+    scope_label: &str,
+    project_id: Option<&str>,
+    key: &str,
+) {
+    let project = project_id.unwrap_or("-");
+    logs::log_with(
+        app,
+        logs::LogLevel::Info,
+        "secrets",
+        format!("[{app_id}] {action} {scope_label}:{project}/{key}"),
+    );
+}
+
+fn secrets_list_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let scope_label = parse_secret_scope(&params)?;
+    let project_id = if scope_label == "project" {
+        Some(resolve_secret_project_id(app, app_id, &params)?)
+    } else {
+        None
+    };
+    ensure_secret_grant(app, app_id, &scope_label, project_id.as_deref(), false)?;
+    let scope = secrets_scope_for(&scope_label, project_id.as_deref())?;
+    let entries = secrets::list(app, scope)?;
+    secrets_log(app, app_id, "list", &scope_label, project_id.as_deref(), "*");
+    Ok(serde_json::json!({
+        "entries": entries,
+    }))
+}
+
+fn secrets_get_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let scope_label = parse_secret_scope(&params)?;
+    let project_id = if scope_label == "project" {
+        Some(resolve_secret_project_id(app, app_id, &params)?)
+    } else {
+        None
+    };
+    ensure_secret_grant(app, app_id, &scope_label, project_id.as_deref(), false)?;
+    let key = parse_secret_key(&params)?;
+    let scope = secrets_scope_for(&scope_label, project_id.as_deref())?;
+    let entry = secrets::get(app, scope, &key)?
+        .ok_or_else(|| format!("secret not found: {scope_label}:{key}"))?;
+    secrets_log(app, app_id, "get", &scope_label, project_id.as_deref(), &key);
+    Ok(serde_json::json!({
+        "key": key,
+        "scope": scope_label,
+        "project_id": project_id,
+        "value": entry.value,
+        "updated_at_ms": entry.updated_at_ms,
+        "source_app_id": entry.source_app_id,
+    }))
+}
+
+fn secrets_has_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    // `has` is intentionally non-revealing: linked projects are queryable
+    // without an explicit grant so utilities can decide whether to render a
+    // "set this secret" prompt.
+    let scope_label = parse_secret_scope(&params)?;
+    let key = parse_secret_key(&params)?;
+    if scope_label == "global" {
+        let scope = secrets_scope_for(&scope_label, None)?;
+        let exists = secrets::has(app, scope, &key)?;
+        return Ok(serde_json::json!({
+            "key": key,
+            "scope": scope_label,
+            "exists": exists,
+        }));
+    }
+    let project_id = resolve_secret_project_id(app, app_id, &params)?;
+    let linked = linked_project_ids(app, app_id);
+    let allowed = linked.iter().any(|id| id == &project_id)
+        || app_has_permission(app, app_id, &format!("secrets.read:{project_id}"))
+        || app_has_permission(app, app_id, "secrets.read:*")
+        || app_has_permission(app, app_id, "secrets:*");
+    if !allowed {
+        return Err(format!(
+            "permission denied: secrets.has on project '{project_id}' requires linkage or secrets.read"
+        ));
+    }
+    let scope = secrets_scope_for(&scope_label, Some(&project_id))?;
+    let exists = secrets::has(app, scope, &key)?;
+    Ok(serde_json::json!({
+        "key": key,
+        "scope": scope_label,
+        "project_id": project_id,
+        "exists": exists,
+    }))
+}
+
+fn secrets_set_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let scope_label = parse_secret_scope(&params)?;
+    let project_id = if scope_label == "project" {
+        Some(resolve_secret_project_id(app, app_id, &params)?)
+    } else {
+        None
+    };
+    ensure_secret_grant(app, app_id, &scope_label, project_id.as_deref(), true)?;
+    let key = parse_secret_key(&params)?;
+    let value = params
+        .get("value")
+        .and_then(|v| v.as_str())
+        .ok_or("missing value")?
+        .to_string();
+    let scope = secrets_scope_for(&scope_label, project_id.as_deref())?;
+    let meta = secrets::set(app, scope, &key, &value, app_id)?;
+    secrets_log(app, app_id, "set", &scope_label, project_id.as_deref(), &key);
+    Ok(serde_json::to_value(meta).unwrap_or(serde_json::Value::Null))
+}
+
+fn secrets_delete_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let scope_label = parse_secret_scope(&params)?;
+    let project_id = if scope_label == "project" {
+        Some(resolve_secret_project_id(app, app_id, &params)?)
+    } else {
+        None
+    };
+    ensure_secret_grant(app, app_id, &scope_label, project_id.as_deref(), true)?;
+    let key = parse_secret_key(&params)?;
+    let scope = secrets_scope_for(&scope_label, project_id.as_deref())?;
+    let removed = secrets::delete(app, scope, &key)?;
+    secrets_log(app, app_id, "delete", &scope_label, project_id.as_deref(), &key);
+    Ok(serde_json::json!({
+        "ok": true,
+        "removed": removed,
+        "key": key,
+        "scope": scope_label,
+        "project_id": project_id,
+    }))
+}
+
+fn secrets_resolve_for_app(
+    app: &AppHandle,
+    app_id: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let key = parse_secret_key(&params)?;
+    // Resolution order: explicit projectId (if passed), then linked
+    // projects in registration order, then global.
+    let mut order: Vec<String> = Vec::new();
+    if let Some(explicit) = params
+        .get("project_id")
+        .or_else(|| params.get("projectId"))
+        .and_then(|v| v.as_str())
+    {
+        order.push(explicit.to_string());
+    }
+    for id in linked_project_ids(app, app_id) {
+        if !order.iter().any(|existing| existing == &id) {
+            order.push(id);
+        }
+    }
+
+    // Project-level read access is granted for linked projects (or with an
+    // explicit grant). For an explicitly requested non-linked project we
+    // require secrets.read:<id>.
+    let linked = linked_project_ids(app, app_id);
+    let mut filtered: Vec<String> = Vec::new();
+    for id in order {
+        if linked.iter().any(|l| l == &id) {
+            filtered.push(id);
+            continue;
+        }
+        if app_has_permission(app, app_id, &format!("secrets.read:{id}"))
+            || app_has_permission(app, app_id, "secrets.read:*")
+            || app_has_permission(app, app_id, "secrets:*")
+        {
+            filtered.push(id);
+        }
+    }
+
+    match secrets::resolve(app, &filtered, &key)? {
+        Some((meta, entry)) => {
+            // Global fallback requires secrets.global.read; if the cascade
+            // fell through to global we must enforce that grant here.
+            if meta.scope == "global"
+                && !(app_has_permission(app, app_id, "secrets.global.read")
+                    || app_has_permission(app, app_id, "secrets.global")
+                    || app_has_permission(app, app_id, "secrets:*"))
+            {
+                return Err(
+                    "permission denied: global resolve requires 'secrets.global.read'".into(),
+                );
+            }
+            secrets_log(
+                app,
+                app_id,
+                "resolve",
+                &meta.scope,
+                meta.project_id.as_deref(),
+                &meta.key,
+            );
+            Ok(serde_json::json!({
+                "found": true,
+                "key": meta.key,
+                "scope": meta.scope,
+                "project_id": meta.project_id,
+                "value": entry.value,
+                "updated_at_ms": meta.updated_at_ms,
+                "source_app_id": meta.source_app_id,
+            }))
+        }
+        None => Ok(serde_json::json!({
+            "found": false,
+            "key": key,
+        })),
+    }
+}
+
+fn secrets_scopes_for_app(
+    app: &AppHandle,
+    app_id: &str,
+) -> Result<serde_json::Value, String> {
+    let linked = linked_project_ids(app, app_id);
+    let projects: Vec<serde_json::Value> = linked
+        .into_iter()
+        .map(|id| {
+            let name = project::get_by_id(app, &id)
+                .ok()
+                .flatten()
+                .map(|p| p.name)
+                .unwrap_or_else(|| id.clone());
+            serde_json::json!({ "id": id, "name": name })
+        })
+        .collect();
+    Ok(serde_json::json!({
+        "scopes": [
+            { "scope": "global" },
+            { "scope": "project", "projects": projects }
+        ]
+    }))
 }
 
 #[cfg(test)]
