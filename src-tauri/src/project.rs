@@ -358,6 +358,11 @@ pub fn create_project(
     name: Option<String>,
     description: Option<String>,
 ) -> io::Result<Project> {
+    if let Some(existing) = find_project_for(root) {
+        register(app, &existing)?;
+        return Ok(existing);
+    }
+
     fs::create_dir_all(topics_dir(root))?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -526,6 +531,26 @@ mod tests {
         assert!(moved_root.join("README.md").is_file());
         let persisted = read_project_at(&moved_root).expect("read moved project");
         assert_eq!(persisted.root, moved_root.to_string_lossy());
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn find_project_for_returns_ancestor_project_for_nested_path() {
+        let base = std::env::temp_dir().join(format!(
+            "reflex-project-find-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let root = base.join("Project");
+        let nested = root.join("src").join("feature");
+        fs::create_dir_all(&nested).expect("nested dir");
+        fs::create_dir_all(project_dir(&root)).expect("project dir");
+        let project = test_project(&root);
+        write_project(&root, &project).expect("write project");
+
+        let found = find_project_for(&nested).expect("found ancestor project");
+        assert_eq!(found.id, project.id);
+        assert_eq!(found.root, root.to_string_lossy());
+        assert!(!project_exists(&nested));
         let _ = fs::remove_dir_all(base);
     }
 }
