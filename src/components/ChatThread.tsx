@@ -53,6 +53,7 @@ import type {
   ThreadQuestion,
 } from "./workspace/workspaceTypes";
 import { buildWorkspaceTree } from "./workspace/navTree";
+import { PaneTabs, TAB_DRAG_TYPE } from "./workspace/PaneTabs";
 import { WorkspaceMain } from "./workspace/WorkspaceMain";
 import { WorkspaceShell } from "./workspace/WorkspaceShell";
 import { WorkspaceSidebar } from "./workspace/WorkspaceSidebar";
@@ -288,8 +289,6 @@ type Layout = {
 
 let paneSeq = 0;
 const nextPaneId = (): PaneId => `p${++paneSeq}`;
-
-const TAB_DRAG_TYPE = "application/reflex-tab";
 
 const initialLayout = (): Layout => {
   const id = nextPaneId();
@@ -1727,6 +1726,7 @@ function PaneView({
       onTabDrop(paneId, key);
     } catch {}
   };
+  const { t } = useI18n();
   return (
     <div
       className={`pane ${focused ? "pane-focused" : ""}`}
@@ -1735,13 +1735,14 @@ function PaneView({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
-      <PaneTabsRow
+      <PaneTabs
         paneId={pane.id}
         tabs={pane.tabs}
         activeKey={pane.activeKey}
-        projects={projects}
-        threads={threads}
         canClosePane={canClose}
+        getRouteKey={routeKey}
+        getRouteIcon={tabIcon}
+        getRouteLabel={(route) => tabLabel(route, projects, threads, t)}
         onActivate={onActivateTab}
         onClose={onCloseTab}
         onClosePane={onClosePane}
@@ -1759,91 +1760,6 @@ function PaneView({
         })}
       </main>
     </div>
-  );
-}
-
-function PaneTabsRow({
-  paneId,
-  tabs,
-  activeKey,
-  projects,
-  threads,
-  canClosePane,
-  onActivate,
-  onClose,
-  onClosePane,
-  onTabDragStart,
-  onTabDragEnd,
-}: {
-  paneId: PaneId;
-  tabs: Route[];
-  activeKey: string;
-  projects: Project[];
-  threads: Thread[];
-  canClosePane: boolean;
-  onActivate: (key: string) => void;
-  onClose: (key: string) => void;
-  onClosePane: () => void;
-  onTabDragStart: () => void;
-  onTabDragEnd: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <nav className="tabs-row">
-      {tabs.map((r) => {
-        const k = routeKey(r);
-        const active = k === activeKey;
-        const label = tabLabel(r, projects, threads, t);
-        return (
-          <div
-            key={k}
-            className={`tab ${active ? "active" : ""}`}
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData(
-                TAB_DRAG_TYPE,
-                JSON.stringify({ paneId, key: k }),
-              );
-              e.dataTransfer.effectAllowed = "move";
-              onTabDragStart();
-            }}
-            onDragEnd={onTabDragEnd}
-            onClick={() => onActivate(k)}
-            onMouseDown={(e) => {
-              if (e.button === 1) {
-                e.preventDefault();
-                onClose(k);
-              }
-            }}
-            title={label}
-          >
-            <span className="tab-icon">{tabIcon(r)}</span>
-            <span className="tab-label">{label}</span>
-            <button
-              className="tab-close"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose(k);
-              }}
-              title={t("nav.closeTab")}
-              aria-label={t("nav.closeTab")}
-            >
-              ×
-            </button>
-          </div>
-        );
-      })}
-      {canClosePane && (
-        <button
-          className="pane-close-btn"
-          onClick={onClosePane}
-          title={t("nav.closePane")}
-          aria-label={t("nav.closePane")}
-        >
-          ⨯
-        </button>
-      )}
-    </nav>
   );
 }
 
