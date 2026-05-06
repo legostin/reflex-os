@@ -88,7 +88,7 @@ Backend APIs should not change unless the tree uncovers a missing field. The fir
 
 Tailwind is added as the primary styling system:
 
-- Add Tailwind and PostCSS configuration.
+- Add Tailwind v4 and the official Vite plugin configuration.
 - Replace global app styles with a Tailwind entry file.
 - Use Tailwind utility classes and small shared React primitives instead of broad CSS selectors.
 - Avoid a second design system. Shared primitives should be plain components such as `Button`, `IconButton`, `Panel`, `TreeItem`, `Badge`, `Input`, and `ModalFrame`.
