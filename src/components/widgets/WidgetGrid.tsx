@@ -1,6 +1,5 @@
 import { WidgetFrame } from "./WidgetFrame";
 import { useI18n } from "../../i18n";
-import "./widgets.css";
 
 export interface WidgetDef {
   id: string;

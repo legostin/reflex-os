@@ -57,7 +57,6 @@ import { PaneTabs, TAB_DRAG_TYPE } from "./workspace/PaneTabs";
 import { WorkspaceMain } from "./workspace/WorkspaceMain";
 import { WorkspaceShell } from "./workspace/WorkspaceShell";
 import { WorkspaceSidebar } from "./workspace/WorkspaceSidebar";
-import "./ChatThread.css";
 
 const BRIDGE_API_COUNT = BRIDGE_API_GROUPS.reduce(
   (sum, group) => sum + group.methods.length,

@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MemoryRef, RagHit, RecallResult } from "../../types/memory";
 import { useI18n } from "../../i18n";
-import "./memory.css";
 
 interface RecallViewProps {
   projectRoot: string;

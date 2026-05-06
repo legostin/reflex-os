@@ -28,7 +28,7 @@ function escapeRegExp(value) {
 }
 
 const chatThread = read("src/components/ChatThread.tsx");
-const chatCss = read("src/components/ChatThread.css");
+const stylesCss = read("src/styles.css");
 const i18n = read("src/i18n.tsx");
 const packageJson = JSON.parse(read("package.json"));
 
@@ -188,7 +188,7 @@ for (const key of [
   if (count < 2) failures.push(`Dashboard i18n key is not translated in both locales: ${key}`);
 }
 
-requireIncludes(failures, chatCss, "Dashboard widget preview styles are incomplete", [
+requireIncludes(failures, stylesCss, "Dashboard widget preview styles are incomplete", [
   ".dashboard-widget-preview",
   ".dashboard-widget-preview-chip",
   ".dashboard-widget-preview-chip-signals",

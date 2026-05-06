@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../../i18n";
-import "./file-drawer.css";
 
 export type DrawerTarget = {
   name: string;

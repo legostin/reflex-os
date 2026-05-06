@@ -14,7 +14,6 @@ import { useI18n, type Translate } from "../../i18n";
 import MemoryEditor from "./MemoryEditor";
 import RecallView from "./RecallView";
 import SearchBox from "./SearchBox";
-import "./memory.css";
 
 interface MemoryPanelProps {
   projectRoot?: string | null;

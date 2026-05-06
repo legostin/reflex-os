@@ -12,7 +12,6 @@ import {
   bridgeRecipeTitle,
 } from "../../appBridgeCatalogI18n";
 import { useI18n, type LanguageSetting } from "../../i18n";
-import "./settings.css";
 
 type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 

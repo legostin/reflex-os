@@ -5,7 +5,6 @@ import type { ScheduleListItem, SchedulerStats } from "./types";
 import { RunHistoryView } from "./RunHistoryView";
 import { RunDetailPanel } from "./RunDetailPanel";
 import { useI18n, type Translate } from "../../i18n";
-import "./automations.css";
 
 type Tab = "schedules" | "history";
 

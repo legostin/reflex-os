@@ -2,7 +2,6 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../../i18n";
 import { RagHit } from "../../types/memory";
-import "./memory.css";
 
 interface SearchBoxProps {
   projectRoot: string;
