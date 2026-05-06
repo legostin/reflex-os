@@ -167,6 +167,53 @@ fn list_apps(app: AppHandle) -> Result<Vec<apps::AppListing>, String> {
 }
 
 #[tauri::command]
+fn list_app_folders(app: AppHandle) -> Result<Vec<apps::AppFolder>, String> {
+    apps::list_app_folders(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_app_folder(
+    app: AppHandle,
+    parent_path: Option<String>,
+    name: String,
+) -> Result<apps::AppFolder, String> {
+    let folder = apps::create_app_folder(&app, parent_path.as_deref(), &name)
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    Ok(folder)
+}
+
+#[tauri::command]
+fn rename_app_folder(
+    app: AppHandle,
+    path: String,
+    name: String,
+) -> Result<apps::AppFolder, String> {
+    let folder = apps::rename_app_folder(&app, &path, &name).map_err(|e| e.to_string())?;
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    Ok(folder)
+}
+
+#[tauri::command]
+fn delete_app_folder(app: AppHandle, path: String) -> Result<(), String> {
+    apps::delete_app_folder(&app, &path).map_err(|e| e.to_string())?;
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    Ok(())
+}
+
+#[tauri::command]
+fn move_app_to_folder(
+    app: AppHandle,
+    app_id: String,
+    folder_path: Option<String>,
+) -> Result<apps::AppManifest, String> {
+    let manifest = apps::move_app_to_folder(&app, &app_id, folder_path.as_deref())
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
+    Ok(manifest)
+}
+
+#[tauri::command]
 fn read_app_html(app: AppHandle, app_id: String) -> Result<String, String> {
     apps::read_app_html(&app, &app_id).map_err(|e| e.to_string())
 }
@@ -502,6 +549,7 @@ fn install_connected_app(
         permissions: vec!["browser.control".into(), "browser.read".into()],
         kind: "panel".into(),
         created_at_ms,
+        folder_path: None,
         runtime: Some("static".into()),
         server: None,
         external: Some(apps::ExternalConfig {
@@ -1913,6 +1961,7 @@ async fn create_app(
         permissions: vec![],
         kind: "panel".into(),
         created_at_ms: now_ms,
+        folder_path: None,
         runtime: None,
         server: None,
         external: None,
@@ -2797,6 +2846,47 @@ fn create_project(
         return Err(format!("not a directory: {root}"));
     }
     project::create_project(&app, &path, name, description).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_project_folders(app: AppHandle) -> Result<Vec<project::ProjectFolder>, String> {
+    project::list_project_folders(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_project_folder(
+    app: AppHandle,
+    parent_path: String,
+    name: String,
+) -> Result<project::ProjectFolder, String> {
+    project::create_project_folder_registered(&app, &PathBuf::from(parent_path), &name)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_project_folder(
+    app: AppHandle,
+    path: String,
+    name: String,
+) -> Result<project::ProjectFolder, String> {
+    project::rename_project_folder_registered(&app, &PathBuf::from(path), &name)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_project_folder(app: AppHandle, path: String) -> Result<(), String> {
+    project::delete_project_folder_registered(&app, &PathBuf::from(path))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn move_project_to_folder(
+    app: AppHandle,
+    project_id: String,
+    folder_path: String,
+) -> Result<project::Project, String> {
+    project::move_project_to_folder_registered(&app, &project_id, &PathBuf::from(folder_path))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -4398,6 +4488,11 @@ pub fn run() {
             get_active_project,
             set_active_project,
             create_project,
+            list_project_folders,
+            create_project_folder,
+            rename_project_folder,
+            delete_project_folder,
+            move_project_to_folder,
             update_project_description,
             update_project_agent_profile,
             link_app_to_project,
@@ -4408,6 +4503,11 @@ pub fn run() {
             update_project_browser,
             update_project_mcp_servers,
             list_apps,
+            list_app_folders,
+            create_app_folder,
+            rename_app_folder,
+            delete_app_folder,
+            move_app_to_folder,
             read_app_html,
             app_invoke,
             create_app,

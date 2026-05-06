@@ -65,6 +65,14 @@ type Project = {
   apps?: string[];
 };
 
+type ProjectFolder = {
+  path: string;
+  name: string;
+  parent_path?: string | null;
+  project_count?: number;
+  created_at_ms?: number;
+};
+
 type ProjectMemoryStats = {
   docs: number;
   chunks: number;
@@ -486,6 +494,7 @@ type AppManifest = {
   permissions: string[];
   kind: string;
   created_at_ms: number;
+  folder_path?: string | null;
   ready?: boolean;
   runtime?: "static" | "server" | "external" | string | null;
   server?: { command: string[]; ready_timeout_ms?: number | null } | null;
@@ -509,6 +518,13 @@ type AppManifest = {
   actions?: AppAction[];
   widgets?: AppWidget[];
   self_test?: AppSelfTestStatus | null;
+};
+
+type AppFolder = {
+  path: string;
+  name: string;
+  parent_path?: string | null;
+  created_at_ms?: number;
 };
 
 type GitHubExportResult = {
@@ -1594,6 +1610,12 @@ export default function ChatThread() {
               createNewTopic(projectId, prompt, planMode, { imagePaths, goal })
             }
             onCreateProject={() => void createNewProject()}
+            onProjectUpdated={onProjectUpdated}
+            onProjectsReload={() =>
+              void invoke<Project[]>("list_projects").then((list) =>
+                setProjects(list),
+              )
+            }
           />
         );
       case "project":
@@ -2382,6 +2404,7 @@ function AppsScreen({
 }) {
   const { t } = useI18n();
   const [items, setItems] = useState<AppManifest[]>([]);
+  const [folders, setFolders] = useState<AppFolder[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -2397,6 +2420,7 @@ function AppsScreen({
   const [trash, setTrash] = useState<TrashEntry[]>([]);
   const [showTrash, setShowTrash] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [folderBusy, setFolderBusy] = useState<string | null>(null);
   const selectedTemplate =
     TEMPLATES.find((item) => item.id === template) ?? TEMPLATES[0];
   const connectedApps = useMemo(
@@ -2467,11 +2491,13 @@ function AppsScreen({
 
   async function refresh() {
     try {
-      const [list, trashed] = await Promise.all([
+      const [list, appFolders, trashed] = await Promise.all([
         invoke<AppManifest[]>("list_apps"),
+        invoke<AppFolder[]>("list_app_folders"),
         invoke<TrashEntry[]>("list_trashed_apps"),
       ]);
       setItems(list);
+      setFolders(appFolders);
       setTrash(trashed);
     } catch (e) {
       setError(String(e));
@@ -2522,17 +2548,109 @@ function AppsScreen({
     }
   }
 
+  async function createUtilityFolder(parentPath?: string | null) {
+    const name = window.prompt(t("folders.namePrompt"))?.trim();
+    if (!name) return;
+    setFolderBusy(parentPath ?? "__root__");
+    setError(null);
+    try {
+      await invoke<AppFolder>("create_app_folder", {
+        parentPath: parentPath ?? null,
+        name,
+      });
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setFolderBusy(null);
+    }
+  }
+
+  async function renameUtilityFolder(path: string) {
+    const folder = folders.find((item) => item.path === path);
+    const name = window.prompt(t("folders.renamePrompt"), folder?.name ?? "");
+    if (!name?.trim()) return;
+    setFolderBusy(path);
+    setError(null);
+    try {
+      await invoke<AppFolder>("rename_app_folder", {
+        path,
+        name: name.trim(),
+      });
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setFolderBusy(null);
+    }
+  }
+
+  async function deleteUtilityFolder(path: string) {
+    if (!window.confirm(t("folders.deleteConfirm"))) return;
+    setFolderBusy(path);
+    setError(null);
+    try {
+      await invoke("delete_app_folder", { path });
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setFolderBusy(null);
+    }
+  }
+
+  async function moveUtilityToFolder(appId: string, folderPath: string) {
+    setBusyId(appId);
+    setError(null);
+    try {
+      await invoke<AppManifest>("move_app_to_folder", {
+        appId,
+        folderPath: folderPath || null,
+      });
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const appFolderSections = useMemo(() => {
+    const byPath = new Map<string, AppManifest[]>();
+    for (const app of items) {
+      const key = app.folder_path ?? "";
+      const arr = byPath.get(key) ?? [];
+      arr.push(app);
+      byPath.set(key, arr);
+    }
+    const sections = [
+      {
+        path: "",
+        name: t("folders.root"),
+        parent_path: null,
+        apps: byPath.get("") ?? [],
+      },
+      ...folders.map((folder) => ({
+        ...folder,
+        apps: byPath.get(folder.path) ?? [],
+      })),
+    ];
+    return sections.filter((section) => section.path || section.apps.length > 0);
+  }, [folders, items, t]);
+
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setInterval> | null = null;
     const tick = () => {
       Promise.all([
         invoke<AppManifest[]>("list_apps"),
+        invoke<AppFolder[]>("list_app_folders"),
         invoke<TrashEntry[]>("list_trashed_apps"),
       ])
-        .then(([list, trashed]) => {
+        .then(([list, appFolders, trashed]) => {
           if (!alive) return;
           setItems(list);
+          setFolders(appFolders);
           setTrash(trashed);
           const stillCreating = list.some((a) => a.ready === false);
           if (!stillCreating && timer) {
@@ -2634,6 +2752,12 @@ function AppsScreen({
         <div className="apps-header-row">
           <h1 className="section-title">{t("nav.apps")}</h1>
           <div className="apps-header-buttons">
+            <button
+              className="apps-create-btn"
+              onClick={() => createUtilityFolder(null)}
+            >
+              {t("folders.newFolder")}
+            </button>
             <button
               className="apps-create-btn"
               onClick={() => setShowModal(true)}
@@ -2785,68 +2909,136 @@ function AppsScreen({
           <p>{t("apps.empty")}</p>
         </div>
       ) : (
-        <div className="apps-grid">
-          {items.map((a) => {
-            const isReady = a.ready !== false;
-            const capabilityFacts = buildAppCatalogCapabilityFacts(a);
-            return (
-              <div
-                key={a.id}
-                role="button"
-                tabIndex={0}
-                className={`apps-card ${isReady ? "" : "apps-card-creating"}`}
-                onClick={() => onOpenApp(a.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") onOpenApp(a.id);
-                }}
-                title={
-                  isReady ? t("apps.open") : t("apps.writingFiles")
-                }
-              >
-                <button
-                  className="apps-card-delete"
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    void deleteApp(a.id, a.name);
-                  }}
-                  disabled={busyId === a.id}
-                  title={t("apps.moveToTrash")}
-                >
-                  ✕
-                </button>
-                <div className="apps-card-icon">{a.icon ?? "🧩"}</div>
-                <div className="apps-card-name">
-                  {a.name}
-                  {!isReady && (
-                    <span className="apps-card-badge">
-                      {t("apps.creatingBadge")}
-                    </span>
+        <div className="folder-section-list">
+          {appFolderSections.map((section) => (
+            <section key={section.path || "__root__"} className="folder-section">
+              <div className="folder-section-head">
+                <div>
+                  <h3 className="folder-title">
+                    {section.path ? "📁" : "⌂"} {section.name}
+                  </h3>
+                  {section.path && (
+                    <div className="folder-path" title={section.path}>
+                      {section.path}
+                    </div>
                   )}
                 </div>
-                {a.description && (
-                  <div className="apps-card-desc">{a.description}</div>
-                )}
-                {capabilityFacts.length > 0 && (
-                  <div className="apps-card-capabilities">
-                    {capabilityFacts.map((fact) => (
-                      <span
-                        key={fact.key}
-                        className="apps-capability"
-                        title={fact.title}
+                <div className="folder-actions">
+                  <button
+                    className="folder-action"
+                    disabled={folderBusy === section.path}
+                    onClick={() => createUtilityFolder(section.path || null)}
+                  >
+                    {section.path
+                      ? t("folders.newSubfolder")
+                      : t("folders.newFolder")}
+                  </button>
+                  {section.path && (
+                    <>
+                      <button
+                        className="folder-action"
+                        disabled={folderBusy === section.path}
+                        onClick={() => renameUtilityFolder(section.path)}
                       >
-                        <span className="apps-capability-label">
-                          {fact.label}
-                        </span>
-                        <span className="apps-capability-value">
-                          {fact.value}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                )}
+                        {t("folders.rename")}
+                      </button>
+                      {section.apps.length === 0 && (
+                        <button
+                          className="folder-action"
+                          disabled={folderBusy === section.path}
+                          onClick={() => deleteUtilityFolder(section.path)}
+                        >
+                          {t("folders.delete")}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
-            );
-          })}
+              {section.apps.length === 0 ? (
+                <div className="folder-empty">{t("folders.empty")}</div>
+              ) : (
+                <div className="apps-grid">
+                  {section.apps.map((a) => {
+                    const isReady = a.ready !== false;
+                    const capabilityFacts = buildAppCatalogCapabilityFacts(a);
+                    return (
+                      <div
+                        key={a.id}
+                        role="button"
+                        tabIndex={0}
+                        className={`apps-card ${isReady ? "" : "apps-card-creating"}`}
+                        onClick={() => onOpenApp(a.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") onOpenApp(a.id);
+                        }}
+                        title={isReady ? t("apps.open") : t("apps.writingFiles")}
+                      >
+                        <button
+                          className="apps-card-delete"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            void deleteApp(a.id, a.name);
+                          }}
+                          disabled={busyId === a.id}
+                          title={t("apps.moveToTrash")}
+                        >
+                          ✕
+                        </button>
+                        <div className="apps-card-icon">{a.icon ?? "🧩"}</div>
+                        <div className="apps-card-name">
+                          {a.name}
+                          {!isReady && (
+                            <span className="apps-card-badge">
+                              {t("apps.creatingBadge")}
+                            </span>
+                          )}
+                        </div>
+                        {a.description && (
+                          <div className="apps-card-desc">{a.description}</div>
+                        )}
+                        {capabilityFacts.length > 0 && (
+                          <div className="apps-card-capabilities">
+                            {capabilityFacts.map((fact) => (
+                              <span
+                                key={fact.key}
+                                className="apps-capability"
+                                title={fact.title}
+                              >
+                                <span className="apps-capability-label">
+                                  {fact.label}
+                                </span>
+                                <span className="apps-capability-value">
+                                  {fact.value}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <select
+                          className="folder-select"
+                          value={a.folder_path ?? ""}
+                          disabled={busyId === a.id}
+                          onClick={(ev) => ev.stopPropagation()}
+                          onChange={(ev) => {
+                            ev.stopPropagation();
+                            void moveUtilityToFolder(a.id, ev.currentTarget.value);
+                          }}
+                        >
+                          <option value="">{t("folders.root")}</option>
+                          {folders.map((folder) => (
+                            <option key={folder.path} value={folder.path}>
+                              {folder.path}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          ))}
         </div>
       )}
       {showModal && (
@@ -4528,6 +4720,8 @@ function HomeScreen({
   onOpenMemory,
   onCreateTopic,
   onCreateProject,
+  onProjectUpdated,
+  onProjectsReload,
 }: {
   projects: Project[];
   threads: Thread[];
@@ -4545,6 +4739,8 @@ function HomeScreen({
     goal?: string | null,
   ) => Promise<void>;
   onCreateProject: () => void;
+  onProjectUpdated: (project: Project) => void;
+  onProjectsReload: () => void;
 }) {
   const { t } = useI18n();
   const projectsRef = useRef<HTMLElement>(null);
@@ -4553,6 +4749,10 @@ function HomeScreen({
   const [dialogSubmitting, setDialogSubmitting] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [dialogApps, setDialogApps] = useState<AppManifest[]>([]);
+  const [projectFolders, setProjectFolders] = useState<ProjectFolder[]>([]);
+  const [projectFolderBusy, setProjectFolderBusy] = useState<string | null>(
+    null,
+  );
   const hasProjects = projects.length > 0;
   const dialogProject =
     projects.find((project) => project.id === dialogProjectId) ?? null;
@@ -4636,6 +4836,121 @@ function HomeScreen({
     };
   }, []);
 
+  const refreshProjectFolders = () => {
+    invoke<ProjectFolder[]>("list_project_folders")
+      .then(setProjectFolders)
+      .catch((e) => console.warn("[reflex] list_project_folders failed", e));
+  };
+
+  useEffect(() => {
+    refreshProjectFolders();
+  }, [projects]);
+
+  async function createProjectFolder(parentPath?: string | null) {
+    const fallbackParent =
+      parentPath ||
+      projectFolders[0]?.path ||
+      projects[0]?.root.replace(/\/[^/]*$/, "") ||
+      "";
+    const parent =
+      window.prompt(t("folders.parentPathPrompt"), fallbackParent)?.trim() ||
+      "";
+    if (!parent) return;
+    const name = window.prompt(t("folders.namePrompt"))?.trim();
+    if (!name) return;
+    setProjectFolderBusy(parent);
+    try {
+      await invoke<ProjectFolder>("create_project_folder", {
+        parentPath: parent,
+        name,
+      });
+      refreshProjectFolders();
+    } catch (e) {
+      window.alert(String(e));
+    } finally {
+      setProjectFolderBusy(null);
+    }
+  }
+
+  async function renameProjectFolder(path: string) {
+    const current = projectFolders.find((folder) => folder.path === path);
+    const name = window.prompt(t("folders.renamePrompt"), current?.name ?? "");
+    if (!name?.trim()) return;
+    setProjectFolderBusy(path);
+    try {
+      await invoke<ProjectFolder>("rename_project_folder", {
+        path,
+        name: name.trim(),
+      });
+      onProjectsReload();
+      refreshProjectFolders();
+    } catch (e) {
+      window.alert(String(e));
+    } finally {
+      setProjectFolderBusy(null);
+    }
+  }
+
+  async function deleteProjectFolder(path: string) {
+    if (!window.confirm(t("folders.deleteConfirm"))) return;
+    setProjectFolderBusy(path);
+    try {
+      await invoke("delete_project_folder", { path });
+      refreshProjectFolders();
+    } catch (e) {
+      window.alert(String(e));
+    } finally {
+      setProjectFolderBusy(null);
+    }
+  }
+
+  async function moveProject(projectId: string, folderPath: string) {
+    if (!folderPath) return;
+    if (!window.confirm(t("folders.moveProjectConfirm"))) return;
+    setProjectFolderBusy(projectId);
+    try {
+      const updated = await invoke<Project>("move_project_to_folder", {
+        projectId,
+        folderPath,
+      });
+      onProjectUpdated(updated);
+      onProjectsReload();
+      refreshProjectFolders();
+    } catch (e) {
+      window.alert(String(e));
+    } finally {
+      setProjectFolderBusy(null);
+    }
+  }
+
+  const projectFolderSections = useMemo(() => {
+    const byPath = new Map<string, Project[]>();
+    for (const project of projects) {
+      const parent = project.root.replace(/\/[^/]*$/, "");
+      const arr = byPath.get(parent) ?? [];
+      arr.push(project);
+      byPath.set(parent, arr);
+    }
+    const known = new Map(projectFolders.map((folder) => [folder.path, folder]));
+    for (const path of byPath.keys()) {
+      if (!known.has(path)) {
+        known.set(path, {
+          path,
+          name: path.split("/").pop() || path,
+          parent_path: null,
+        });
+      }
+    }
+    return [...known.values()]
+      .sort((a, b) => a.path.localeCompare(b.path))
+      .map((folder) => ({
+        folder,
+        projects: (byPath.get(folder.path) ?? []).sort((a, b) =>
+          a.name.localeCompare(b.name),
+        ),
+      }));
+  }, [projectFolders, projects]);
+
   return (
     <div className="home-root">
       <section className="home-start">
@@ -4692,47 +5007,111 @@ function HomeScreen({
       <section ref={projectsRef}>
         <div className="section-head">
           <h2 className="section-title">{t("home.projects")}</h2>
-          <button className="apps-create-btn" onClick={onCreateProject}>
-            {t("home.newProject")}
-          </button>
+          <div className="section-actions">
+            <button className="apps-create-btn" onClick={() => createProjectFolder()}>
+              {t("folders.newFolder")}
+            </button>
+            <button className="apps-create-btn" onClick={onCreateProject}>
+              {t("home.newProject")}
+            </button>
+          </div>
         </div>
         {projects.length === 0 ? (
           <div className="home-empty-panel">
             <p>{t("home.noProjectsHint")}</p>
           </div>
         ) : (
-          <div className="project-grid">
-            {projects.map((p) => {
-              const projectThreads = threads.filter(
-                (t) => t.project_id === p.id,
-              );
-              const count = projectThreads.length;
-              const running = projectThreads.filter((t) => !t.done).length;
-              return (
-                <button
-                  key={p.id}
-                  className="project-card"
-                  onClick={() => onSelectProject(p.id)}
-                >
-                  <div className="project-card-icon">📁</div>
-                  <div className="project-card-name">
-                    {p.name}
-                    {running > 0 && (
-                      <span className="project-card-running">
-                        <span className="status-dot status-dot-running" />
-                        {running}
-                      </span>
+          <div className="folder-section-list">
+            {projectFolderSections.map(({ folder, projects }) => (
+              <section key={folder.path} className="folder-section">
+                <div className="folder-section-head">
+                  <div>
+                    <h3 className="folder-title">📁 {folder.name}</h3>
+                    <div className="folder-path" title={folder.path}>
+                      {folder.path}
+                    </div>
+                  </div>
+                  <div className="folder-actions">
+                    <button
+                      className="folder-action"
+                      disabled={projectFolderBusy === folder.path}
+                      onClick={() => createProjectFolder(folder.path)}
+                    >
+                      {t("folders.newSubfolder")}
+                    </button>
+                    <button
+                      className="folder-action"
+                      disabled={projectFolderBusy === folder.path}
+                      onClick={() => renameProjectFolder(folder.path)}
+                    >
+                      {t("folders.rename")}
+                    </button>
+                    {projects.length === 0 && (
+                      <button
+                        className="folder-action"
+                        disabled={projectFolderBusy === folder.path}
+                        onClick={() => deleteProjectFolder(folder.path)}
+                      >
+                        {t("folders.delete")}
+                      </button>
                     )}
                   </div>
-                  <div className="project-card-path" title={p.root}>
-                    {p.root}
+                </div>
+                {projects.length === 0 ? (
+                  <div className="folder-empty">{t("folders.empty")}</div>
+                ) : (
+                  <div className="project-grid">
+                    {projects.map((p) => {
+                      const projectThreads = threads.filter(
+                        (t) => t.project_id === p.id,
+                      );
+                      const count = projectThreads.length;
+                      const running = projectThreads.filter((t) => !t.done).length;
+                      return (
+                        <div key={p.id} className="project-card project-card-shell">
+                          <button
+                            className="project-card-main"
+                            onClick={() => onSelectProject(p.id)}
+                          >
+                            <div className="project-card-icon">📁</div>
+                            <div className="project-card-name">
+                              {p.name}
+                              {running > 0 && (
+                                <span className="project-card-running">
+                                  <span className="status-dot status-dot-running" />
+                                  {running}
+                                </span>
+                              )}
+                            </div>
+                            <div className="project-card-path" title={p.root}>
+                              {p.root}
+                            </div>
+                            <div className="project-card-meta">
+                              {t("home.topicsCount", { count })}
+                            </div>
+                          </button>
+                          <select
+                            className="folder-select"
+                            value={folder.path}
+                            disabled={projectFolderBusy === p.id}
+                            onChange={(e) => moveProject(p.id, e.currentTarget.value)}
+                          >
+                            {projectFolderSections.map((section) => (
+                              <option
+                                key={section.folder.path}
+                                value={section.folder.path}
+                              >
+                                {section.folder.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="project-card-meta">
-                    {t("home.topicsCount", { count })}
-                  </div>
-                </button>
-              );
-            })}
+                )}
+              </section>
+            ))}
           </div>
         )}
       </section>

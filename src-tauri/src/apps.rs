@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use tauri::{AppHandle, Manager};
 
+const APP_FOLDERS_FILE: &str = "app-folders.json";
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppManifest {
     pub id: String,
@@ -21,6 +23,8 @@ pub struct AppManifest {
     pub kind: String,
     #[serde(default)]
     pub created_at_ms: u128,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder_path: Option<String>,
     /// "static" (default) — отдаём файлы через reflexapp:// URI scheme.
     /// "server" — запускаем manifest.server.command, iframe смотрит на reflexserver://<app-id>/
     /// "external" — iframe смотрит на manifest.external.url; overlay is unavailable inside cross-origin content.
@@ -58,6 +62,16 @@ pub struct AppSelfTestStatus {
     pub finished_at_ms: Option<u128>,
     #[serde(default)]
     pub checks: Vec<AppSelfTestCheck>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct AppFolder {
+    pub path: String,
+    pub name: String,
+    #[serde(default)]
+    pub parent_path: Option<String>,
+    #[serde(default)]
+    pub created_at_ms: u128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -232,6 +246,302 @@ pub fn apps_dir(app: &AppHandle) -> io::Result<PathBuf> {
     let dir = base.join("apps");
     fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+fn app_folders_path(app: &AppHandle) -> io::Result<PathBuf> {
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    fs::create_dir_all(&base)?;
+    Ok(base.join(APP_FOLDERS_FILE))
+}
+
+pub fn normalize_app_folder_path(input: Option<&str>) -> io::Result<Option<String>> {
+    let Some(input) = input else {
+        return Ok(None);
+    };
+    let mut parts = Vec::new();
+    for raw in input.split('/') {
+        let part = raw.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if part == "." || part == ".." || part.eq_ignore_ascii_case(".reflex") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("invalid folder segment: {part}"),
+            ));
+        }
+        if part.contains('\\') || part.chars().any(|ch| ch.is_control()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("invalid folder segment: {part}"),
+            ));
+        }
+        parts.push(part.to_string());
+    }
+    if parts.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(parts.join("/")))
+    }
+}
+
+fn app_folder_name_from_path(path: &str) -> String {
+    path.rsplit('/').next().unwrap_or(path).to_string()
+}
+
+fn app_folder_parent_from_path(path: &str) -> Option<String> {
+    path.rsplit_once('/').map(|(parent, _)| parent.to_string())
+}
+
+pub fn list_app_folders(app: &AppHandle) -> io::Result<Vec<AppFolder>> {
+    let path = app_folders_path(app)?;
+    let mut folders: Vec<AppFolder> = if path.exists() {
+        serde_json::from_str(&fs::read_to_string(path)?).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    for listing in list_apps(app)? {
+        let Some(folder_path) = listing.manifest.folder_path else {
+            continue;
+        };
+        let mut prefix = String::new();
+        for part in folder_path.split('/') {
+            if prefix.is_empty() {
+                prefix.push_str(part);
+            } else {
+                prefix.push('/');
+                prefix.push_str(part);
+            }
+            if !folders.iter().any(|folder| folder.path == prefix) {
+                folders.push(AppFolder {
+                    path: prefix.clone(),
+                    name: app_folder_name_from_path(&prefix),
+                    parent_path: app_folder_parent_from_path(&prefix),
+                    created_at_ms: 0,
+                });
+            }
+        }
+    }
+    folders.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()));
+    Ok(folders)
+}
+
+fn write_app_folders(app: &AppHandle, folders: &[AppFolder]) -> io::Result<()> {
+    let path = app_folders_path(app)?;
+    let tmp = path.with_extension("json.tmp");
+    fs::write(
+        &tmp,
+        serde_json::to_string_pretty(folders)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
+    )?;
+    fs::rename(tmp, path)
+}
+
+pub fn create_app_folder(
+    app: &AppHandle,
+    parent_path: Option<&str>,
+    name: &str,
+) -> io::Result<AppFolder> {
+    let parent = normalize_app_folder_path(parent_path)?;
+    let clean_name = normalize_app_folder_path(Some(name))?.ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "folder name is empty")
+    })?;
+    if clean_name.contains('/') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "folder name must be a single segment",
+        ));
+    }
+    let path = match &parent {
+        Some(parent) => format!("{parent}/{clean_name}"),
+        None => clean_name.clone(),
+    };
+    let mut folders = list_app_folders(app)?;
+    if folders.iter().any(|folder| folder.path == path) {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("app folder already exists: {path}"),
+        ));
+    }
+    let folder = AppFolder {
+        path,
+        name: clean_name,
+        parent_path: parent,
+        created_at_ms: timestamp_ms(),
+    };
+    folders.push(folder.clone());
+    write_app_folders(app, &folders)?;
+    Ok(folder)
+}
+
+pub fn rename_app_folder(app: &AppHandle, path: &str, name: &str) -> io::Result<AppFolder> {
+    let old_path = normalize_app_folder_path(Some(path))?.ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "folder path is empty")
+    })?;
+    let clean_name = normalize_app_folder_path(Some(name))?.ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "folder name is empty")
+    })?;
+    if clean_name.contains('/') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "folder name must be a single segment",
+        ));
+    }
+    let parent = app_folder_parent_from_path(&old_path);
+    let new_path = match &parent {
+        Some(parent) => format!("{parent}/{clean_name}"),
+        None => clean_name.clone(),
+    };
+    if old_path == new_path {
+        return Ok(AppFolder {
+            path: old_path,
+            name: clean_name,
+            parent_path: parent,
+            created_at_ms: timestamp_ms(),
+        });
+    }
+
+    let mut folders = list_app_folders(app)?;
+    if folders.iter().any(|folder| folder.path == new_path) {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("app folder already exists: {new_path}"),
+        ));
+    }
+    let mut found = false;
+    for folder in &mut folders {
+        if app_folder_contains(&old_path, &folder.path) {
+            let suffix = folder.path.strip_prefix(&old_path).unwrap_or("");
+            folder.path = format!("{new_path}{suffix}");
+            folder.name = app_folder_name_from_path(&folder.path);
+            folder.parent_path = app_folder_parent_from_path(&folder.path);
+            found = true;
+        }
+    }
+    if !found {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("app folder not found: {old_path}"),
+        ));
+    }
+
+    for listing in list_apps(app)? {
+        let mut manifest = listing.manifest;
+        if apply_app_folder_rename(&mut manifest, &old_path, Some(&new_path))? {
+            write_manifest(app, &manifest.id.clone(), &manifest)?;
+        }
+    }
+
+    folders.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()));
+    write_app_folders(app, &folders)?;
+    Ok(AppFolder {
+        path: new_path.clone(),
+        name: app_folder_name_from_path(&new_path),
+        parent_path: app_folder_parent_from_path(&new_path),
+        created_at_ms: timestamp_ms(),
+    })
+}
+
+pub fn delete_app_folder(app: &AppHandle, path: &str) -> io::Result<()> {
+    let path = normalize_app_folder_path(Some(path))?.ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "folder path is empty")
+    })?;
+    if list_apps(app)?.iter().any(|listing| {
+        listing
+            .manifest
+            .folder_path
+            .as_deref()
+            .map(|folder| app_folder_contains(&path, folder))
+            .unwrap_or(false)
+    }) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "folder is not empty",
+        ));
+    }
+    let mut folders = list_app_folders(app)?;
+    if folders.iter().any(|folder| {
+        folder
+            .parent_path
+            .as_deref()
+            .map(|parent| parent == path)
+            .unwrap_or(false)
+    }) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "folder has subfolders",
+        ));
+    }
+    let before = folders.len();
+    folders.retain(|folder| folder.path != path);
+    if folders.len() == before {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("app folder not found: {path}"),
+        ));
+    }
+    write_app_folders(app, &folders)
+}
+
+pub fn move_app_to_folder(
+    app: &AppHandle,
+    app_id: &str,
+    folder_path: Option<&str>,
+) -> io::Result<AppManifest> {
+    let normalized = normalize_app_folder_path(folder_path)?;
+    if let Some(folder) = &normalized {
+        if !list_app_folders(app)?.iter().any(|entry| &entry.path == folder) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("app folder not found: {folder}"),
+            ));
+        }
+    }
+    let mut manifest = read_manifest(app, app_id)?;
+    manifest.folder_path = normalized;
+    write_manifest(app, app_id, &manifest)?;
+    Ok(manifest)
+}
+
+pub fn app_folder_contains(path: &str, candidate: &str) -> bool {
+    candidate == path
+        || candidate
+            .strip_prefix(path)
+            .map(|rest| rest.starts_with('/'))
+            .unwrap_or(false)
+}
+
+pub fn apply_app_folder_rename(
+    manifest: &mut AppManifest,
+    old_path: &str,
+    new_path: Option<&str>,
+) -> io::Result<bool> {
+    let old_path = normalize_app_folder_path(Some(old_path))?.ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "old folder path is empty")
+    })?;
+    let new_path = normalize_app_folder_path(new_path)?;
+    let Some(current) = manifest.folder_path.clone() else {
+        return Ok(false);
+    };
+    if !app_folder_contains(&old_path, &current) {
+        return Ok(false);
+    }
+    let suffix = current.strip_prefix(&old_path).unwrap_or("");
+    manifest.folder_path = match new_path {
+        Some(base) => Some(format!("{base}{suffix}")),
+        None => {
+            let trimmed = suffix.trim_start_matches('/');
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+    };
+    Ok(true)
 }
 
 pub fn app_dir(app: &AppHandle, id: &str) -> io::Result<PathBuf> {
@@ -2132,6 +2442,7 @@ mod proxy_tests {
             permissions: Vec::new(),
             kind: "panel".into(),
             created_at_ms: 1,
+            folder_path: None,
             runtime: None,
             server: None,
             external: None,
@@ -2143,6 +2454,31 @@ mod proxy_tests {
             widgets: Vec::new(),
             self_test: None,
         }
+    }
+
+    #[test]
+    fn app_folder_paths_are_normalized_and_reject_escape_segments() {
+        assert_eq!(
+            normalize_app_folder_path(Some(" Ops / exports//daily ")).expect("normalize"),
+            Some("Ops/exports/daily".into())
+        );
+        assert_eq!(normalize_app_folder_path(Some(" / ")).expect("root"), None);
+        assert!(normalize_app_folder_path(Some("../Secrets")).is_err());
+        assert!(normalize_app_folder_path(Some("Ops/.reflex")).is_err());
+    }
+
+    #[test]
+    fn app_folder_rename_updates_descendant_manifest_paths() {
+        let mut nested = test_manifest();
+        nested.folder_path = Some("Ops/exports/daily".into());
+        apply_app_folder_rename(&mut nested, "Ops/exports", Some("Ops/reports"))
+            .expect("rename nested");
+        assert_eq!(nested.folder_path.as_deref(), Some("Ops/reports/daily"));
+
+        let mut exact = test_manifest();
+        exact.folder_path = Some("Ops/exports".into());
+        apply_app_folder_rename(&mut exact, "Ops/exports", None).expect("rename root");
+        assert_eq!(exact.folder_path, None);
     }
 
     #[test]
@@ -3152,6 +3488,7 @@ pub fn ensure_sample_app(app: &AppHandle) -> io::Result<()> {
         permissions: vec!["agent.ask".into()],
         kind: "panel".into(),
         created_at_ms: now_ms,
+        folder_path: None,
         runtime: None,
         server: None,
         external: None,
@@ -3188,6 +3525,7 @@ fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
         permissions: vec!["storage.set".into(), "storage.get".into()],
         kind: "panel".into(),
         created_at_ms: now_ms,
+        folder_path: None,
         runtime: None,
         server: None,
         external: None,
