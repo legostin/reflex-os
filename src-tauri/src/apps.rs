@@ -6,6 +6,7 @@ use std::time::UNIX_EPOCH;
 use tauri::{AppHandle, Manager};
 
 const APP_FOLDERS_FILE: &str = "app-folders.json";
+pub const SYSTEM_APP_FOLDER: &str = "System";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppManifest {
@@ -504,6 +505,26 @@ pub fn move_app_to_folder(
     manifest.folder_path = normalized;
     write_manifest(app, app_id, &manifest)?;
     Ok(manifest)
+}
+
+pub fn is_system_app_id(app_id: &str) -> bool {
+    app_id.starts_with("system-") || app_id.starts_with("sample-")
+}
+
+pub fn ensure_system_app_folder(app: &AppHandle) -> io::Result<()> {
+    for listing in list_apps(app)? {
+        if !is_system_app_id(&listing.manifest.id) {
+            continue;
+        }
+        if listing.manifest.folder_path.as_deref() == Some(SYSTEM_APP_FOLDER) {
+            continue;
+        }
+        let mut manifest = listing.manifest;
+        manifest.folder_path = Some(SYSTEM_APP_FOLDER.into());
+        let id = manifest.id.clone();
+        write_manifest(app, &id, &manifest)?;
+    }
+    Ok(())
 }
 
 pub fn app_folder_contains(path: &str, candidate: &str) -> bool {
@@ -2482,6 +2503,14 @@ mod proxy_tests {
     }
 
     #[test]
+    fn system_app_ids_are_detected_for_default_folder_migration() {
+        assert!(is_system_app_id("system-bridge-console"));
+        assert!(is_system_app_id("sample-cron"));
+        assert!(!is_system_app_id("app_123"));
+        assert!(!is_system_app_id("connected_generic_web_example_com"));
+    }
+
+    #[test]
     fn parse_http_response_injects_overlay_into_html() {
         let raw = concat!(
             "HTTP/1.1 200 OK\r\n",
@@ -3471,42 +3500,46 @@ fn git_failure(context: &str, out: &std::process::Output) -> io::Error {
 
 pub fn ensure_sample_app(app: &AppHandle) -> io::Result<()> {
     let dir = app_dir(app, "sample-hello")?;
-    if dir.join("manifest.json").exists() {
-        return Ok(());
+    if !dir.join("manifest.json").exists() {
+        fs::create_dir_all(&dir)?;
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let manifest = AppManifest {
+            id: "sample-hello".into(),
+            name: "Sample · Ask Reflex".into(),
+            icon: Some("👋".into()),
+            description: Some("Minimal sample: asks the agent and shows the answer.".into()),
+            entry: "index.html".into(),
+            permissions: vec!["agent.ask".into()],
+            kind: "panel".into(),
+            created_at_ms: now_ms,
+            folder_path: Some(SYSTEM_APP_FOLDER.into()),
+            runtime: None,
+            server: None,
+            external: None,
+            integration: None,
+            network: None,
+            permission_requests: Vec::new(),
+            schedules: Vec::new(),
+            actions: Vec::new(),
+            widgets: Vec::new(),
+            self_test: None,
+        };
+        fs::write(
+            dir.join("manifest.json"),
+            serde_json::to_string_pretty(&manifest)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
+        )?;
+        fs::write(dir.join("index.html"), SAMPLE_HTML)?;
     }
-    fs::create_dir_all(&dir)?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let manifest = AppManifest {
-        id: "sample-hello".into(),
-        name: "Sample · Ask Reflex".into(),
-        icon: Some("👋".into()),
-        description: Some("Minimal sample: asks the agent and shows the answer.".into()),
-        entry: "index.html".into(),
-        permissions: vec!["agent.ask".into()],
-        kind: "panel".into(),
-        created_at_ms: now_ms,
-        folder_path: None,
-        runtime: None,
-        server: None,
-        external: None,
-        integration: None,
-        network: None,
-        permission_requests: Vec::new(),
-        schedules: Vec::new(),
-        actions: Vec::new(),
-        widgets: Vec::new(),
-        self_test: None,
-    };
-    fs::write(
-        dir.join("manifest.json"),
-        serde_json::to_string_pretty(&manifest)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
-    )?;
-    fs::write(dir.join("index.html"), SAMPLE_HTML)?;
     ensure_sample_cron_app(app, now_ms)?;
+    ensure_system_app_folder(app)?;
     Ok(())
 }
 
@@ -3525,7 +3558,7 @@ fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
         permissions: vec!["storage.set".into(), "storage.get".into()],
         kind: "panel".into(),
         created_at_ms: now_ms,
-        folder_path: None,
+        folder_path: Some(SYSTEM_APP_FOLDER.into()),
         runtime: None,
         server: None,
         external: None,

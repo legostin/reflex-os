@@ -13,6 +13,7 @@ pub fn ensure(app: &AppHandle) -> io::Result<()> {
     for built in BUILTIN_APPS {
         ensure_one(app, built)?;
     }
+    apps::ensure_system_app_folder(app)?;
     Ok(())
 }
 
@@ -21,7 +22,7 @@ fn ensure_one(app: &AppHandle, built: &BuiltinApp) -> io::Result<()> {
     if dir.join("manifest.json").is_file() {
         return Ok(());
     }
-    let manifest: AppManifest = serde_json::from_str(built.manifest)
+    let mut manifest: AppManifest = serde_json::from_str(built.manifest)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
     if manifest.id != built.id {
         return Err(io::Error::new(
@@ -29,6 +30,7 @@ fn ensure_one(app: &AppHandle, built: &BuiltinApp) -> io::Result<()> {
             format!("builtin app id mismatch: {} != {}", manifest.id, built.id),
         ));
     }
+    manifest.folder_path = Some(apps::SYSTEM_APP_FOLDER.into());
 
     fs::create_dir_all(&dir)?;
     apps::write_manifest(app, built.id, &manifest)?;

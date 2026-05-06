@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent,
   type ReactNode,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -2421,6 +2422,7 @@ function AppsScreen({
   const [showTrash, setShowTrash] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [folderBusy, setFolderBusy] = useState<string | null>(null);
+  const [draggingAppId, setDraggingAppId] = useState<string | null>(null);
   const selectedTemplate =
     TEMPLATES.find((item) => item.id === template) ?? TEMPLATES[0];
   const connectedApps = useMemo(
@@ -2600,6 +2602,8 @@ function AppsScreen({
   }
 
   async function moveUtilityToFolder(appId: string, folderPath: string) {
+    const app = items.find((item) => item.id === appId);
+    if ((app?.folder_path ?? "") === folderPath) return;
     setBusyId(appId);
     setError(null);
     try {
@@ -2613,6 +2617,26 @@ function AppsScreen({
     } finally {
       setBusyId(null);
     }
+  }
+
+  function startUtilityDrag(event: DragEvent<HTMLElement>, appId: string) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", appId);
+    event.dataTransfer.setData("application/x-reflex-app-id", appId);
+    setDraggingAppId(appId);
+  }
+
+  function dropUtilityOnFolder(
+    event: DragEvent<HTMLElement>,
+    folderPath: string,
+  ) {
+    event.preventDefault();
+    const appId =
+      event.dataTransfer.getData("application/x-reflex-app-id") ||
+      event.dataTransfer.getData("text/plain");
+    setDraggingAppId(null);
+    if (!appId) return;
+    void moveUtilityToFolder(appId, folderPath);
   }
 
   const appFolderSections = useMemo(() => {
@@ -2911,8 +2935,22 @@ function AppsScreen({
       ) : (
         <div className="folder-section-list">
           {appFolderSections.map((section) => (
-            <section key={section.path || "__root__"} className="folder-section">
-              <div className="folder-section-head">
+            <section
+              key={section.path || "__root__"}
+              className={`folder-section ${
+                draggingAppId ? "folder-section-drop-zone" : ""
+              }`}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+              }}
+              onDrop={(event) => dropUtilityOnFolder(event, section.path)}
+            >
+              <div
+                className={`folder-section-head ${
+                  draggingAppId ? "folder-section-drop" : ""
+                }`}
+              >
                 <div>
                   <h3 className="folder-title">
                     {section.path ? "📁" : "⌂"} {section.name}
@@ -2967,7 +3005,12 @@ function AppsScreen({
                         key={a.id}
                         role="button"
                         tabIndex={0}
-                        className={`apps-card ${isReady ? "" : "apps-card-creating"}`}
+                        draggable
+                        className={`apps-card ${isReady ? "" : "apps-card-creating"} ${
+                          draggingAppId === a.id ? "apps-card-dragging" : ""
+                        }`}
+                        onDragStart={(event) => startUtilityDrag(event, a.id)}
+                        onDragEnd={() => setDraggingAppId(null)}
                         onClick={() => onOpenApp(a.id)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") onOpenApp(a.id);
@@ -3015,23 +3058,6 @@ function AppsScreen({
                             ))}
                           </div>
                         )}
-                        <select
-                          className="folder-select"
-                          value={a.folder_path ?? ""}
-                          disabled={busyId === a.id}
-                          onClick={(ev) => ev.stopPropagation()}
-                          onChange={(ev) => {
-                            ev.stopPropagation();
-                            void moveUtilityToFolder(a.id, ev.currentTarget.value);
-                          }}
-                        >
-                          <option value="">{t("folders.root")}</option>
-                          {folders.map((folder) => (
-                            <option key={folder.path} value={folder.path}>
-                              {folder.path}
-                            </option>
-                          ))}
-                        </select>
                       </div>
                     );
                   })}

@@ -625,6 +625,12 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  border-radius: 10px;
+}
+
+.folder-section-drop-zone {
+  outline: 1px dashed rgba(74, 140, 255, 0.24);
+  outline-offset: 4px;
 }
 
 .folder-section-head {
@@ -634,6 +640,10 @@
   gap: 12px;
   padding: 10px 0 2px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.folder-section-drop {
+  border-bottom-color: rgba(74, 140, 255, 0.45);
 }
 
 .folder-title {
@@ -1245,13 +1255,22 @@
   border-radius: 12px;
   padding: 16px;
   text-align: left;
-  cursor: pointer;
+  cursor: grab;
   display: flex;
   flex-direction: column;
   gap: 6px;
   color: inherit;
   font-family: inherit;
   transition: background 0.12s, border-color 0.12s;
+}
+
+.apps-card:active {
+  cursor: grabbing;
+}
+
+.apps-card-dragging {
+  opacity: 0.45;
+  border-color: rgba(74, 140, 255, 0.45);
 }
 
 .apps-card:hover {
