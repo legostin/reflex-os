@@ -3,6 +3,40 @@ import { Badge, Button, cx } from "../ui/primitives";
 import type { WorkspaceTreeNode } from "./navTree";
 import type { Route } from "./workspaceTypes";
 
+const ICONS: Record<string, string> = {
+  sections: "☰",
+  home: "⌂",
+  memory: "M",
+  automation: "⏱",
+  browser: "◎",
+  settings: "⚙",
+  projects: "▣",
+  project: "▤",
+  folder: "▸",
+  topic: "●",
+  files: "#",
+  utilities: "◇",
+  utility: "◆",
+};
+
+function iconForNode(node: WorkspaceTreeNode): string {
+  if (node.icon) return ICONS[node.icon] ?? node.icon;
+  return (
+    {
+      group: "☰",
+      section: "·",
+      "project-folder": "▸",
+      project: "▤",
+      "project-topics": "●",
+      "project-files": "#",
+      "project-utilities": "◇",
+      topic: "•",
+      "utility-folder": "▸",
+      utility: "◆",
+    } satisfies Record<WorkspaceTreeNode["kind"], string>
+  )[node.kind];
+}
+
 export function WorkspaceSidebar({
   tree,
   activeRouteKey,
@@ -92,6 +126,17 @@ function TreeNode({
         onClick={action}
       >
         <span className="w-3 text-white/34">{hasChildren ? (open ? "▾" : "▸") : ""}</span>
+        <span
+          className={cx(
+            "inline-flex size-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold",
+            active
+              ? "border-reflex-accent/25 bg-reflex-accent/16 text-white"
+              : "border-white/8 bg-white/[0.035] text-white/48",
+          )}
+          aria-hidden="true"
+        >
+          {iconForNode(node)}
+        </span>
         <span className="min-w-0 flex-1 truncate">{node.label}</span>
         {typeof node.count === "number" ? <Badge className="px-1.5 py-0 text-[10px]">{node.count}</Badge> : null}
       </button>
