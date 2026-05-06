@@ -4435,9 +4435,6 @@ pub fn run() {
                 app.global_shortcut().register(quick_shortcut())?;
             }
 
-            if let Err(e) = apps::ensure_sample_app(app.handle()) {
-                eprintln!("[reflex] ensure_sample_app failed: {e}");
-            }
             if let Err(e) = builtin_apps::ensure(app.handle()) {
                 eprintln!("[reflex] ensure_builtin_apps failed: {e}");
             }

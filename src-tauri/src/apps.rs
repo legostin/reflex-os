@@ -7,6 +7,19 @@ use tauri::{AppHandle, Manager};
 
 const APP_FOLDERS_FILE: &str = "app-folders.json";
 pub const SYSTEM_APP_FOLDER: &str = "System";
+pub const LEGACY_BUILTIN_APP_IDS: &[&str] = &[
+    "sample-hello",
+    "sample-cron",
+    "system-api-workbench",
+    "system-automation-center",
+    "system-bridge-console",
+    "system-clipboard-snippets",
+    "system-memory-capsule",
+    "system-project-cockpit",
+    "system-project-file-lens",
+    "system-quick-capture",
+    "system-research-capture",
+];
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppManifest {
@@ -508,7 +521,12 @@ pub fn move_app_to_folder(
 }
 
 pub fn is_system_app_id(app_id: &str) -> bool {
-    app_id.starts_with("system-") || app_id.starts_with("sample-")
+    app_id.starts_with("system-")
+}
+
+#[cfg(test)]
+pub fn is_legacy_builtin_app_id(app_id: &str) -> bool {
+    LEGACY_BUILTIN_APP_IDS.contains(&app_id)
 }
 
 pub fn ensure_system_app_folder(app: &AppHandle) -> io::Result<()> {
@@ -523,6 +541,36 @@ pub fn ensure_system_app_folder(app: &AppHandle) -> io::Result<()> {
         manifest.folder_path = Some(SYSTEM_APP_FOLDER.into());
         let id = manifest.id.clone();
         write_manifest(app, &id, &manifest)?;
+    }
+    Ok(())
+}
+
+pub fn remove_legacy_builtin_apps(app: &AppHandle) -> io::Result<()> {
+    let dir = apps_dir(app)?;
+    for app_id in LEGACY_BUILTIN_APP_IDS {
+        let path = dir.join(app_id);
+        if path.is_dir() {
+            fs::remove_dir_all(&path)?;
+        } else if path.exists() {
+            fs::remove_file(&path)?;
+        }
+    }
+
+    let has_system_apps = list_apps(app)?.iter().any(|listing| {
+        listing
+            .manifest
+            .folder_path
+            .as_deref()
+            .map(|folder| app_folder_contains(SYSTEM_APP_FOLDER, folder))
+            .unwrap_or(false)
+    });
+    if !has_system_apps {
+        let mut folders = list_app_folders(app)?;
+        let before = folders.len();
+        folders.retain(|folder| !app_folder_contains(SYSTEM_APP_FOLDER, &folder.path));
+        if folders.len() != before {
+            write_app_folders(app, &folders)?;
+        }
     }
     Ok(())
 }
@@ -2505,9 +2553,17 @@ mod proxy_tests {
     #[test]
     fn system_app_ids_are_detected_for_default_folder_migration() {
         assert!(is_system_app_id("system-bridge-console"));
-        assert!(is_system_app_id("sample-cron"));
+        assert!(!is_system_app_id("sample-cron"));
         assert!(!is_system_app_id("app_123"));
         assert!(!is_system_app_id("connected_generic_web_example_com"));
+    }
+
+    #[test]
+    fn legacy_builtin_app_ids_are_detected_for_cleanup() {
+        assert!(is_legacy_builtin_app_id("system-bridge-console"));
+        assert!(is_legacy_builtin_app_id("sample-cron"));
+        assert!(!is_legacy_builtin_app_id("system-future-useful-tool"));
+        assert!(!is_legacy_builtin_app_id("app_123"));
     }
 
     #[test]
@@ -3497,216 +3553,3 @@ fn git_failure(context: &str, out: &std::process::Output) -> io::Error {
     };
     io::Error::new(io::ErrorKind::Other, message)
 }
-
-pub fn ensure_sample_app(app: &AppHandle) -> io::Result<()> {
-    let dir = app_dir(app, "sample-hello")?;
-    if !dir.join("manifest.json").exists() {
-        fs::create_dir_all(&dir)?;
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let manifest = AppManifest {
-            id: "sample-hello".into(),
-            name: "Sample · Ask Reflex".into(),
-            icon: Some("👋".into()),
-            description: Some("Minimal sample: asks the agent and shows the answer.".into()),
-            entry: "index.html".into(),
-            permissions: vec!["agent.ask".into()],
-            kind: "panel".into(),
-            created_at_ms: now_ms,
-            folder_path: Some(SYSTEM_APP_FOLDER.into()),
-            runtime: None,
-            server: None,
-            external: None,
-            integration: None,
-            network: None,
-            permission_requests: Vec::new(),
-            schedules: Vec::new(),
-            actions: Vec::new(),
-            widgets: Vec::new(),
-            self_test: None,
-        };
-        fs::write(
-            dir.join("manifest.json"),
-            serde_json::to_string_pretty(&manifest)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
-        )?;
-        fs::write(dir.join("index.html"), SAMPLE_HTML)?;
-    }
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    ensure_sample_cron_app(app, now_ms)?;
-    ensure_system_app_folder(app)?;
-    Ok(())
-}
-
-fn ensure_sample_cron_app(app: &AppHandle, now_ms: u128) -> io::Result<()> {
-    let dir = app_dir(app, "sample-cron")?;
-    if dir.join("manifest.json").exists() {
-        return Ok(());
-    }
-    fs::create_dir_all(&dir)?;
-    let manifest = AppManifest {
-        id: "sample-cron".into(),
-        name: "Sample · Heartbeat".into(),
-        icon: Some("⏱".into()),
-        description: Some("Schedule demo: writes a timestamp to storage every minute.".into()),
-        entry: "index.html".into(),
-        permissions: vec!["storage.set".into(), "storage.get".into()],
-        kind: "panel".into(),
-        created_at_ms: now_ms,
-        folder_path: Some(SYSTEM_APP_FOLDER.into()),
-        runtime: None,
-        server: None,
-        external: None,
-        integration: None,
-        network: None,
-        permission_requests: Vec::new(),
-        schedules: vec![ScheduleDef {
-            id: "heartbeat".into(),
-            name: "Heartbeat (every minute)".into(),
-            cron: "0 * * * * *".into(),
-            enabled: true,
-            catch_up: "once".into(),
-            steps: vec![Step {
-                method: "storage.set".into(),
-                params: serde_json::json!({
-                    "key": "last_tick_ms",
-                    "value": now_ms,
-                }),
-                save_as: None,
-            }],
-        }],
-        actions: vec![ActionDef {
-            id: "heartbeat-status".into(),
-            name: "Heartbeat status".into(),
-            description: Some("Cached status for the project dashboard.".into()),
-            params_schema: None,
-            public: true,
-            steps: vec![Step {
-                method: "storage.get".into(),
-                params: serde_json::json!({ "key": "last_tick_ms" }),
-                save_as: Some("output".into()),
-            }],
-        }],
-        widgets: Vec::new(),
-        self_test: None,
-    };
-    fs::write(
-        dir.join("manifest.json"),
-        serde_json::to_string_pretty(&manifest)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?,
-    )?;
-    fs::write(dir.join("index.html"), SAMPLE_CRON_HTML)?;
-    Ok(())
-}
-
-const SAMPLE_CRON_HTML: &str = r#"<!doctype html>
-<html><head><meta charset="utf-8"><title>Heartbeat</title>
-<style>body{font-family:system-ui;background:#15171c;color:#eee;padding:24px}code{background:#222;padding:2px 6px;border-radius:4px}</style>
-</head><body>
-<h2>⏱ Heartbeat sample</h2>
-<p>This demo app has a manifest schedule <code>0 * * * * *</code>, which runs once per minute.</p>
-<p>Reflex runs the <code>storage.set last_tick_ms</code> step automatically, even when this window is hidden. The public <code>heartbeat-status</code> action exposes the cached value for project dashboards. Open Automations to inspect runs.</p>
-<p>Last tick: <code id="last">—</code></p>
-<script>
-async function reflexInvoke(method, params){
-  return new Promise((res, rej) => {
-    const id = Math.random().toString(36).slice(2);
-    function on(ev){
-      if (ev.data?.source !== 'reflex' || ev.data?.id !== id) return;
-      window.removeEventListener('message', on);
-      ev.data.error ? rej(ev.data.error) : res(ev.data.result);
-    }
-    window.addEventListener('message', on);
-    window.parent.postMessage({source:'reflex-app',type:'request',id,method,params}, '*');
-  });
-}
-async function refresh(){
-  try {
-    const r = await reflexInvoke('storage.get',{key:'last_tick_ms'});
-    document.getElementById('last').textContent = r.value
-      ? new Date(Number(r.value)).toLocaleString()
-      : '—';
-  } catch (e) { document.getElementById('last').textContent = String(e); }
-}
-refresh();
-setInterval(refresh, 5000);
-</script>
-</body></html>"#;
-
-const SAMPLE_HTML: &str = r#"<!doctype html>
-<html><head><meta charset="utf-8"><title>Sample</title>
-<style>
-  :root { color-scheme: dark; font-family: -apple-system, system-ui, sans-serif; }
-  body { margin: 0; padding: 24px; color: #f5f5f7; background: transparent; }
-  h1 { margin: 0 0 12px; font-size: 18px; font-weight: 600; }
-  textarea { width: 100%; box-sizing: border-box; min-height: 80px; resize: vertical;
-             background: rgba(0,0,0,0.32); color: #f5f5f7; border: 1px solid rgba(255,255,255,0.1);
-             border-radius: 8px; padding: 8px 10px; font: inherit; }
-  button { background: rgba(74,140,255,0.2); border: 1px solid rgba(74,140,255,0.4);
-           color: #cfd8ff; border-radius: 8px; padding: 6px 14px; cursor: pointer; font: inherit; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  pre { white-space: pre-wrap; word-wrap: break-word; background: rgba(255,255,255,0.05);
-        padding: 10px 12px; border-radius: 8px; font-size: 13px; }
-  .row { display: flex; gap: 8px; margin: 10px 0; align-items: center; }
-  .err { color: #ff8080; font-size: 12px; }
-</style></head>
-<body>
-  <h1>Ask the agent</h1>
-  <textarea id="q" placeholder="Example: what is the weather in Almaty?"></textarea>
-  <div class="row">
-    <button id="ask">Ask</button>
-    <span id="err" class="err"></span>
-  </div>
-  <pre id="out"></pre>
-<script>
-let nextId = 1;
-const pending = new Map();
-
-window.addEventListener('message', (ev) => {
-  const msg = ev.data;
-  if (!msg || msg.source !== 'reflex') return;
-  if (msg.type === 'response' && pending.has(msg.id)) {
-    const cb = pending.get(msg.id);
-    pending.delete(msg.id);
-    if (msg.error) cb.reject(msg.error);
-    else cb.resolve(msg.result);
-  }
-});
-
-function reflexInvoke(method, params) {
-  return new Promise((resolve, reject) => {
-    const id = nextId++;
-    pending.set(id, { resolve, reject });
-    window.parent.postMessage({ source: 'reflex-app', type: 'request', id, method, params }, '*');
-    setTimeout(() => {
-      if (pending.has(id)) { pending.delete(id); reject(new Error('timeout')); }
-    }, 120000);
-  });
-}
-
-document.getElementById('ask').addEventListener('click', async () => {
-  const btn = document.getElementById('ask');
-  const err = document.getElementById('err');
-  const out = document.getElementById('out');
-  err.textContent = '';
-  out.textContent = '…';
-  btn.disabled = true;
-  try {
-    const prompt = document.getElementById('q').value || 'Hello!';
-    const res = await reflexInvoke('agent.ask', { prompt });
-    out.textContent = res.answer || JSON.stringify(res, null, 2);
-  } catch (e) {
-    err.textContent = String(e?.message || e);
-    out.textContent = '';
-  } finally {
-    btn.disabled = false;
-  }
-});
-</script>
-</body></html>
-"#;
