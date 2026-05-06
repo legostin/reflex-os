@@ -1564,20 +1564,6 @@ export default function ChatThread() {
       return copy;
     });
 
-  const projectsLoadedRef = useRef(false);
-  const firstRunPromptedRef = useRef(false);
-  useEffect(() => {
-    if (firstRunPromptedRef.current) return;
-    if (!projectsLoadedRef.current) {
-      projectsLoadedRef.current = true;
-      return;
-    }
-    if (projects.length === 0 && !newProjectPath && !creatingProject) {
-      firstRunPromptedRef.current = true;
-      void createNewProject();
-    }
-  }, [projects, newProjectPath, creatingProject]);
-
   const openAppIds = useMemo(() => {
     const ids = new Set<string>();
     for (const pane of layout.panes) {
