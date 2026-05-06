@@ -2458,6 +2458,7 @@ fn build_app_creation_prompt(
     p.push_str("   - Process cwd is the app directory. The server MUST listen on process.env.PORT or REFLEX_PORT.\n");
     p.push_str("   - Server runtime requires manifest.permissions entry \"runtime.server.listen\". If it is missing, call permissions.request({permissions:[\"runtime.server.listen\"], serverListen:true, reason}) and show setup-required until approved.\n");
     p.push_str("   - Dependencies must be vendored into the app directory or be stdlib. Do not assume global npm install. Prefer plain Node.js stdlib (http/fs/path) or Python stdlib (http.server/socketserver).\n");
+    p.push_str("   - The reflexserver:// proxy expects finite HTTP responses. Do not use Server-Sent Events/EventSource, WebSockets, or long-lived streaming responses from the local server; use polling/fetch to finite JSON endpoints or Reflex bridge streaming helpers instead.\n");
     p.push_str("   - entry can be omitted for server runtime because it is not used.\n\n");
     p.push_str("3) external: the iframe points directly to manifest.external.url. Use this only when the external web app can be framed. The Reflex overlay is not injected into cross-origin pages, so data operations must live in a companion UI, manifest.actions, Browser bridge workflows, or MCP.\n");
     p.push_str("   - manifest: { runtime: \"external\", external: { url: \"https://...\", title: \"...\", open_url: \"https://...\" }, integration: {...} }\n");
@@ -4610,6 +4611,8 @@ mod connected_app_tests {
         assert!(prompt.contains("ReflexProvider"));
         assert!(prompt.contains("typed bridge clients"));
         assert!(prompt.contains("Do not reimplement bridge plumbing"));
+        assert!(prompt.contains("Server-Sent Events/EventSource"));
+        assert!(prompt.contains("finite HTTP responses"));
     }
 
     #[test]

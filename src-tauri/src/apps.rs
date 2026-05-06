@@ -1933,6 +1933,8 @@ pub struct ProxiedResponse {
     pub body: Vec<u8>,
 }
 
+const MAX_PROXY_RESPONSE_HEADER_BYTES: usize = 64 * 1024;
+
 pub fn proxy_server_runtime_request(
     port: u16,
     request: &tauri::http::Request<Vec<u8>>,
@@ -1981,15 +1983,34 @@ pub fn proxy_server_runtime_request(
     }
 
     let mut raw = Vec::new();
+    let mut buf = [0u8; 8192];
+    while find_http_header_end(&raw).is_none() {
+        if raw.len() >= MAX_PROXY_RESPONSE_HEADER_BYTES {
+            return Err("server response headers too large".into());
+        }
+        let read = stream.read(&mut buf).map_err(|e| e.to_string())?;
+        if read == 0 {
+            break;
+        }
+        raw.extend_from_slice(&buf[..read]);
+    }
+
+    let header_end =
+        find_http_header_end(&raw).ok_or_else(|| "server response missing headers".to_string())?;
+    if response_content_type(&raw[..header_end])
+        .map(|content_type| content_type.contains("text/event-stream"))
+        .unwrap_or(false)
+    {
+        return Ok(streaming_proxy_response());
+    }
+
     stream.read_to_end(&mut raw).map_err(|e| e.to_string())?;
     parse_http_response(raw)
 }
 
 fn parse_http_response(raw: Vec<u8>) -> Result<ProxiedResponse, String> {
-    let header_end = raw
-        .windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .ok_or_else(|| "server response missing headers".to_string())?;
+    let header_end =
+        find_http_header_end(&raw).ok_or_else(|| "server response missing headers".to_string())?;
     let header_bytes = &raw[..header_end];
     let mut body = raw[header_end + 4..].to_vec();
     let header_text = String::from_utf8_lossy(header_bytes);
@@ -2042,6 +2063,30 @@ fn parse_http_response(raw: Vec<u8>) -> Result<ProxiedResponse, String> {
         headers,
         body,
     })
+}
+
+fn find_http_header_end(raw: &[u8]) -> Option<usize> {
+    raw.windows(4).position(|w| w == b"\r\n\r\n")
+}
+
+fn response_content_type(header_bytes: &[u8]) -> Option<String> {
+    let header_text = String::from_utf8_lossy(header_bytes);
+    header_text.split("\r\n").skip(1).find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if name.trim().eq_ignore_ascii_case("content-type") {
+            Some(value.trim().to_ascii_lowercase())
+        } else {
+            None
+        }
+    })
+}
+
+fn streaming_proxy_response() -> ProxiedResponse {
+    ProxiedResponse {
+        status: 502,
+        headers: vec![("content-type".into(), "text/plain; charset=utf-8".into())],
+        body: b"server runtime streaming responses (text/event-stream) are not supported through reflexserver://; use polling/fetch or return a finite response".to_vec(),
+    }
 }
 
 fn decode_chunked_body(raw: &[u8]) -> Result<Vec<u8>, String> {
@@ -2151,6 +2196,49 @@ mod proxy_tests {
                 .iter()
                 .all(|(name, _)| !name.eq_ignore_ascii_case("transfer-encoding"))
         );
+    }
+
+    #[test]
+    fn proxy_server_runtime_request_rejects_event_stream_without_waiting_for_close() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("listener");
+        let port = listener.local_addr().expect("local addr").port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let _ = stream.read(&mut [0u8; 2048]);
+            stream
+                .write_all(
+                    concat!(
+                        "HTTP/1.1 200 OK\r\n",
+                        "Content-Type: text/event-stream\r\n",
+                        "Cache-Control: no-store\r\n",
+                        "\r\n",
+                        "event: status\n",
+                        "data: {}\n\n",
+                    )
+                    .as_bytes(),
+                )
+                .expect("write response");
+            stream.flush().expect("flush response");
+            std::thread::sleep(std::time::Duration::from_millis(1200));
+        });
+
+        let request = tauri::http::Request::builder()
+            .method("GET")
+            .uri("reflexserver://test-app/api/events")
+            .body(Vec::new())
+            .expect("request");
+        let started = std::time::Instant::now();
+        let response = proxy_server_runtime_request(port, &request).expect("proxy response");
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(500),
+            "proxy waited for the event stream connection to close"
+        );
+        assert_eq!(response.status, 502);
+        assert!(String::from_utf8(response.body)
+            .expect("utf8")
+            .contains("streaming responses"));
+        server.join().expect("server thread");
     }
 
     #[test]
