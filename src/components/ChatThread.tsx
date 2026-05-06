@@ -2777,18 +2777,21 @@ function AppsScreen({
           <h1 className="section-title">{t("nav.apps")}</h1>
           <div className="apps-header-buttons">
             <button
+              type="button"
               className="apps-create-btn"
               onClick={() => createUtilityFolder(null)}
             >
               {t("folders.newFolder")}
             </button>
             <button
+              type="button"
               className="apps-create-btn"
               onClick={() => setShowModal(true)}
             >
               {t("apps.newUtility")}
             </button>
             <button
+              type="button"
               className="apps-trash-btn"
               onClick={() => setShowTrash((v) => !v)}
               title={t("apps.deletedAppsTitle")}
@@ -2961,37 +2964,36 @@ function AppsScreen({
                     </div>
                   )}
                 </div>
-                <div className="folder-actions">
-                  <button
-                    className="folder-action"
-                    disabled={folderBusy === section.path}
-                    onClick={() => createUtilityFolder(section.path || null)}
-                  >
-                    {section.path
-                      ? t("folders.newSubfolder")
-                      : t("folders.newFolder")}
-                  </button>
-                  {section.path && (
-                    <>
+                {section.path && (
+                  <div className="folder-actions">
+                    <button
+                      type="button"
+                      className="folder-action"
+                      disabled={folderBusy === section.path}
+                      onClick={() => createUtilityFolder(section.path)}
+                    >
+                      {t("folders.newSubfolder")}
+                    </button>
+                    <button
+                      type="button"
+                      className="folder-action"
+                      disabled={folderBusy === section.path}
+                      onClick={() => renameUtilityFolder(section.path)}
+                    >
+                      {t("folders.rename")}
+                    </button>
+                    {section.apps.length === 0 && (
                       <button
+                        type="button"
                         className="folder-action"
                         disabled={folderBusy === section.path}
-                        onClick={() => renameUtilityFolder(section.path)}
+                        onClick={() => deleteUtilityFolder(section.path)}
                       >
-                        {t("folders.rename")}
+                        {t("folders.delete")}
                       </button>
-                      {section.apps.length === 0 && (
-                        <button
-                          className="folder-action"
-                          disabled={folderBusy === section.path}
-                          onClick={() => deleteUtilityFolder(section.path)}
-                        >
-                          {t("folders.delete")}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
               {section.apps.length === 0 ? (
                 <div className="folder-empty">{t("folders.empty")}</div>
