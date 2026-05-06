@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run check:tailwind && npm run check:ui && npm run check:workspace-tree && npm run check:bridge && npm run check:dashboard && npm run check:dashboard:fixtures && tsc && vite build",
+    "build": "npm run check:tailwind && npm run check:ui && npm run check:workspace-tree && npm run check:workspace-shell && npm run check:bridge && npm run check:dashboard && npm run check:dashboard:fixtures && tsc && vite build",
     "check:tailwind": "node scripts/check-tailwind-stack.mjs",
     "check:ui": "node scripts/check-ui-primitives.mjs",
     "check:workspace-tree": "node scripts/check-workspace-tree.mjs",
+    "check:workspace-shell": "node scripts/check-workspace-shell.mjs",
     "check:bridge": "node scripts/check-app-bridge-catalog.mjs",
     "check:dashboard": "node scripts/check-dashboard-widgets.mjs",
     "check:dashboard:fixtures": "node scripts/check-dashboard-widget-fixtures.mjs",

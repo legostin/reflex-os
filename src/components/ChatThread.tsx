@@ -52,6 +52,10 @@ import type {
   ThreadEvent,
   ThreadQuestion,
 } from "./workspace/workspaceTypes";
+import { buildWorkspaceTree } from "./workspace/navTree";
+import { WorkspaceMain } from "./workspace/WorkspaceMain";
+import { WorkspaceShell } from "./workspace/WorkspaceShell";
+import { WorkspaceSidebar } from "./workspace/WorkspaceSidebar";
 import "./ChatThread.css";
 
 const BRIDGE_API_COUNT = BRIDGE_API_GROUPS.reduce(
@@ -771,6 +775,9 @@ function appendEvent(
 export default function ChatThread() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectFolders, setProjectFolders] = useState<ProjectFolder[]>([]);
+  const [appFolders, setAppFolders] = useState<AppFolder[]>([]);
+  const [appsForNav, setAppsForNav] = useState<AppManifest[]>([]);
   const [layout, setLayout] = useState<Layout>(initialLayout);
   const [draggingTab, setDraggingTab] = useState(false);
   const [newProjectPath, setNewProjectPath] = useState<string | null>(null);
@@ -1190,7 +1197,26 @@ export default function ChatThread() {
         .catch((e) => console.error("[reflex] list_projects failed", e));
     };
 
-    refreshProjects();
+    const refreshWorkspaceTreeData = () => {
+      refreshProjects();
+      invoke<ProjectFolder[]>("list_project_folders")
+        .then((folders) => {
+          if (mounted) setProjectFolders(folders);
+        })
+        .catch((e) => console.warn("[reflex] list_project_folders failed", e));
+      invoke<AppFolder[]>("list_app_folders")
+        .then((folders) => {
+          if (mounted) setAppFolders(folders);
+        })
+        .catch((e) => console.warn("[reflex] list_app_folders failed", e));
+      invoke<AppManifest[]>("list_apps")
+        .then((apps) => {
+          if (mounted) setAppsForNav(apps);
+        })
+        .catch((e) => console.warn("[reflex] list_apps for workspace tree failed", e));
+    };
+
+    refreshWorkspaceTreeData();
 
     invoke<ProjectThread[]>("list_threads")
       .then((stored) => {
@@ -1223,7 +1249,7 @@ export default function ChatThread() {
       };
       setThreads((prev) => upsertThread(prev, t));
       // refresh project list (project may have just been created) and jump to topic
-      refreshProjects();
+      refreshWorkspaceTreeData();
       navigate({ kind: "topic", thread_id: t.id });
     });
     const metaUpdated = listen<ThreadMetaUpdated>(
@@ -1523,56 +1549,75 @@ export default function ChatThread() {
     }
   };
 
+  const workspaceTree = useMemo(
+    () =>
+      buildWorkspaceTree({
+        projects,
+        projectFolders,
+        threads,
+        apps: appsForNav,
+        appFolders,
+      }),
+    [projects, projectFolders, threads, appsForNav, appFolders],
+  );
+  const currentTitle = tabLabel(currentRoute, projects, threads, t);
+
   return (
-    <div className="chat-root">
-      <div className="chat-titlebar" data-tauri-drag-region />
-      <Header
-        route={currentRoute}
-        threads={threads}
-        projects={projects}
-        onNavigate={navigate}
-        onAddPane={addPane}
-        onCreateProject={() => void createNewProject()}
-      />
-      <div className="panes-container" ref={containerRef}>
-        {layout.panes.map((pane, idx) => (
-          <Fragment key={pane.id}>
-            {idx > 0 && (
-              <div
-                className="pane-divider"
-                onMouseDown={(e) =>
-                  onDividerMouseDown(e, layout.panes[idx - 1].id, pane.id)
-                }
-              />
-            )}
-            <PaneView
-              pane={pane}
-              size={layout.paneSizes[pane.id] ?? 1}
-              focused={pane.id === layout.focusedPaneId}
-              canClose={layout.panes.length > 1}
-              projects={projects}
-              threads={threads}
-              renderRoute={(r) => renderRoute(r, pane.id)}
-              onActivateTab={(key) => activateTab(pane.id, key)}
-              onCloseTab={(key) => closeTab(pane.id, key)}
-              onClosePane={() => closePane(pane.id)}
-              onFocus={() => focusPane(pane.id)}
-              onTabDragStart={() => setDraggingTab(true)}
-              onTabDragEnd={() => setDraggingTab(false)}
-              onTabDrop={(fromPaneId, key) =>
-                moveTab(fromPaneId, key, pane.id)
-              }
+    <>
+      <WorkspaceShell
+        sidebar={
+          <WorkspaceSidebar
+            tree={workspaceTree}
+            activeRouteKey={routeKey(currentRoute)}
+            routeKey={routeKey}
+            onNavigate={navigate}
+            onCreateProject={() => void createNewProject()}
+          />
+        }
+        titlebar={<span className="truncate text-xs text-white/42">{currentTitle}</span>}
+      >
+        <WorkspaceMain title={currentTitle} route={currentRoute} onAddPane={addPane}>
+          <div className="panes-container flex h-full min-h-0 flex-row" ref={containerRef}>
+            {layout.panes.map((pane, idx) => (
+              <Fragment key={pane.id}>
+                {idx > 0 && (
+                  <div
+                    className="pane-divider"
+                    onMouseDown={(e) =>
+                      onDividerMouseDown(e, layout.panes[idx - 1].id, pane.id)
+                    }
+                  />
+                )}
+                <PaneView
+                  pane={pane}
+                  size={layout.paneSizes[pane.id] ?? 1}
+                  focused={pane.id === layout.focusedPaneId}
+                  canClose={layout.panes.length > 1}
+                  projects={projects}
+                  threads={threads}
+                  renderRoute={(r) => renderRoute(r, pane.id)}
+                  onActivateTab={(key) => activateTab(pane.id, key)}
+                  onCloseTab={(key) => closeTab(pane.id, key)}
+                  onClosePane={() => closePane(pane.id)}
+                  onFocus={() => focusPane(pane.id)}
+                  onTabDragStart={() => setDraggingTab(true)}
+                  onTabDragEnd={() => setDraggingTab(false)}
+                  onTabDrop={(fromPaneId, key) =>
+                    moveTab(fromPaneId, key, pane.id)
+                  }
+                />
+              </Fragment>
+            ))}
+            <NewPaneDropZone
+              active={draggingTab}
+              onDrop={(fromPaneId, key) => {
+                setDraggingTab(false);
+                moveTabToNewPane(fromPaneId, key);
+              }}
             />
-          </Fragment>
-        ))}
-        <NewPaneDropZone
-          active={draggingTab}
-          onDrop={(fromPaneId, key) => {
-            setDraggingTab(false);
-            moveTabToNewPane(fromPaneId, key);
-          }}
-        />
-      </div>
+          </div>
+        </WorkspaceMain>
+      </WorkspaceShell>
       {newProjectPath && (
         <div
           className="modal-backdrop"
@@ -1632,223 +1677,7 @@ export default function ChatThread() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function Header({
-  route,
-  threads,
-  projects,
-  onNavigate,
-  onAddPane,
-  onCreateProject,
-}: {
-  route: Route;
-  threads: Thread[];
-  projects: Project[];
-  onNavigate: (r: Route) => void;
-  onAddPane: () => void;
-  onCreateProject: () => void;
-}) {
-  const { t } = useI18n();
-  const crumbs: { label: string; route: Route | null }[] = [
-    { label: "Reflex", route: { kind: "home" } },
-  ];
-  if (route.kind === "project") {
-    const p = projects.find((x) => x.id === route.project_id);
-    crumbs.push({ label: p?.name ?? route.project_id, route: null });
-  } else if (route.kind === "topic") {
-    const t = threads.find((x) => x.id === route.thread_id);
-    if (t) {
-      crumbs.push({
-        label: t.project_name,
-        route: { kind: "project", project_id: t.project_id },
-      });
-      crumbs.push({ label: t.id, route: null });
-    } else {
-      crumbs.push({ label: route.thread_id, route: null });
-    }
-  } else if (route.kind === "apps") {
-    if (route.project_id) {
-      const p = projects.find((x) => x.id === route.project_id);
-      crumbs.push({
-        label: p?.name ?? route.project_id,
-        route: { kind: "project", project_id: route.project_id },
-      });
-    }
-    crumbs.push({ label: t("nav.apps"), route: null });
-  } else if (route.kind === "app") {
-    crumbs.push({ label: t("nav.apps"), route: { kind: "apps" } });
-    crumbs.push({ label: route.app_id, route: null });
-  } else if (route.kind === "memory") {
-    const thread = route.thread_id
-      ? threads.find((x) => x.id === route.thread_id)
-      : null;
-    const projectId = route.project_id ?? thread?.project_id;
-    if (projectId) {
-      const p = projects.find((x) => x.id === projectId);
-      crumbs.push({
-        label: p?.name ?? projectId,
-        route: { kind: "project", project_id: projectId },
-      });
-    }
-    if (thread) {
-      crumbs.push({
-        label: thread.title ?? thread.prompt.slice(0, 32) ?? thread.id,
-        route: { kind: "topic", thread_id: thread.id },
-      });
-    }
-    crumbs.push({ label: t("nav.memory"), route: null });
-  } else if (route.kind === "automations") {
-    crumbs.push({ label: t("nav.automations"), route: null });
-  } else if (route.kind === "browser") {
-    crumbs.push({ label: t("nav.browser"), route: null });
-  } else if (route.kind === "settings") {
-    crumbs.push({ label: t("nav.settings"), route: null });
-  }
-
-  const openMemoryRoute = () => {
-    const routeThreadId =
-      route.kind === "topic" || route.kind === "memory"
-        ? route.thread_id
-        : undefined;
-    const activeThread = routeThreadId
-      ? threads.find((t) => t.id === routeThreadId)
-      : null;
-    const projectId =
-      route.kind === "project"
-        ? route.project_id
-        : activeThread
-          ? activeThread.project_id
-          : route.kind === "memory"
-            ? route.project_id
-            : undefined;
-    onNavigate({
-      kind: "memory",
-      project_id: projectId,
-      thread_id: activeThread?.id,
-    });
-  };
-  const openBrowserRoute = () => {
-    onNavigate({
-      kind: "browser",
-      project_id: projectIdFromRoute(route, threads),
-    });
-  };
-
-  return (
-    <header className="chat-header" data-tauri-drag-region>
-      <div className="chat-header-top" data-tauri-drag-region>
-        <nav className="chat-breadcrumbs" data-tauri-drag-region>
-          {crumbs.map((c, i) => (
-            <span key={i} className="chat-crumb" data-tauri-drag-region>
-              {c.route ? (
-                <button
-                  className="chat-crumb-link"
-                  onClick={() => onNavigate(c.route!)}
-                >
-                  {c.label}
-                </button>
-              ) : (
-                <span className="chat-crumb-current" data-tauri-drag-region>
-                  {c.label}
-                </span>
-              )}
-              {i < crumbs.length - 1 && (
-                <span className="chat-crumb-sep" data-tauri-drag-region>
-                  ›
-                </span>
-              )}
-            </span>
-          ))}
-        </nav>
-        <span className="chat-subtitle" data-tauri-drag-region>
-          {threads.length} {t("header.threadLabel")} · {projects.length}{" "}
-          {t("header.projectLabel")}
-        </span>
-      </div>
-      <nav
-        className="chat-header-actions"
-        aria-label={t("nav.primary")}
-        data-tauri-drag-region
-      >
-        <div className="header-action-group" data-tauri-drag-region>
-          <span className="header-action-label" data-tauri-drag-region>
-            {t("nav.groupStart")}
-          </span>
-          <button
-            className={`header-tab ${route.kind === "home" ? "active" : ""}`}
-            onClick={() => onNavigate({ kind: "home" })}
-          >
-            {t("nav.home")}
-          </button>
-          <button
-            className="header-tab header-tab-primary"
-            onClick={onCreateProject}
-            title={t("nav.newProjectTitle")}
-          >
-            {t("nav.newProject")}
-          </button>
-        </div>
-
-        <div className="header-action-group" data-tauri-drag-region>
-          <span className="header-action-label" data-tauri-drag-region>
-            {t("nav.groupTools")}
-          </span>
-          <button
-            className={`header-tab ${route.kind === "memory" ? "active" : ""}`}
-            onClick={openMemoryRoute}
-            title={t("nav.memory")}
-          >
-            {t("nav.memory")}
-          </button>
-          <button
-            className={`header-tab ${route.kind === "apps" || route.kind === "app" ? "active" : ""}`}
-            onClick={() => onNavigate({ kind: "apps" })}
-          >
-            {t("nav.apps")}
-          </button>
-          <button
-            className={`header-tab ${route.kind === "automations" ? "active" : ""}`}
-            onClick={() => onNavigate({ kind: "automations" })}
-            title={t("nav.automations")}
-          >
-            {t("nav.automations")}
-          </button>
-          <button
-            className={`header-tab ${route.kind === "browser" ? "active" : ""}`}
-            onClick={openBrowserRoute}
-            title={t("nav.browser")}
-          >
-            {t("nav.browser")}
-          </button>
-        </div>
-
-        <div
-          className="header-action-group header-action-group-compact"
-          data-tauri-drag-region
-        >
-          <span className="header-action-label" data-tauri-drag-region>
-            {t("nav.groupView")}
-          </span>
-          <button
-            className="header-tab"
-            onClick={onAddPane}
-            title={t("nav.newPaneTitle")}
-          >
-            {t("nav.newPane")}
-          </button>
-          <button
-            className={`header-tab ${route.kind === "settings" ? "active" : ""}`}
-            onClick={() => onNavigate({ kind: "settings" })}
-            title={t("nav.settings")}
-          >
-            {t("nav.settings")}
-          </button>
-        </div>
-      </nav>
-    </header>
+    </>
   );
 }
 
