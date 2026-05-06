@@ -15,6 +15,7 @@
   -webkit-app-region: drag;
   app-region: drag;
   background: transparent;
+  user-select: none;
 }
 
 .chat-header {
@@ -23,6 +24,7 @@
   flex-direction: column;
   gap: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  user-select: none;
 }
 
 .chat-header button,

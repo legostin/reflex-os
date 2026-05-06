@@ -1933,11 +1933,11 @@ function Header({
   };
 
   return (
-    <header className="chat-header">
-      <div className="chat-header-top">
-        <nav className="chat-breadcrumbs">
+    <header className="chat-header" data-tauri-drag-region>
+      <div className="chat-header-top" data-tauri-drag-region>
+        <nav className="chat-breadcrumbs" data-tauri-drag-region>
           {crumbs.map((c, i) => (
-            <span key={i} className="chat-crumb">
+            <span key={i} className="chat-crumb" data-tauri-drag-region>
               {c.route ? (
                 <button
                   className="chat-crumb-link"
@@ -1946,22 +1946,32 @@ function Header({
                   {c.label}
                 </button>
               ) : (
-                <span className="chat-crumb-current">{c.label}</span>
+                <span className="chat-crumb-current" data-tauri-drag-region>
+                  {c.label}
+                </span>
               )}
               {i < crumbs.length - 1 && (
-                <span className="chat-crumb-sep">›</span>
+                <span className="chat-crumb-sep" data-tauri-drag-region>
+                  ›
+                </span>
               )}
             </span>
           ))}
         </nav>
-        <span className="chat-subtitle">
+        <span className="chat-subtitle" data-tauri-drag-region>
           {threads.length} {t("header.threadLabel")} · {projects.length}{" "}
           {t("header.projectLabel")}
         </span>
       </div>
-      <nav className="chat-header-actions" aria-label={t("nav.primary")}>
-        <div className="header-action-group">
-          <span className="header-action-label">{t("nav.groupStart")}</span>
+      <nav
+        className="chat-header-actions"
+        aria-label={t("nav.primary")}
+        data-tauri-drag-region
+      >
+        <div className="header-action-group" data-tauri-drag-region>
+          <span className="header-action-label" data-tauri-drag-region>
+            {t("nav.groupStart")}
+          </span>
           <button
             className={`header-tab ${route.kind === "home" ? "active" : ""}`}
             onClick={() => onNavigate({ kind: "home" })}
@@ -1977,8 +1987,10 @@ function Header({
           </button>
         </div>
 
-        <div className="header-action-group">
-          <span className="header-action-label">{t("nav.groupTools")}</span>
+        <div className="header-action-group" data-tauri-drag-region>
+          <span className="header-action-label" data-tauri-drag-region>
+            {t("nav.groupTools")}
+          </span>
           <button
             className={`header-tab ${route.kind === "memory" ? "active" : ""}`}
             onClick={openMemoryRoute}
@@ -2008,8 +2020,13 @@ function Header({
           </button>
         </div>
 
-        <div className="header-action-group header-action-group-compact">
-          <span className="header-action-label">{t("nav.groupView")}</span>
+        <div
+          className="header-action-group header-action-group-compact"
+          data-tauri-drag-region
+        >
+          <span className="header-action-label" data-tauri-drag-region>
+            {t("nav.groupView")}
+          </span>
           <button
             className="header-tab"
             onClick={onAddPane}
