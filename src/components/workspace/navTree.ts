@@ -149,20 +149,16 @@ export function buildWorkspaceTree({
     route: { kind: "app" as const, app_id: app.id },
   }));
 
+  const sectionNodes: WorkspaceTreeNode[] = [
+    { id: "section:home", kind: "section", label: "Home", icon: "home", route: { kind: "home" } },
+    { id: "section:memory", kind: "section", label: "Memory", icon: "memory", route: { kind: "memory" } },
+    { id: "section:automations", kind: "section", label: "Automations", icon: "automation", route: { kind: "automations" } },
+    { id: "section:browser", kind: "section", label: "Browser", icon: "browser", route: { kind: "browser" } },
+    { id: "section:settings", kind: "section", label: "Settings", icon: "settings", route: { kind: "settings" } },
+  ];
+
   return [
-    {
-      id: "sections",
-      kind: "group",
-      label: "Sections",
-      icon: "sections",
-      children: [
-        { id: "section:home", kind: "section", label: "Home", icon: "home", route: { kind: "home" } },
-        { id: "section:memory", kind: "section", label: "Memory", icon: "memory", route: { kind: "memory" } },
-        { id: "section:automations", kind: "section", label: "Automations", icon: "automation", route: { kind: "automations" } },
-        { id: "section:browser", kind: "section", label: "Browser", icon: "browser", route: { kind: "browser" } },
-        { id: "section:settings", kind: "section", label: "Settings", icon: "settings", route: { kind: "settings" } },
-      ],
-    },
+    ...sectionNodes,
     {
       id: "projects",
       kind: "group",

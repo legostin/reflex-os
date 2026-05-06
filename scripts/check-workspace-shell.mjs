@@ -32,9 +32,15 @@ if (!paneTabs.includes("export function PaneTabs")) failures.push("PaneTabs expo
 if (chat.includes('className="tabs-row"')) failures.push("legacy tabs-row usage must be removed");
 if (!sidebar.includes("iconForNode")) failures.push("WorkspaceSidebar must render menu item icons");
 if (!sidebar.includes("node.icon")) failures.push("WorkspaceSidebar must prefer node icons");
+if (!sidebar.includes("iconToneForNode")) failures.push("WorkspaceSidebar must color menu item icons");
+if (!sidebar.includes("size-6")) failures.push("WorkspaceSidebar icons must be readable at 24px");
+if (!sidebar.includes("text-[13px]")) failures.push("WorkspaceSidebar typography must use airier menu text");
 for (const icon of ['icon: "home"', 'icon: "projects"', 'icon: "utilities"', 'icon: "memory"', 'icon: "settings"']) {
   if (!navTree.includes(icon)) failures.push(`navTree missing ${icon}`);
 }
+if (navTree.includes('id: "sections"')) failures.push("Sections must be first-level items, not nested under a Sections group");
+if (!navTree.includes("const sectionNodes")) failures.push("navTree must define first-level section nodes");
+if (!navTree.includes("...sectionNodes")) failures.push("navTree must return section nodes at the first level");
 
 if (failures.length > 0) {
   console.error(`Workspace shell check failed:\n- ${failures.join("\n- ")}`);

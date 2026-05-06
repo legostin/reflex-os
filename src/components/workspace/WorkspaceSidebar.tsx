@@ -6,7 +6,7 @@ import type { Route } from "./workspaceTypes";
 const ICONS: Record<string, string> = {
   sections: "☰",
   home: "⌂",
-  memory: "M",
+  memory: "◈",
   automation: "⏱",
   browser: "◎",
   settings: "⚙",
@@ -37,6 +37,23 @@ function iconForNode(node: WorkspaceTreeNode): string {
   )[node.kind];
 }
 
+function iconToneForNode(node: WorkspaceTreeNode): string {
+  const key = node.icon ?? node.kind;
+  if (key === "home") return "border-sky-400/20 bg-sky-400/12 text-sky-200";
+  if (key === "memory") return "border-emerald-400/20 bg-emerald-400/12 text-emerald-200";
+  if (key === "automation") return "border-amber-400/20 bg-amber-400/12 text-amber-200";
+  if (key === "browser") return "border-cyan-400/20 bg-cyan-400/12 text-cyan-200";
+  if (key === "settings") return "border-zinc-300/18 bg-zinc-300/10 text-zinc-200";
+  if (key === "projects" || key === "project") return "border-blue-400/20 bg-blue-400/12 text-blue-200";
+  if (key === "folder" || node.kind === "project-folder" || node.kind === "utility-folder") {
+    return "border-yellow-300/20 bg-yellow-300/12 text-yellow-100";
+  }
+  if (key === "topic") return "border-violet-400/20 bg-violet-400/12 text-violet-200";
+  if (key === "files") return "border-stone-300/18 bg-stone-300/10 text-stone-200";
+  if (key === "utilities" || key === "utility") return "border-fuchsia-400/20 bg-fuchsia-400/12 text-fuchsia-200";
+  return "border-white/10 bg-white/[0.045] text-white/62";
+}
+
 export function WorkspaceSidebar({
   tree,
   activeRouteKey,
@@ -50,7 +67,7 @@ export function WorkspaceSidebar({
   onNavigate: (route: Route) => void;
   onCreateProject: () => void;
 }) {
-  const initialExpanded = useMemo(() => new Set(["sections", "projects", "utilities"]), []);
+  const initialExpanded = useMemo(() => new Set(["projects", "utilities"]), []);
   const [expanded, setExpanded] = useState(initialExpanded);
 
   const toggle = (id: string) =>
@@ -71,7 +88,7 @@ export function WorkspaceSidebar({
           </Button>
         </div>
       </div>
-      <nav className="min-h-0 flex-1 overflow-auto px-2 py-3">
+      <nav className="min-h-0 flex-1 overflow-auto px-2.5 py-4">
         {tree.map((node) => (
           <TreeNode
             key={node.id}
@@ -116,32 +133,32 @@ function TreeNode({
   };
 
   return (
-    <div>
+    <div className="py-0.5">
       <button
         className={cx(
-          "flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition",
-          active ? "bg-reflex-accent/18 text-white" : "text-white/64 hover:bg-white/[0.06] hover:text-white/88",
+          "flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] font-medium leading-5 transition",
+          active ? "bg-reflex-accent/18 text-white" : "text-white/68 hover:bg-white/[0.06] hover:text-white/90",
         )}
         style={{ paddingLeft: 8 + depth * 14 }}
         onClick={action}
       >
-        <span className="w-3 text-white/34">{hasChildren ? (open ? "▾" : "▸") : ""}</span>
+        <span className="w-3 text-[11px] text-white/34">{hasChildren ? (open ? "▾" : "▸") : ""}</span>
         <span
           className={cx(
-            "inline-flex size-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold",
+            "inline-flex size-6 shrink-0 items-center justify-center rounded-md border text-[12px] font-semibold shadow-sm",
             active
-              ? "border-reflex-accent/25 bg-reflex-accent/16 text-white"
-              : "border-white/8 bg-white/[0.035] text-white/48",
+              ? "border-reflex-accent/35 bg-reflex-accent/20 text-white"
+              : iconToneForNode(node),
           )}
           aria-hidden="true"
         >
           {iconForNode(node)}
         </span>
         <span className="min-w-0 flex-1 truncate">{node.label}</span>
-        {typeof node.count === "number" ? <Badge className="px-1.5 py-0 text-[10px]">{node.count}</Badge> : null}
+        {typeof node.count === "number" ? <Badge className="px-1.5 py-0 text-[11px]">{node.count}</Badge> : null}
       </button>
       {hasChildren && open ? (
-        <div className="mt-0.5">
+        <div className="mt-1">
           {node.children!.map((child) => (
             <TreeNode
               key={child.id}

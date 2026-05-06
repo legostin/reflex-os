@@ -14,7 +14,7 @@ const chat = read("src/components/ChatThread.tsx");
 for (const name of ["Route", "Project", "ProjectFolder", "Thread", "AppManifest", "AppFolder"]) {
   if (!types.includes(`export type ${name}`)) failures.push(`${name} not exported from workspaceTypes.ts`);
 }
-for (const token of ["WorkspaceTreeNode", "buildWorkspaceTree", "sections", "projects", "utilities", "topics", "files"]) {
+for (const token of ["WorkspaceTreeNode", "buildWorkspaceTree", "sectionNodes", "projects", "utilities", "topics", "files"]) {
   if (!tree.includes(token)) failures.push(`${token} missing from navTree.ts`);
 }
 if (!chat.includes('from "./workspace/workspaceTypes"')) failures.push("ChatThread must import shared workspace types");
