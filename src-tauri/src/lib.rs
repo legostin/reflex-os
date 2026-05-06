@@ -4063,6 +4063,36 @@ fn show_main_window(app: &AppHandle) {
     let _ = window.set_focus();
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MainWindowActivation {
+    Ready,
+    Reopen { has_visible_windows: bool },
+    Other,
+}
+
+fn main_window_activation_from_run_event(event: &tauri::RunEvent) -> MainWindowActivation {
+    match event {
+        tauri::RunEvent::Ready => MainWindowActivation::Ready,
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen {
+            has_visible_windows, ..
+        } => MainWindowActivation::Reopen {
+            has_visible_windows: *has_visible_windows,
+        },
+        _ => MainWindowActivation::Other,
+    }
+}
+
+fn should_show_main_for_activation(activation: MainWindowActivation) -> bool {
+    matches!(
+        activation,
+        MainWindowActivation::Ready
+            | MainWindowActivation::Reopen {
+                has_visible_windows: false
+            }
+    )
+}
+
 fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -4600,6 +4630,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            if should_show_main_for_activation(main_window_activation_from_run_event(&event)) {
+                show_main_window(app);
+            }
+
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
                 let scheduler_h: scheduler::SchedulerHandle =
                     app.state::<scheduler::SchedulerHandle>().inner().clone();
@@ -4619,6 +4653,25 @@ pub fn run() {
 #[cfg(test)]
 mod connected_app_tests {
     use super::*;
+
+    #[test]
+    fn ready_activation_shows_main_window_on_startup() {
+        assert!(should_show_main_for_activation(MainWindowActivation::Ready));
+    }
+
+    #[test]
+    fn reopen_without_visible_windows_shows_main_window() {
+        assert!(should_show_main_for_activation(MainWindowActivation::Reopen {
+            has_visible_windows: false,
+        }));
+    }
+
+    #[test]
+    fn reopen_with_visible_main_window_does_not_force_show() {
+        assert!(!should_show_main_for_activation(MainWindowActivation::Reopen {
+            has_visible_windows: true,
+        }));
+    }
 
     #[test]
     fn v2_approval_responses_use_app_server_decisions() {
