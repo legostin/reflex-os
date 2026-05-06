@@ -1,7 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import QuickPanel from "./components/QuickPanel";
 import ChatThread from "./components/ChatThread";
-import "./App.css";
 
 const label = (() => {
   try {

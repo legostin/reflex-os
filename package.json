@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run check:bridge && npm run check:dashboard && npm run check:dashboard:fixtures && tsc && vite build",
+    "build": "npm run check:tailwind && npm run check:bridge && npm run check:dashboard && npm run check:dashboard:fixtures && tsc && vite build",
+    "check:tailwind": "node scripts/check-tailwind-stack.mjs",
     "check:bridge": "node scripts/check-app-bridge-catalog.mjs",
     "check:dashboard": "node scripts/check-dashboard-widgets.mjs",
     "check:dashboard:fixtures": "node scripts/check-dashboard-widget-fixtures.mjs",
@@ -25,10 +26,12 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.2.4",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "tailwindcss": "^4.2.4",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
   }
