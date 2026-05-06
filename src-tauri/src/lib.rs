@@ -2428,6 +2428,14 @@ fn build_app_creation_prompt(
     p.push_str("- Ask the user only when the actual product task is ambiguous, for example which fields to show, what should happen for an empty list, or which data source to use. Answer technical questions yourself.\n");
     p.push_str("- Do the work only when you understand the task. If there is substantial ambiguity, ask first.\n\n");
     p.push_str("- If the app cannot proceed without extra permissions, network hosts, a local server listener, or an external setup step, do not fail silently. Call `permissions.request` / `window.reflexPermissionsRequest({permissions, hosts, reason, serverListen})`, show a setup-required state, and retry only after approval or required files are present.\n\n");
+    p.push_str("CANONICAL UTILITY FRAMEWORK:\n");
+    p.push_str("- For any non-trivial Reflex utility, especially one that touches memory, topics, events, agent, storage, scheduler, project files, apps, browser, integration, MCP, fs, dialog, logs, or a dashboard/multi-section UI, build on `reflex-os-utility-framework` instead of raw HTML bridge plumbing.\n");
+    p.push_str("- Scaffold React + TypeScript + Tailwind when the utility has meaningful state or repeated UI: `pnpm create vite . -- --template react-ts`, `pnpm add reflex-os-utility-framework`, `pnpm add -D tailwindcss postcss autoprefixer`, then build and leave the generated static assets referenced by manifest.json.\n");
+    p.push_str("- Wrap the app in `ReflexProvider`; use framework layout/primitives such as AppShell, Section, SplitGrid, Button, Field, Input, Textarea, Select, Badge, EmptyState, StatusLine, Tabs, JsonView, Modal, ToastProvider, Spinner, Skeleton, and DataTable.\n");
+    p.push_str("- Use high-level bricks when they fit: MemoryComposer, MemoryNoteList, TopicsList, EventLog, StorageBrowser, AgentChat, BridgeMethodPicker, ActionRunner, PermissionRequestBanner, ProjectPicker, AppsList, AppDiffView, AppRevisionToolbar, AppServerControls, BrowserTabBar, BrowserSnapshotView, SchedulesList, SchedulerRunsLog, SchedulerStatsCard, IntegrationProfileCard, SkillsManager, McpServerList, FsBrowser, FilePicker, NotifyButton, and LogViewer.\n");
+    p.push_str("- Use the framework typed bridge clients and hooks before raw helpers: `bridge.memory`, `bridge.topics`, `bridge.events`, `bridge.agent`, `bridge.storage`, `bridge.fs`, `bridge.projectFiles`, `bridge.manifest`, `bridge.actions`, `bridge.widgets`, `bridge.scheduler`, `bridge.permissions`, `bridge.network`, `bridge.system`, `bridge.projects`, `bridge.apps`, `bridge.browser`, `bridge.integration`, `bridge.mcp`, `bridge.skills`, `bridge.dialog`, and hooks like useMemoryNotes, useStorage, useEvent, useTopics, useAgentStream, useSystemContext, useBridgeCatalog, useProjects, useManifest, useApps, useScheduler, useFs, useProjectFiles, usePermissions.\n");
+    p.push_str("- Do not reimplement bridge plumbing with custom postMessage wrappers, ad-hoc localStorage, bespoke JSON tables, or hand-rolled modal/toast/table components when the framework has a typed client, hook, primitive, or brick. Use `window.reflexInvoke` or raw postMessage only as a last-resort fallback for an unusual bridge method not exposed by the framework.\n");
+    p.push_str("- Plain index.html is acceptable only for a truly trivial no-framework utility with almost no bridge logic. If you choose plain HTML, state why in the plan and still use the overlay helpers listed below.\n\n");
     p.push_str("FILES:\n");
     p.push_str("- manifest.json already exists as a stub. Update name, icon (one emoji), description (one sentence), and permissions (array of API permission strings).\n");
     p.push_str("- For external-service wrappers, add manifest.integration with a learned provider/data/MCP profile. If the web surface itself should be embedded, use runtime=\"external\" plus manifest.external.url; otherwise build a local companion UI.\n");
@@ -4587,6 +4595,21 @@ mod connected_app_tests {
         assert!(prompt.contains("Preserve license files, attribution, and notices"));
         assert!(prompt.contains("pending permission request for the source repository host"));
         assert!(prompt.contains("provider `open_source_repo`"));
+    }
+
+    #[test]
+    fn app_creation_prompt_includes_utility_framework_guidance() {
+        let prompt = build_app_creation_prompt(
+            "Create a project memory dashboard with saved notes and topic actions.",
+            "dashboard",
+            None,
+            None,
+        );
+
+        assert!(prompt.contains("reflex-os-utility-framework"));
+        assert!(prompt.contains("ReflexProvider"));
+        assert!(prompt.contains("typed bridge clients"));
+        assert!(prompt.contains("Do not reimplement bridge plumbing"));
     }
 
     #[test]
