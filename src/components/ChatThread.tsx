@@ -36,6 +36,22 @@ import {
   bridgeRecipeTitle,
 } from "../appBridgeCatalogI18n";
 import { useI18n, type Translate } from "../i18n";
+import type {
+  AppAction,
+  AppFolder,
+  AppManifest,
+  AppPermissionRequest,
+  AppSelfTestStatus,
+  BrowserTabSnapshot,
+  Project,
+  ProjectFolder,
+  ProjectThread,
+  QuickContext,
+  Route,
+  Thread,
+  ThreadEvent,
+  ThreadQuestion,
+} from "./workspace/workspaceTypes";
 import "./ChatThread.css";
 
 const BRIDGE_API_COUNT = BRIDGE_API_GROUPS.reduce(
@@ -48,32 +64,6 @@ const BRIDGE_HELPER_COUNT = BRIDGE_HELPER_GROUPS.reduce(
   0,
 );
 
-type QuickContext = {
-  frontmost_app: string | null;
-  finder_target: string | null;
-};
-
-type Project = {
-  id: string;
-  name: string;
-  root: string;
-  created_at_ms: number;
-  sandbox?: string;
-  mcp_servers?: Record<string, any> | null;
-  description?: string | null;
-  agent_instructions?: string | null;
-  skills?: string[];
-  apps?: string[];
-};
-
-type ProjectFolder = {
-  path: string;
-  name: string;
-  parent_path?: string | null;
-  project_count?: number;
-  created_at_ms?: number;
-};
-
 type ProjectMemoryStats = {
   docs: number;
   chunks: number;
@@ -82,8 +72,6 @@ type ProjectMemoryStats = {
   missing: number;
   last_indexed_at_ms?: number | null;
 };
-
-export type BrowserTabSnapshot = { url: string; title: string };
 
 type ThreadCreated = {
   id: string;
@@ -134,90 +122,12 @@ type TopicOpenRequestPayload = {
   from_app?: string;
 };
 
-type ThreadEvent = {
-  seq: number;
-  stream: CodexEventPayload["stream"];
-  raw: string;
-  parsed: any | null;
-};
-
-type Thread = {
-  id: string;
-  project_id: string;
-  project_name: string;
-  prompt: string;
-  cwd: string;
-  ctx: QuickContext;
-  created_at_ms: number;
-  events: ThreadEvent[];
-  exit_code: number | null | undefined;
-  done: boolean;
-  session_id: string | null;
-  title: string | null;
-  goal: string | null;
-  pending_questions: ThreadQuestion[];
-  plan_mode: boolean;
-  plan_confirmed: boolean;
-  source: string;
-  browser_tabs: BrowserTabSnapshot[];
-};
-
 type ThreadMetaUpdated = {
   thread_id: string;
   title?: string | null;
   goal?: string | null;
   plan_confirmed?: boolean;
 };
-
-type ThreadQuestion = {
-  question_id: string;
-  method: string;
-  params: any;
-  thread_id: string | null;
-};
-
-type StoredEvent = { seq: number; stream: string; ts_ms: number; raw: string };
-
-type StoredThreadMeta = {
-  id: string;
-  project_id: string | null;
-  prompt: string;
-  cwd: string;
-  frontmost_app: string | null;
-  finder_target: string | null;
-  created_at_ms: number;
-  exit_code: number | null;
-  done: boolean;
-  session_id: string | null;
-  title: string | null;
-  goal: string | null;
-  plan_mode?: boolean;
-  plan_confirmed?: boolean;
-  source?: string;
-  browser_tabs?: BrowserTabSnapshot[];
-};
-
-type ProjectThread = {
-  project: Project;
-  thread: { meta: StoredThreadMeta; events: StoredEvent[] };
-};
-
-type Route =
-  | { kind: "home" }
-  | { kind: "project"; project_id: string }
-  | { kind: "topic"; thread_id: string }
-  | {
-      kind: "apps";
-      initialTemplate?: string;
-      openCreate?: boolean;
-      createRequestId?: number;
-      project_id?: string;
-    }
-  | { kind: "app"; app_id: string }
-  | { kind: "memory"; project_id?: string; thread_id?: string }
-  | { kind: "automations" }
-  | { kind: "browser"; project_id?: string }
-  | { kind: "settings" };
 
 function routeKey(r: Route): string {
   switch (r.kind) {
@@ -421,111 +331,6 @@ type ServerLogLine = {
   stream: "stdout" | "stderr" | "system";
   line: string;
   ts_ms: number;
-};
-
-type AppWidget = {
-  id: string;
-  name: string;
-  entry: string;
-  size?: string;
-  description?: string | null;
-};
-
-type AppNetworkPolicy = {
-  allowed_hosts?: string[];
-};
-
-type AppPermissionRequest = {
-  id: string;
-  status?: string;
-  reason?: string | null;
-  permissions?: string[];
-  network_hosts?: string[];
-  server_listen?: boolean;
-  created_at_ms?: number;
-  resolved_at_ms?: number | null;
-  resolved_note?: string | null;
-};
-
-type AppStep = {
-  method: string;
-  params?: any;
-  save_as?: string | null;
-};
-
-type AppSchedule = {
-  id: string;
-  name: string;
-  cron: string;
-  enabled?: boolean;
-  catch_up?: string;
-  steps?: AppStep[];
-};
-
-type AppAction = {
-  id: string;
-  name: string;
-  description?: string | null;
-  params_schema?: any;
-  paramsSchema?: any;
-  public?: boolean;
-  steps?: AppStep[];
-};
-
-type AppSelfTestCheck = {
-  name: string;
-  status: string;
-  message?: string | null;
-};
-
-type AppSelfTestStatus = {
-  status: string;
-  message?: string | null;
-  started_at_ms?: number | null;
-  finished_at_ms?: number | null;
-  checks?: AppSelfTestCheck[];
-};
-
-type AppManifest = {
-  id: string;
-  name: string;
-  icon?: string | null;
-  description?: string | null;
-  entry: string;
-  permissions: string[];
-  kind: string;
-  created_at_ms: number;
-  folder_path?: string | null;
-  ready?: boolean;
-  runtime?: "static" | "server" | "external" | string | null;
-  server?: { command: string[]; ready_timeout_ms?: number | null } | null;
-  external?: {
-    url?: string | null;
-    title?: string | null;
-    open_url?: string | null;
-  } | null;
-  integration?: {
-    provider?: string | null;
-    display_name?: string | null;
-    capabilities?: string[];
-    data_model?: any;
-    auth?: any;
-    mcp?: any;
-    notes?: string | null;
-  } | null;
-  network?: AppNetworkPolicy | null;
-  permission_requests?: AppPermissionRequest[];
-  schedules?: AppSchedule[];
-  actions?: AppAction[];
-  widgets?: AppWidget[];
-  self_test?: AppSelfTestStatus | null;
-};
-
-type AppFolder = {
-  path: string;
-  name: string;
-  parent_path?: string | null;
-  created_at_ms?: number;
 };
 
 type GitHubExportResult = {
