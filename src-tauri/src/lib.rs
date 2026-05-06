@@ -4674,6 +4674,30 @@ mod connected_app_tests {
     }
 
     #[test]
+    fn default_capability_allows_drag_region_commands() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json"))
+                .expect("default capability json");
+        let permissions = capability["permissions"]
+            .as_array()
+            .expect("permissions array");
+        let has_permission = |permission: &str| {
+            permissions
+                .iter()
+                .any(|value| value.as_str() == Some(permission))
+        };
+
+        assert!(
+            has_permission("core:window:allow-start-dragging"),
+            "data-tauri-drag-region needs start_dragging permission"
+        );
+        assert!(
+            has_permission("core:window:allow-internal-toggle-maximize"),
+            "data-tauri-drag-region double click needs internal_toggle_maximize permission"
+        );
+    }
+
+    #[test]
     fn v2_approval_responses_use_app_server_decisions() {
         let approve_session = build_response(
             "item/commandExecution/requestApproval",
