@@ -45,6 +45,8 @@ import type {
   BrowserTabSnapshot,
   Project,
   ProjectFolder,
+  ProjectReflection,
+  ProjectReflectionSuggestion,
   ProjectThread,
   QuickContext,
   Route,
@@ -1137,13 +1139,13 @@ export default function ChatThread() {
       imagePaths?: string[];
       goal?: string | null;
     },
-  ) => {
+  ): Promise<string> => {
     const project = projects.find((p) => p.id === projectId);
     const ctx = {
       frontmost_app: null as string | null,
       finder_target: project?.root ?? null,
     };
-    await invoke("submit_quick", {
+    const threadId = await invoke<string>("submit_quick", {
       prompt,
       ctx,
       projectId,
@@ -1154,6 +1156,7 @@ export default function ChatThread() {
       goal: options?.goal,
     });
     // backend emits reflex://thread-created which our listener will route into the focused pane.
+    return threadId;
   };
 
   const focusedPane =
@@ -1422,8 +1425,8 @@ export default function ChatThread() {
             }
             onOpenApps={() => navigateRoute({ kind: "apps" }, paneId)}
             onOpenMemory={() => navigateRoute({ kind: "memory" }, paneId)}
-            onCreateTopic={(projectId, prompt, planMode, imagePaths, goal) =>
-              createNewTopic(projectId, prompt, planMode, { imagePaths, goal })
+            onCreateTopic={(projectId, prompt, planMode, imagePaths, goal, source) =>
+              createNewTopic(projectId, prompt, planMode, { imagePaths, goal, source })
             }
             onCreateProject={() => void createNewProject()}
             onProjectUpdated={onProjectUpdated}
@@ -1442,8 +1445,12 @@ export default function ChatThread() {
             threads={threads}
             onSelectTopic={(id) => navigate({ kind: "topic", thread_id: id })}
             onProjectUpdated={onProjectUpdated}
-            onCreateTopic={(prompt, planMode) =>
-              createNewTopic(r.project_id, prompt, planMode)
+            onCreateTopic={(prompt, planMode, imagePaths, goal, source) =>
+              createNewTopic(r.project_id, prompt, planMode, {
+                imagePaths,
+                goal,
+                source,
+              })
             }
             onCreateApp={() =>
               navigate({
@@ -4317,7 +4324,8 @@ function HomeScreen({
     planMode: boolean,
     imagePaths?: string[],
     goal?: string | null,
-  ) => Promise<void>;
+    source?: string,
+  ) => Promise<string>;
   onCreateProject: () => void;
   onProjectUpdated: (project: Project) => void;
   onProjectsReload: () => void;
@@ -7146,7 +7154,7 @@ function buildProjectDashboardBootstrapPrompt(
     .join("\n");
 }
 
-function ProjectDashboard({
+export function ProjectDashboard({
   project,
   apps,
   onOpenApp,
@@ -7155,7 +7163,13 @@ function ProjectDashboard({
   project: Project;
   apps: AppManifest[];
   onOpenApp: (id: string) => void;
-  onCreateTopic: (prompt: string, planMode: boolean) => Promise<void>;
+  onCreateTopic: (
+    prompt: string,
+    planMode: boolean,
+    imagePaths?: string[],
+    goal?: string | null,
+    source?: string,
+  ) => Promise<string>;
 }) {
   const { t } = useI18n();
   const linkedIds = useMemo(() => new Set(project.apps ?? []), [project.apps]);
@@ -7981,6 +7995,394 @@ function ProjectDashboard({
   );
 }
 
+const REFLECTION_IDLE_MS = 60 * 60 * 1000;
+const REFLECTION_BLOCK_START = "<reflex_project_reflection>";
+const REFLECTION_BLOCK_END = "</reflex_project_reflection>";
+const REFLECTION_TOPIC_PROMPT_LIMIT = 1200;
+const REFLECTION_DESCRIPTION_LIMIT = 1800;
+
+function projectFlowTitle(topic: Thread): string {
+  const text = (topic.title ?? topic.prompt ?? "").trim();
+  if (!text) return topic.id;
+  return text.length > 88 ? `${text.slice(0, 85)}...` : text;
+}
+
+function truncateForReflection(text: string, limit: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= limit) return trimmed;
+  return `${trimmed.slice(0, limit).trimEnd()}\n[truncated ${
+    trimmed.length - limit
+  } chars]`;
+}
+
+function latestAgentText(thread: Thread | null): string | null {
+  if (!thread) return null;
+  const items = groupEvents(thread.events);
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.kind === "agent" && item.text.trim()) {
+      return item.text.trim();
+    }
+  }
+  return null;
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+}
+
+function normalizeReflectionSuggestion(
+  value: unknown,
+): ProjectReflectionSuggestion | null {
+  if (!value || typeof value !== "object") return null;
+  const rec = value as Record<string, unknown>;
+  const title = typeof rec.title === "string" ? rec.title.trim() : "";
+  const reason = typeof rec.reason === "string" ? rec.reason.trim() : "";
+  const prompt = typeof rec.prompt === "string" ? rec.prompt.trim() : "";
+  if (!title || !prompt) return null;
+  const actionLabel =
+    typeof rec.action_label === "string"
+      ? rec.action_label.trim()
+      : typeof rec.actionLabel === "string"
+        ? rec.actionLabel.trim()
+        : "";
+  const confidence =
+    typeof rec.confidence === "string" ? rec.confidence.trim() : "";
+  return {
+    title,
+    reason,
+    prompt,
+    action_label: actionLabel || null,
+    confidence: confidence || null,
+  };
+}
+
+function extractReflectionJson(text: string): string | null {
+  const tagged = text.match(
+    new RegExp(`${REFLECTION_BLOCK_START}([\\s\\S]+?)${REFLECTION_BLOCK_END}`, "i"),
+  );
+  if (tagged?.[1]) return tagged[1].trim();
+  const fenced = text.match(/```json\s*([\s\S]+?)```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  return null;
+}
+
+function parseProjectReflection(
+  text: string | null,
+): Omit<ProjectReflection, "thread_id" | "requested_at_ms" | "updated_at_ms"> | null {
+  if (!text) return null;
+  const raw = extractReflectionJson(text);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+    const suggestions = Array.isArray(parsed.suggestions)
+      ? parsed.suggestions
+          .map(normalizeReflectionSuggestion)
+          .filter((item): item is ProjectReflectionSuggestion => !!item)
+      : [];
+    return {
+      status: "ready",
+      summary: summary || null,
+      suggestions,
+      memories_to_save: normalizeStringArray(parsed.memories_to_save),
+      memories_to_forget: normalizeStringArray(parsed.memories_to_forget),
+      utility_ideas: normalizeStringArray(parsed.utility_ideas),
+      skill_ideas: normalizeStringArray(parsed.skill_ideas),
+      error_patterns: normalizeStringArray(parsed.error_patterns),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function reflectionContentMatches(
+  current: ProjectReflection | null | undefined,
+  next: ProjectReflection,
+): boolean {
+  if (!current) return false;
+  const comparable = (value: ProjectReflection) =>
+    JSON.stringify({
+      status: value.status ?? "",
+      thread_id: value.thread_id ?? null,
+      summary: value.summary ?? null,
+      suggestions: value.suggestions ?? [],
+      memories_to_save: value.memories_to_save ?? [],
+      memories_to_forget: value.memories_to_forget ?? [],
+      utility_ideas: value.utility_ideas ?? [],
+      skill_ideas: value.skill_ideas ?? [],
+      error_patterns: value.error_patterns ?? [],
+    });
+  return comparable(current) === comparable(next);
+}
+
+function buildProjectReflectionPrompt({
+  project,
+  topics,
+  linkedApps,
+  ragDocs,
+  ragMissing,
+  ragStale,
+}: {
+  project: Project;
+  topics: Thread[];
+  linkedApps: AppManifest[];
+  ragDocs: number;
+  ragMissing: number;
+  ragStale: number;
+}): string {
+  const recentTopics = topics.slice(0, 8).map((topic, index) => {
+    const status = topic.done
+      ? topic.exit_code === 0
+        ? "done"
+        : `failed:${topic.exit_code ?? "unknown"}`
+      : "running";
+    const prompt = truncateForReflection(topic.prompt, REFLECTION_TOPIC_PROMPT_LIMIT);
+    return `${index + 1}. ${projectFlowTitle(topic)} | ${status} | ${new Date(
+      topic.created_at_ms,
+    ).toLocaleString()}\nPrompt: ${prompt}`;
+  });
+  const utilityList = linkedApps.length
+    ? linkedApps.map((app) => `- ${app.name}: ${app.description ?? "no description"}`)
+    : ["- none"];
+  const skillList = (project.skills ?? []).length
+    ? (project.skills ?? []).map((skill) => `- ${skill}`)
+    : ["- none"];
+
+  return [
+    "You are the Reflex project self-reflection agent.",
+    "This project is a life/work operating space, not only a coding workspace.",
+    "Run a private reflection pass over the latest project context, memory/RAG, utilities, skills, and recent topics.",
+    "",
+    "Decide first whether suggestions are actually useful. Do not produce generic suggestions just to fill space.",
+    "Look for concrete next actions, stale commitments, useful memories, things to forget, utility ideas, skill ideas, study topics, and reasoning mistakes made by either the human or AI.",
+    "For this version, do not silently mutate files, skills, or memory during reflection. If a memory change, skill creation, skill improvement, utility creation, or utility improvement is warranted, include it in the matching array and also create a concrete suggestion whose prompt can perform that work as a separate automatic Reflex topic.",
+    "",
+    "Project:",
+    `Name: ${project.name}`,
+    `Root: ${project.root}`,
+    `Description: ${
+      project.description?.trim()
+        ? truncateForReflection(project.description, REFLECTION_DESCRIPTION_LIMIT)
+        : "(empty)"
+    }`,
+    `Indexed docs: ${ragDocs}; missing docs: ${ragMissing}; stale docs: ${ragStale}`,
+    "",
+    "Project skills:",
+    ...skillList,
+    "",
+    "Linked utilities:",
+    ...utilityList,
+    "",
+    "Recent project flows:",
+    ...(recentTopics.length ? recentTopics : ["No flows yet."]),
+    "",
+    "Return a concise human-readable reflection first.",
+    "Then return exactly one machine-readable JSON block using this shape:",
+    REFLECTION_BLOCK_START,
+    JSON.stringify(
+      {
+        summary: "Overall project summary in one short paragraph.",
+        suggestions: [
+          {
+            title: "Specific next action",
+            reason: "Why this is worth doing now",
+            action_label: "Start",
+            prompt: "Full prompt to start a new Reflex topic for this action",
+            confidence: "high",
+          },
+        ],
+        memories_to_save: ["Concrete fact or operating preference worth remembering"],
+        memories_to_forget: ["Outdated or misleading memory, if any"],
+        utility_ideas: ["New utility idea or old utility improvement"],
+        skill_ideas: ["Skill to create or improve"],
+        error_patterns: ["Reasoning mistake or behavior pattern to practice"],
+      },
+      null,
+      2,
+    ),
+    REFLECTION_BLOCK_END,
+    "",
+    "The suggestions array may be empty if no useful proactive action exists.",
+  ].join("\n");
+}
+
+function ProjectSkillsPanel({
+  skills,
+  onEdit,
+}: {
+  skills: string[];
+  onEdit: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-white/84">
+            {t("project.skillsTitle")}
+          </div>
+          <div className="mt-0.5 text-xs text-white/40">
+            {skills.length > 0
+              ? t("project.skillsCount", { count: skills.length })
+              : t("project.skillsEmpty")}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-white/68 transition hover:bg-white/[0.075] hover:text-white"
+          onClick={onEdit}
+        >
+          {t("project.editProfile")}
+        </button>
+      </div>
+      {skills.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {skills.map((skill) => (
+            <span
+              key={skill}
+              className="rounded-md border border-white/10 bg-white/[0.045] px-2 py-1 text-xs text-white/62"
+            >
+              {skill}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectSuggestions({
+  project,
+  busy,
+  onStartFlow,
+  onReflect,
+}: {
+  project: Project;
+  busy: boolean;
+  onStartFlow: (
+    prompt: string,
+    imagePaths?: string[],
+    meta?: TopicComposerSendMeta,
+  ) => Promise<void>;
+  onReflect: () => void;
+}) {
+  const { t } = useI18n();
+  const reflection = project.reflection ?? null;
+  const suggestions = (reflection?.suggestions ?? []).slice(0, 5);
+  const reflectionRunning = reflection?.status === "running";
+  const reflectionInsights = [
+    ...(reflection?.utility_ideas ?? []).map((text) => ({
+      label: t("project.utilityIdeas"),
+      text,
+    })),
+    ...(reflection?.skill_ideas ?? []).map((text) => ({
+      label: t("project.skillIdeas"),
+      text,
+    })),
+    ...(reflection?.error_patterns ?? []).map((text) => ({
+      label: t("project.errorPatterns"),
+      text,
+    })),
+  ].slice(0, 5);
+
+  return (
+    <section aria-label={t("project.agentSuggestions")} className="space-y-3">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-reflex-accent/80">
+            {t("project.agentSuggestions")}
+          </p>
+          <h2 className="mt-1 text-xl font-semibold tracking-normal text-white">
+            {t("project.agentSuggestionsTitle")}
+          </h2>
+        </div>
+        <button
+          type="button"
+          className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-md border border-reflex-accent/35 bg-reflex-accent/14 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-reflex-accent/22 disabled:cursor-not-allowed disabled:opacity-45"
+          disabled={busy || reflectionRunning}
+          onClick={onReflect}
+        >
+          {reflectionRunning ? t("project.reflecting") : t("project.reflectNow")}
+        </button>
+      </div>
+      <article className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+        <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/36">
+          {t("project.projectSummary")}
+        </div>
+        <p className="mt-2 text-sm leading-6 text-white/62">
+          {reflection?.summary?.trim()
+            ? reflection.summary
+            : reflectionRunning
+              ? t("project.reflectionRunning")
+              : t("project.reflectionEmpty")}
+        </p>
+        {reflectionInsights.length > 0 && (
+          <div className="mt-3 grid gap-2">
+            {reflectionInsights.map((item, index) => (
+              <div
+                key={`${item.label}:${index}`}
+                className="rounded-md border border-white/10 bg-black/12 px-3 py-2"
+              >
+                <div className="text-[10px] font-medium uppercase tracking-[0.13em] text-white/30">
+                  {item.label}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-white/56">
+                  {item.text}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </article>
+      <div className="grid gap-3">
+        {suggestions.length === 0 && !reflectionRunning && (
+          <div className="rounded-md border border-white/10 bg-white/[0.025] px-4 py-5 text-sm text-white/48">
+            {t("project.noReflectionSuggestions")}
+          </div>
+        )}
+        {suggestions.map((suggestion, index) => (
+          <article
+            key={`${suggestion.title}:${index}`}
+            className="rounded-md border border-sky-400/25 bg-sky-400/8 p-4 shadow-[0_18px_45px_rgba(0,0,0,0.16)]"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold leading-5 text-white">
+                  {suggestion.title}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-white/58">
+                  {suggestion.reason}
+                </p>
+                {suggestion.confidence && (
+                  <div className="mt-2 text-[11px] uppercase tracking-[0.12em] text-white/32">
+                    {suggestion.confidence}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.055] px-3 py-1.5 text-xs font-medium text-white/76 transition hover:bg-white/[0.09] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                disabled={busy}
+                onClick={() =>
+                  void onStartFlow(suggestion.prompt, [], {
+                    planMode: true,
+                  })
+                }
+              >
+                {suggestion.action_label || t("project.startFlow")}
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ProjectScreen({
   projectId,
   projects,
@@ -7996,7 +8398,13 @@ function ProjectScreen({
   threads: Thread[];
   onSelectTopic: (id: string) => void;
   onProjectUpdated: (p: Project) => void;
-  onCreateTopic: (prompt: string, planMode: boolean) => Promise<void>;
+  onCreateTopic: (
+    prompt: string,
+    planMode: boolean,
+    imagePaths?: string[],
+    goal?: string | null,
+    source?: string,
+  ) => Promise<string>;
   onCreateApp: () => void;
   onOpenApp: (id: string) => void;
 }) {
@@ -8004,10 +8412,9 @@ function ProjectScreen({
   const project = projects.find((p) => p.id === projectId);
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [showHidden, setShowHidden] = useState(false);
-  const [showNewTopic, setShowNewTopic] = useState(false);
-  const [newTopicPrompt, setNewTopicPrompt] = useState("");
-  const [newTopicPlanMode, setNewTopicPlanMode] = useState(false);
-  const [creatingTopic, setCreatingTopic] = useState(false);
+  const [flowSubmitting, setFlowSubmitting] = useState(false);
+  const [reflectionBusy, setReflectionBusy] = useState(false);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [drawerTarget, setDrawerTarget] = useState<DrawerTarget | null>(null);
   const [statuses, setStatuses] = useState<Record<string, PathStatus>>({});
   const [statusTick, setStatusTick] = useState(0);
@@ -8084,19 +8491,31 @@ function ProjectScreen({
     }
   }
 
-  async function submitNewTopic() {
-    const text = newTopicPrompt.trim();
-    if (!text || creatingTopic) return;
-    setCreatingTopic(true);
+  async function startProjectFlow(
+    prompt: string,
+    imagePaths: string[] = [],
+    meta?: TopicComposerSendMeta,
+  ) {
+    const text = prompt.trim();
+    if (!text || flowSubmitting) return;
+    if (/^\/dream(?:\s|$)/i.test(text)) {
+      await startReflection("command");
+      return;
+    }
+    setFlowSubmitting(true);
     setTopicError(null);
     try {
-      await onCreateTopic(text, newTopicPlanMode);
-      setShowNewTopic(false);
-      setNewTopicPrompt("");
+      await onCreateTopic(
+        text,
+        meta?.planMode ?? false,
+        imagePaths,
+        meta?.goal ?? null,
+      );
     } catch (e) {
       setTopicError(String(e));
+      throw e;
     } finally {
-      setCreatingTopic(false);
+      setFlowSubmitting(false);
     }
   }
 
@@ -8317,6 +8736,13 @@ function ProjectScreen({
   const mcpServerNames = Object.keys(project?.mcp_servers ?? {});
   const projectSkills = project?.skills ?? [];
   const linkedAppIds = project?.apps ?? [];
+  const linkedApps = useMemo(
+    () =>
+      linkedAppIds
+        .map((id) => installedApps.find((app) => app.id === id))
+        .filter((app): app is AppManifest => !!app),
+    [installedApps, linkedAppIds],
+  );
   const fallbackFileIndexStats = useMemo(() => {
     let indexed = 0;
     let stale = 0;
@@ -8376,85 +8802,241 @@ function ProjectScreen({
     });
   }
 
+  async function saveProjectReflection(reflection: ProjectReflection | null) {
+    if (!project) return;
+    const updated = await invoke<Project>("update_project_reflection", {
+      projectId: project.id,
+      reflection,
+    });
+    onProjectUpdated(updated);
+  }
+
+  async function startReflection(trigger: "manual" | "command" | "idle") {
+    if (!project || reflectionBusy) return;
+    setReflectionBusy(true);
+    setTopicError(null);
+    const now = Date.now();
+    try {
+      const prompt = buildProjectReflectionPrompt({
+        project,
+        topics,
+        linkedApps,
+        ragDocs,
+        ragMissing,
+        ragStale,
+      });
+      const threadId = await onCreateTopic(
+        prompt,
+        false,
+        [],
+        t("project.reflectionGoal"),
+        "reflection",
+      );
+      window.localStorage.setItem(
+        `reflex:project-reflection:last:${project.id}`,
+        String(now),
+      );
+      await saveProjectReflection({
+        status: "running",
+        thread_id: threadId,
+        requested_at_ms: now,
+        updated_at_ms: now,
+        summary: t(
+          trigger === "idle"
+            ? "project.reflectionIdleStarted"
+            : "project.reflectionStarted",
+        ),
+        suggestions: [],
+        memories_to_save: [],
+        memories_to_forget: [],
+        utility_ideas: [],
+        skill_ideas: [],
+        error_patterns: [],
+      });
+    } catch (e) {
+      setTopicError(String(e));
+    } finally {
+      setReflectionBusy(false);
+    }
+  }
+
+  const reflectionThread = useMemo(() => {
+    const threadId = project?.reflection?.thread_id;
+    if (!threadId) return null;
+    return topics.find((topic) => topic.id === threadId) ?? null;
+  }, [project?.reflection?.thread_id, topics]);
+
+  useEffect(() => {
+    if (!project || !reflectionThread?.done) return;
+    const text = latestAgentText(reflectionThread);
+    const parsed = parseProjectReflection(text);
+    const next: ProjectReflection = parsed
+      ? {
+          ...parsed,
+          status: "ready",
+          thread_id: reflectionThread.id,
+          requested_at_ms:
+            project.reflection?.requested_at_ms ?? reflectionThread.created_at_ms,
+          updated_at_ms: Date.now(),
+        }
+      : {
+          status: "unparsed",
+          thread_id: reflectionThread.id,
+          requested_at_ms:
+            project.reflection?.requested_at_ms ?? reflectionThread.created_at_ms,
+          updated_at_ms: Date.now(),
+          summary: text
+            ? text.slice(0, 900)
+            : t("project.reflectionParseFailed"),
+          suggestions: [],
+          memories_to_save: [],
+          memories_to_forget: [],
+          utility_ideas: [],
+          skill_ideas: [],
+          error_patterns: [],
+        };
+    if (reflectionContentMatches(project.reflection, next)) return;
+    void saveProjectReflection(next).catch((e) =>
+      console.error("[reflex] update_project_reflection failed", e),
+    );
+  }, [
+    project,
+    reflectionThread?.done,
+    reflectionThread?.events.length,
+    reflectionThread?.id,
+  ]);
+
+  useEffect(() => {
+    if (!project) return;
+    const lastRunRaw = Number(
+      window.localStorage.getItem(
+        `reflex:project-reflection:last:${project.id}`,
+      ) ?? 0,
+    );
+    const lastRun = Number.isFinite(lastRunRaw) ? lastRunRaw : 0;
+    const lastTopic = topics[0]?.created_at_ms ?? project.created_at_ms;
+    const lastActivity = Math.max(lastRun, lastTopic);
+    const delay = Math.max(1_000, REFLECTION_IDLE_MS - (Date.now() - lastActivity));
+    const timeout = window.setTimeout(() => {
+      if (project.reflection?.status === "running") return;
+      void startReflection("idle");
+    }, delay);
+    return () => window.clearTimeout(timeout);
+  }, [
+    project?.created_at_ms,
+    project?.id,
+    project?.reflection?.status,
+    topics[0]?.created_at_ms,
+  ]);
+
+  const recentFlows = topics.slice(0, 6);
+
   return (
-    <div className="project-root">
-      <header className="project-header">
-        <h1 className="project-title">📁 {project?.name ?? projectId}</h1>
-        {project && (
-          <div className="project-path">
+    <div className="h-full overflow-auto bg-reflex-bg text-reflex-text">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-6 py-7 lg:px-9 lg:py-9">
+      <header className="flex flex-col gap-5 border-b border-white/10 pb-7 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 max-w-3xl">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-reflex-accent/80">
+            {t("project.operatingCenter")}
+          </p>
+          <h1 className="mt-2 truncate text-3xl font-semibold tracking-normal text-white">
+            {project?.name ?? projectId}
+          </h1>
+          {project && (
             <button
-              className="project-path-link"
-              onClick={() => project && openExternal(project.root)}
-              title={t("project.openInFinder")}
+              className="mt-3 max-w-full truncate rounded-md border border-white/10 bg-white/[0.035] px-3 py-1.5 text-left text-xs text-white/48 transition hover:bg-white/[0.06] hover:text-white/76"
+              onClick={() => openExternal(project.root)}
+              title={project.root}
             >
               {project.root}
+            </button>
+          )}
+        </div>
+        {project && (
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className="inline-flex min-h-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs font-medium text-white/72 transition hover:bg-white/[0.075] hover:text-white"
+              onClick={() => openExternal(project.root)}
+            >
+              {t("project.openInFinder")}
+            </button>
+            <button
+              className="inline-flex min-h-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs font-medium text-white/72 transition hover:bg-white/[0.075] hover:text-white"
+              onClick={() => setProjectSettingsOpen(true)}
+            >
+              {t("nav.settings")}
             </button>
           </div>
         )}
       </header>
 
       {project && (
-        <section className="project-description">
-          {editDescription ? (
-            <textarea
-              className="project-description-edit"
-              value={descriptionDraft}
-              autoFocus
-              rows={4}
-              placeholder={t("project.descriptionEditPlaceholder")}
-              onChange={(e) => setDescriptionDraft(e.currentTarget.value)}
-              onBlur={() => {
-                void saveDescription(descriptionDraft);
-                setEditDescription(false);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  setEditDescription(false);
-                } else if (
-                  e.key === "Enter" &&
-                  (e.metaKey || e.ctrlKey)
-                ) {
-                  e.preventDefault();
-                  void saveDescription(descriptionDraft);
-                  setEditDescription(false);
-                }
-              }}
-            />
-          ) : (
-            <div
-              className={`project-description-view ${project.description ? "" : "project-description-empty"}`}
-              onClick={() => {
-                setDescriptionDraft(project.description ?? "");
-                setEditDescription(true);
-              }}
-              title={t("project.descriptionEditTitle")}
-            >
-              {project.description ?? t("project.descriptionEmpty")}
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
+          <div className="rounded-md border border-white/10 bg-white/[0.035] p-5 shadow-[0_22px_70px_rgba(0,0,0,0.2)]">
+            <div className="mb-5">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-white/38">
+                {t("project.operatingCenterPrompt")}
+              </p>
+              {editDescription ? (
+                <textarea
+                  className="mt-3 min-h-24 w-full resize-y rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm leading-6 text-white placeholder:text-white/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-reflex-accent/55"
+                  value={descriptionDraft}
+                  autoFocus
+                  rows={4}
+                  placeholder={t("project.descriptionEditPlaceholder")}
+                  onChange={(e) => setDescriptionDraft(e.currentTarget.value)}
+                  onBlur={() => {
+                    void saveDescription(descriptionDraft);
+                    setEditDescription(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setEditDescription(false);
+                    } else if (
+                      e.key === "Enter" &&
+                      (e.metaKey || e.ctrlKey)
+                    ) {
+                      e.preventDefault();
+                      void saveDescription(descriptionDraft);
+                      setEditDescription(false);
+                    }
+                  }}
+                />
+              ) : (
+                <button
+                  className="mt-3 block w-full rounded-md border border-transparent px-0 py-0 text-left text-lg leading-8 text-white/72 transition hover:text-white"
+                  onClick={() => {
+                    setDescriptionDraft(project.description ?? "");
+                    setEditDescription(true);
+                  }}
+                  title={t("project.descriptionEditTitle")}
+                >
+                  {project.description ?? t("project.descriptionEmpty")}
+                </button>
+              )}
             </div>
-          )}
-        </section>
-      )}
+            <TopicComposer
+              threadId={null}
+              projectRoot={project.root}
+              running={false}
+              showPlanBanner={false}
+              submitting={flowSubmitting}
+              stopping={false}
+              apps={installedApps}
+              memoryScope="project"
+              onSend={startProjectFlow}
+              onStop={async () => {}}
+              onOpenApp={onOpenApp}
+            />
+            {topicError && <div className="apps-error mt-3">{topicError}</div>}
+          </div>
 
-      {project && (
-        <section className="project-start-panel">
-          <button
-            className="project-start-action project-start-action-primary"
-            onClick={() => setShowNewTopic(true)}
-          >
-            <span>{t("project.newTopic")}</span>
-            <small>{t("project.startTopicHint")}</small>
-          </button>
-          <button className="project-start-action" onClick={onCreateApp}>
-            <span>{t("project.createUtility")}</span>
-            <small>{t("project.utilityHint")}</small>
-          </button>
-          <button
-            className="project-start-action"
-            onClick={() => setShowLinkPicker(true)}
-          >
-            <span>{t("project.linkUtility")}</span>
-            <small>{t("project.connectUtilityHint")}</small>
-          </button>
+          <ProjectSuggestions
+            project={project}
+            busy={flowSubmitting || reflectionBusy}
+            onStartFlow={startProjectFlow}
+            onReflect={() => void startReflection("manual")}
+          />
         </section>
       )}
 
@@ -8565,18 +9147,14 @@ function ProjectScreen({
       )}
 
       {project && (
-        <ProjectDashboard
-          project={project}
-          apps={installedApps}
-          onOpenApp={onOpenApp}
-          onCreateTopic={onCreateTopic}
-        />
-      )}
-
-      {project && (
         <section className="project-linked">
           <div className="section-head">
-            <h2 className="section-title">{t("project.linkedUtilities")}</h2>
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-white/38">
+                {t("project.toolsAndContext")}
+              </p>
+              <h2 className="section-title">{t("project.toolsAndContextTitle")}</h2>
+            </div>
             <div className="section-actions">
               <button className="apps-create-btn" onClick={onCreateApp}>
                 {t("project.createUtility")}
@@ -8589,6 +9167,13 @@ function ProjectScreen({
               </button>
             </div>
           </div>
+          <ProjectSkillsPanel
+            skills={projectSkills}
+            onEdit={() => {
+              setProjectSettingsOpen(true);
+              openAgentProfileEditor();
+            }}
+          />
           {(() => {
             const linked = linkedAppIds
               .map((id) => installedApps.find((a) => a.id === id))
@@ -8637,14 +9222,14 @@ function ProjectScreen({
         </section>
       )}
 
-      {project && (
-        <details className="project-settings project-advanced">
-          <summary className="project-advanced-summary">
-            <span>
-              <strong>{t("project.advancedControls")}</strong>
-              <small>{t("project.advancedControlsHint")}</small>
-            </span>
-          </summary>
+      {projectSettingsOpen && project && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setProjectSettingsOpen(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">{t("project.advancedControls")}</h2>
+            <p className="modal-hint">{t("project.advancedControlsHint")}</p>
           <div className="project-advanced-body">
             <div className="setting-row">
               <label className="setting-label">{t("project.safetyMode")}</label>
@@ -8837,47 +9422,49 @@ function ProjectScreen({
               )}
             </div>
           </div>
-        </details>
+            <div className="modal-actions">
+              <button
+                className="modal-btn"
+                onClick={() => setProjectSettingsOpen(false)}
+              >
+                {t("appViewer.close")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      <section className="project-topics-section">
-        <div className="section-head">
-          <h2 className="section-title">
-            {t("project.topics")}
-            {runningCount > 0 && (
-              <span className="section-badge running">
-                {t("project.runningCount", { count: runningCount })}
-              </span>
-            )}
-          </h2>
-          <button
-            className="apps-create-btn"
-            onClick={() => setShowNewTopic(true)}
-          >
-            {t("project.newTopic")}
-          </button>
+      <section aria-label={t("project.activeFlows")} className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-white/38">
+              {t("project.activeFlows")}
+            </p>
+            <h2 className="mt-1 text-xl font-semibold tracking-normal text-white">
+              {runningCount > 0
+                ? t("project.activeFlowsRunning", { count: runningCount })
+                : t("project.activeFlowsTitle")}
+            </h2>
+          </div>
         </div>
         {topics.length === 0 ? (
-          <div className="section-empty">
-            {t("project.noTopics")}
+          <div className="rounded-md border border-white/10 bg-white/[0.025] px-4 py-5 text-sm text-white/48">
+            {t("project.noFlows")}
           </div>
         ) : (
-          <ul className="topic-list">
-            {topics.map((topic) => (
+          <ul className="grid gap-2">
+            {recentFlows.map((topic) => (
               <li key={topic.id}>
                 <button
-                  className="topic-row topic-row-with-status"
+                  className="flex w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition hover:bg-white/[0.06]"
                   onClick={() => onSelectTopic(topic.id)}
                 >
-                  <StatusDot
-                    done={topic.done}
-                    ok={topic.exit_code === 0}
-                  />
-                  <div className="topic-row-body">
-                    <span className="topic-row-prompt">
+                  <StatusDot done={topic.done} ok={topic.exit_code === 0} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-white/86">
                       {topic.title ?? topic.prompt}
-                    </span>
-                    <span className="topic-row-meta">
+                    </div>
+                    <div className="mt-1 text-xs text-white/42">
                       {topic.done
                         ? topic.exit_code === 0
                           ? t("project.done")
@@ -8885,7 +9472,7 @@ function ProjectScreen({
                         : t("project.running")}
                       {" · "}
                       {new Date(topic.created_at_ms).toLocaleString()}
-                    </span>
+                    </div>
                   </div>
                 </button>
               </li>
@@ -9041,58 +9628,6 @@ function ProjectScreen({
         </div>
       )}
 
-      {showNewTopic && (
-        <div
-          className="modal-backdrop"
-          onClick={() => !creatingTopic && setShowNewTopic(false)}
-        >
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="modal-title">{t("project.newTopicTitle")}</h2>
-            <p className="modal-hint">{t("project.newTopicHint")}</p>
-            <textarea
-              className="modal-input"
-              placeholder={t("project.newTopicPlaceholder")}
-              value={newTopicPrompt}
-              onChange={(e) => setNewTopicPrompt(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  void submitNewTopic();
-                }
-              }}
-              autoFocus
-              rows={5}
-            />
-            {topicError && <div className="apps-error">{topicError}</div>}
-            <label className="plan-toggle">
-              <input
-                type="checkbox"
-                checked={newTopicPlanMode}
-                onChange={(e) => setNewTopicPlanMode(e.currentTarget.checked)}
-              />
-              <span>📋 {t("project.planFirst")}</span>
-            </label>
-            <div className="modal-actions">
-              <button
-                className="modal-btn"
-                disabled={creatingTopic}
-                onClick={() => setShowNewTopic(false)}
-              >
-                {t("apps.cancel")}
-              </button>
-              <button
-                className="modal-btn modal-btn-primary"
-                disabled={creatingTopic || !newTopicPrompt.trim()}
-                onClick={() => void submitNewTopic()}
-              >
-                {creatingTopic
-                  ? t("project.starting")
-                  : t("project.createShortcut")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {project && (
         <FileActionsDrawer
           target={drawerTarget}
@@ -9104,6 +9639,7 @@ function ProjectScreen({
           onStatusChanged={() => setStatusTick((n) => n + 1)}
         />
       )}
+      </div>
     </div>
   );
 }

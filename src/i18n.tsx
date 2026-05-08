@@ -51,9 +51,39 @@ const dictionaries: Record<Locale, Dictionary> = {
     "header.threadLabel": "threads",
     "header.projectLabel": "projects",
     "settings.title": "Settings",
+    "settings.agentRouting": "Agent routing",
     "settings.capabilities": "Capabilities",
     "settings.logs": "Logs and events",
     "settings.languageLabel": "Interface language",
+    "settings.agentTitle": "Codex model routing",
+    "settings.agentBody":
+      "Reflex reads the available models, reasoning levels, and skills from Codex, then stores only Reflex overrides in its own JSON settings file.",
+    "settings.agentLoading": "Loading Codex settings...",
+    "settings.agentLoadFailed": "Failed to load Codex settings.",
+    "settings.agentSave": "Save settings",
+    "settings.agentSaving": "Saving...",
+    "settings.agentSaved": "Saved",
+    "settings.agentCodexHome": "Codex home",
+    "settings.agentSettingsFile": "Reflex settings file",
+    "settings.agentModel": "Model",
+    "settings.agentReasoning": "Reasoning",
+    "settings.agentReasoningHint": "Reasoning effort used for this request profile.",
+    "settings.profile.complex": "Complex requests",
+    "settings.profile.complex.body":
+      "Planning, app generation, broad project work, and deep follow-up sessions.",
+    "settings.profile.fast": "Fast requests",
+    "settings.profile.fast.body":
+      "Normal quick asks and app agent calls where responsiveness matters.",
+    "settings.profile.instant": "Instant requests",
+    "settings.profile.instant.body":
+      "Lightweight metadata, suggestions, and short background classification tasks.",
+    "settings.skillsTitle": "Codex skills",
+    "settings.skillsBody":
+      "Disable skills selectively for Reflex without rewriting the global Codex config.",
+    "settings.skillsDisabledCount": "{count}/{total} disabled",
+    "settings.skillsSearch": "Search skills...",
+    "settings.skillEnabled": "Enabled",
+    "settings.skillDisabled": "Disabled",
     "settings.layerTitle": "Reflex OS Layer",
     "settings.layerBody":
       "Reflex is a local macOS layer over Codex CLI: projects, topics, browser/MCP bridge, generated utilities, cached dashboards, memory, RAG, and scheduled automations live in one workspace.",
@@ -317,6 +347,75 @@ const dictionaries: Record<Locale, Dictionary> = {
     "project.utilities": "Utilities",
     "project.topics": "Topics",
     "project.runningCount": "{count} running",
+    "project.operatingCenter": "Operating center",
+    "project.operatingCenterPrompt": "What needs attention now?",
+    "project.agentSuggestions": "Agents suggest",
+    "project.agentSuggestionsTitle": "Next useful moves",
+    "project.reflectNow": "Reflect",
+    "project.reflecting": "Reflecting...",
+    "project.reflectionGoal": "Project self-reflection",
+    "project.reflectionStarted":
+      "Reflection started. The project will use its result for future suggestions.",
+    "project.reflectionIdleStarted":
+      "Idle reflection started after a quiet hour in this project.",
+    "project.reflectionRunning":
+      "Reflection is running now. Suggestions will update after the topic finishes.",
+    "project.reflectionEmpty":
+      "No reflection yet. Run it to generate a project summary and concrete suggestions.",
+    "project.reflectionParseFailed":
+      "Reflection finished, but Reflex could not parse the structured result.",
+    "project.noReflectionSuggestions":
+      "No concrete suggestions from the latest reflection. This is allowed when nothing useful is worth proposing.",
+    "project.projectSummary": "Project summary",
+    "project.utilityIdeas": "Utility idea",
+    "project.skillIdeas": "Skill idea",
+    "project.errorPatterns": "Pattern to practice",
+    "project.activeFlows": "Active flows",
+    "project.activeFlowsTitle": "Work in motion",
+    "project.activeFlowsRunning": "{count} running now",
+    "project.noFlows":
+      "No work flows yet. Start with the text block above or pick an agent suggestion.",
+    "project.toolsAndContext": "Tools and context",
+    "project.toolsAndContextTitle": "What Reflex knows here",
+    "project.startFlow": "Start flow",
+    "project.skillsTitle": "Project skills",
+    "project.skillsCount": "{count} active",
+    "project.skillsEmpty": "No project skills yet",
+    "project.suggestion.continueFlow.title": "Continue an unfinished flow",
+    "project.suggestion.continueFlow.reason":
+      "The latest useful thread is “{title}”. It may be worth moving it to a result.",
+    "project.suggestion.continueFlow.action": "Continue",
+    "project.suggestion.continueFlow.prompt":
+      "Continue the work flow “{title}”. Summarize the current state, identify the next concrete step, and execute it if it is safe to do so.",
+    "project.suggestion.describeProject.title": "Clarify the project direction",
+    "project.suggestion.describeProject.reason":
+      "The project has no clear goal yet, so future agents have less context for good suggestions.",
+    "project.suggestion.describeProject.action": "Clarify",
+    "project.suggestion.describeProject.prompt":
+      "Help me define the purpose of the project “{name}”: what it is for, what outcomes matter, what routines or obligations belong here, and what should be suggested next.",
+    "project.suggestion.createUtility.title": "Find a repeatable routine",
+    "project.suggestion.createUtility.reason":
+      "There are no linked utilities yet. A repeated personal or work routine could become a reusable tool.",
+    "project.suggestion.createUtility.action": "Plan utility",
+    "project.suggestion.createUtility.prompt":
+      "Inspect the project “{name}” as a life/work organization space. Find one repeatable routine that would benefit from a Reflex utility and propose the smallest useful version.",
+    "project.suggestion.reviewProject.title": "Run a project review",
+    "project.suggestion.reviewProject.reason":
+      "{topics} flows, {docs} indexed docs, {missing} missing docs. A short review can surface stale work and next commitments.",
+    "project.suggestion.reviewProject.action": "Review",
+    "project.suggestion.reviewProject.prompt":
+      "Review the project “{name}” as a personal operating space. Summarize current commitments, unfinished work, useful context, and the next three actions.",
+    "project.suggestion.inspectUtilities.title": "Check the connected tools",
+    "project.suggestion.inspectUtilities.reason":
+      "{count} utilities are connected. It is worth checking which ones still help and what they can do next.",
+    "project.suggestion.inspectUtilities.action": "Inspect",
+    "project.suggestion.inspectUtilities.prompt":
+      "Review these linked utilities: {names}. Explain what each can help with in this project and suggest one practical next action.",
+    "project.suggestion.startFirstFlow.title": "Start the first flow",
+    "project.suggestion.startFirstFlow.reason":
+      "This space is ready, but it needs an initial work stream to become useful.",
+    "project.suggestion.startFirstFlow.prompt":
+      "Start the first useful work flow for “{name}”. Ask one clarifying question only if necessary; otherwise propose and begin the most useful next step.",
     "project.dashboard": "Dashboard",
     "dashboard.empty":
       "No cached dashboard summaries yet. Linked utilities can expose public summary/status actions; Reflex refreshes and formats them here.",
@@ -498,6 +597,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "topicComposer.commandRemember": "Save memory",
     "topicComposer.commandRememberHint":
       "Use /remember text to save directly into topic memory.",
+    "topicComposer.commandDream": "Reflect",
+    "topicComposer.commandDreamHint":
+      "Use /dream to launch project self-reflection without extra input.",
     "topicComposer.commandRun": "Run command",
     "topicComposer.commandRunHint":
       "Ask Codex to execute a shell command in this project.",
@@ -913,9 +1015,39 @@ const dictionaries: Record<Locale, Dictionary> = {
     "header.threadLabel": "потоков",
     "header.projectLabel": "проектов",
     "settings.title": "Настройки",
+    "settings.agentRouting": "Агент",
     "settings.capabilities": "Возможности",
     "settings.logs": "Логи и события",
     "settings.languageLabel": "Язык интерфейса",
+    "settings.agentTitle": "Маршрутизация моделей Codex",
+    "settings.agentBody":
+      "Reflex читает доступные модели, уровни reasoning и skills из Codex, а собственные override хранит только в JSON-файле настроек Reflex.",
+    "settings.agentLoading": "Загрузка настроек Codex...",
+    "settings.agentLoadFailed": "Не удалось загрузить настройки Codex.",
+    "settings.agentSave": "Сохранить",
+    "settings.agentSaving": "Сохранение...",
+    "settings.agentSaved": "Сохранено",
+    "settings.agentCodexHome": "Папка Codex",
+    "settings.agentSettingsFile": "Файл настроек Reflex",
+    "settings.agentModel": "Модель",
+    "settings.agentReasoning": "Степень размышлений",
+    "settings.agentReasoningHint": "Reasoning effort для этого вида запросов.",
+    "settings.profile.complex": "Сложные запросы",
+    "settings.profile.complex.body":
+      "Планирование, создание утилит, широкая работа по проекту и глубокие продолжения.",
+    "settings.profile.fast": "Быстрые запросы",
+    "settings.profile.fast.body":
+      "Обычные быстрые запросы и вызовы агента из утилит, где важна отзывчивость.",
+    "settings.profile.instant": "Мгновенные запросы",
+    "settings.profile.instant.body":
+      "Легкая генерация метаданных, рекомендации и короткая фоновая классификация.",
+    "settings.skillsTitle": "Skills Codex",
+    "settings.skillsBody":
+      "Можно выборочно отключать skills для Reflex без перезаписи глобального Codex config.",
+    "settings.skillsDisabledCount": "{count}/{total} отключено",
+    "settings.skillsSearch": "Поиск skills...",
+    "settings.skillEnabled": "Включен",
+    "settings.skillDisabled": "Отключен",
     "settings.layerTitle": "Слой Reflex OS",
     "settings.layerBody":
       "Reflex — локальная macOS-надстройка над Codex CLI: проекты, темы, browser/MCP bridge, генерируемые утилиты, кешированные дашборды, memory, RAG и запланированные автоматизации живут в одном workspace.",
@@ -1180,6 +1312,75 @@ const dictionaries: Record<Locale, Dictionary> = {
     "project.utilities": "Утилиты",
     "project.topics": "Топики",
     "project.runningCount": "{count} выполняется",
+    "project.operatingCenter": "Операционный центр",
+    "project.operatingCenterPrompt": "Что сейчас требует внимания?",
+    "project.agentSuggestions": "Агенты предлагают",
+    "project.agentSuggestionsTitle": "Следующие полезные шаги",
+    "project.reflectNow": "Прорефлексировать",
+    "project.reflecting": "Рефлексирую...",
+    "project.reflectionGoal": "Саморефлексия проекта",
+    "project.reflectionStarted":
+      "Рефлексия запущена. Ее результат станет источником будущих предложений.",
+    "project.reflectionIdleStarted":
+      "Рефлексия запущена после тихого часа в этом проекте.",
+    "project.reflectionRunning":
+      "Рефлексия сейчас выполняется. Предложения обновятся после завершения топика.",
+    "project.reflectionEmpty":
+      "Рефлексии еще нет. Запусти ее, чтобы получить сводку проекта и конкретные предложения.",
+    "project.reflectionParseFailed":
+      "Рефлексия завершилась, но Reflex не смог разобрать структурированный результат.",
+    "project.noReflectionSuggestions":
+      "В последней рефлексии нет конкретных предложений. Это нормально, если сейчас нечего полезно предлагать.",
+    "project.projectSummary": "Сводка проекта",
+    "project.utilityIdeas": "Идея утилиты",
+    "project.skillIdeas": "Идея skill",
+    "project.errorPatterns": "Паттерн для отработки",
+    "project.activeFlows": "Активные потоки",
+    "project.activeFlowsTitle": "Работа в движении",
+    "project.activeFlowsRunning": "{count} сейчас выполняется",
+    "project.noFlows":
+      "Потоков пока нет. Начни из текстового блока выше или выбери подсказку агента.",
+    "project.toolsAndContext": "Инструменты и контекст",
+    "project.toolsAndContextTitle": "Что Reflex знает здесь",
+    "project.startFlow": "Начать поток",
+    "project.skillsTitle": "Skills проекта",
+    "project.skillsCount": "{count} активных",
+    "project.skillsEmpty": "Skills проекта пока не заданы",
+    "project.suggestion.continueFlow.title": "Продолжить незавершенный поток",
+    "project.suggestion.continueFlow.reason":
+      "Последний полезный поток — «{title}». Его стоит довести до результата.",
+    "project.suggestion.continueFlow.action": "Продолжить",
+    "project.suggestion.continueFlow.prompt":
+      "Продолжи рабочий поток «{title}». Кратко восстанови текущее состояние, найди следующий конкретный шаг и выполни его, если это безопасно.",
+    "project.suggestion.describeProject.title": "Прояснить направление проекта",
+    "project.suggestion.describeProject.reason":
+      "У проекта пока нет понятной цели, поэтому агентам сложнее давать хорошие предложения.",
+    "project.suggestion.describeProject.action": "Прояснить",
+    "project.suggestion.describeProject.prompt":
+      "Помоги определить смысл проекта «{name}»: зачем он нужен, какие результаты важны, какие рутины или обязательства сюда относятся и что стоит предлагать дальше.",
+    "project.suggestion.createUtility.title": "Найти повторяемую рутину",
+    "project.suggestion.createUtility.reason":
+      "Привязанных утилит пока нет. Повторяемую личную или рабочую рутину можно превратить в инструмент.",
+    "project.suggestion.createUtility.action": "Продумать утилиту",
+    "project.suggestion.createUtility.prompt":
+      "Посмотри на проект «{name}» как на пространство организации жизни и работы. Найди одну повторяемую рутину, для которой полезна Reflex-утилита, и предложи минимальную рабочую версию.",
+    "project.suggestion.reviewProject.title": "Собрать ревизию проекта",
+    "project.suggestion.reviewProject.reason":
+      "{topics} потоков, {docs} документов в индексе, {missing} без индекса. Короткая ревизия покажет зависшую работу и следующие обязательства.",
+    "project.suggestion.reviewProject.action": "Разобрать",
+    "project.suggestion.reviewProject.prompt":
+      "Разбери проект «{name}» как личное операционное пространство. Кратко собери текущие обязательства, незавершенную работу, полезный контекст и три следующих действия.",
+    "project.suggestion.inspectUtilities.title": "Проверить подключенные инструменты",
+    "project.suggestion.inspectUtilities.reason":
+      "Подключено утилит: {count}. Стоит понять, какие из них еще помогают и что через них сделать дальше.",
+    "project.suggestion.inspectUtilities.action": "Проверить",
+    "project.suggestion.inspectUtilities.prompt":
+      "Проверь подключенные утилиты: {names}. Объясни, чем каждая может помочь в этом проекте, и предложи одно практическое следующее действие.",
+    "project.suggestion.startFirstFlow.title": "Начать первый поток",
+    "project.suggestion.startFirstFlow.reason":
+      "Пространство готово, но ему нужен первый рабочий поток.",
+    "project.suggestion.startFirstFlow.prompt":
+      "Начни первый полезный рабочий поток для «{name}». Задай один уточняющий вопрос только если он нужен; иначе предложи и начни самый полезный следующий шаг.",
     "project.dashboard": "Дашборд",
     "dashboard.empty":
       "Кешированных сводок пока нет. Привязанные утилиты могут отдавать public summary/status actions; Reflex обновит и отформатирует их здесь.",
@@ -1361,6 +1562,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "topicComposer.commandRemember": "Сохранить память",
     "topicComposer.commandRememberHint":
       "Используй /remember текст, чтобы сохранить заметку в память топика.",
+    "topicComposer.commandDream": "Прорефлексировать",
+    "topicComposer.commandDreamHint":
+      "Используй /dream, чтобы запустить саморефлексию проекта без дополнительного ввода.",
     "topicComposer.commandRun": "Запустить команду",
     "topicComposer.commandRunHint":
       "Попросить Codex выполнить shell-команду в этом проекте.",

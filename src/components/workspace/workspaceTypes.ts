@@ -15,6 +15,29 @@ export type Project = {
   agent_instructions?: string | null;
   skills?: string[];
   apps?: string[];
+  reflection?: ProjectReflection | null;
+};
+
+export type ProjectReflectionSuggestion = {
+  title: string;
+  reason: string;
+  action_label?: string | null;
+  prompt: string;
+  confidence?: string | null;
+};
+
+export type ProjectReflection = {
+  status?: string;
+  thread_id?: string | null;
+  requested_at_ms?: number;
+  updated_at_ms?: number;
+  summary?: string | null;
+  suggestions?: ProjectReflectionSuggestion[];
+  memories_to_save?: string[];
+  memories_to_forget?: string[];
+  utility_ideas?: string[];
+  skill_ideas?: string[];
+  error_patterns?: string[];
 };
 
 export type ProjectFolder = {

@@ -147,24 +147,30 @@ async fn run_codex(app: &AppHandle, prompt: &str) -> Result<String, String> {
         .map_err(|e| format!("app_data_dir: {e}"))?;
     let scratch = base.join("scratch");
     std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
-    let out_path: PathBuf = scratch.join(format!("suggester-{}.txt", uuid::Uuid::new_v4().simple()));
+    let out_path: PathBuf =
+        scratch.join(format!("suggester-{}.txt", uuid::Uuid::new_v4().simple()));
     let cwd_str = scratch.to_string_lossy().into_owned();
     let out_str = out_path.to_string_lossy().into_owned();
 
+    let overrides =
+        crate::system_settings::thread_overrides(app, crate::system_settings::RequestKind::Instant);
+    let mut args = vec![
+        "exec".to_string(),
+        "--json".to_string(),
+        "--skip-git-repo-check".to_string(),
+        "-s".to_string(),
+        "read-only".to_string(),
+        "--output-last-message".to_string(),
+        out_str,
+        "-C".to_string(),
+        cwd_str,
+    ];
+    crate::codex::append_cli_overrides(&mut args, &overrides);
+    args.push("--".to_string());
+    args.push(prompt.to_string());
+
     let result = crate::codex::command()
-        .args([
-            "exec",
-            "--json",
-            "--skip-git-repo-check",
-            "-s",
-            "read-only",
-            "--output-last-message",
-            &out_str,
-            "-C",
-            &cwd_str,
-            "--",
-            prompt,
-        ])
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -178,8 +184,7 @@ async fn run_codex(app: &AppHandle, prompt: &str) -> Result<String, String> {
         return Err(format!("codex exit non-zero: {}", result.status));
     }
 
-    let raw = std::fs::read_to_string(&out_path)
-        .map_err(|e| format!("read suggester out: {e}"))?;
+    let raw = std::fs::read_to_string(&out_path).map_err(|e| format!("read suggester out: {e}"))?;
     let _ = std::fs::remove_file(&out_path);
     Ok(raw.trim().to_string())
 }

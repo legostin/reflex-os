@@ -14,6 +14,7 @@ import {
 import { useI18n, type LanguageSetting } from "../../i18n";
 
 type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
+type RequestProfileId = "complex" | "fast" | "instant";
 
 interface LogEntry {
   seq: number;
@@ -31,7 +32,67 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   error: 4,
 };
 
-type Tab = "capabilities" | "logs";
+interface CodexReasoningLevel {
+  effort: string;
+  label: string;
+  description: string;
+}
+
+interface CodexModel {
+  slug: string;
+  display_name: string;
+  default_reasoning_level?: string | null;
+  supported_reasoning_levels: CodexReasoningLevel[];
+}
+
+interface CodexSkill {
+  name: string;
+  display_name: string;
+  description: string;
+  source: string;
+  path: string;
+}
+
+interface RequestProfile {
+  model?: string | null;
+  reasoning_effort?: string | null;
+}
+
+interface SystemSettings {
+  version: number;
+  request_profiles: Record<RequestProfileId, RequestProfile>;
+  disabled_skills: string[];
+}
+
+interface SystemSettingsPayload {
+  settings: SystemSettings;
+  models: CodexModel[];
+  skills: CodexSkill[];
+  codex_home: string;
+  settings_path: string;
+  codex_model?: string | null;
+  codex_reasoning_effort?: string | null;
+}
+
+type Tab = "agent" | "capabilities" | "logs";
+
+const REQUEST_PROFILE_IDS: RequestProfileId[] = [
+  "complex",
+  "fast",
+  "instant",
+];
+
+const FALLBACK_REASONING_LEVELS: CodexReasoningLevel[] = [
+  {
+    effort: "minimal",
+    label: "minimal",
+    description: "Smallest reasoning budget",
+  },
+  { effort: "low", label: "low", description: "Light reasoning" },
+  { effort: "medium", label: "medium", description: "Balanced reasoning" },
+  { effort: "high", label: "high", description: "Deep reasoning" },
+  { effort: "xhigh", label: "xhigh", description: "Maximum reasoning" },
+];
 
 const CAPABILITY_GROUPS = [
   {
@@ -133,7 +194,7 @@ const SYSTEM_STATS = [
 ] as const;
 
 export function SettingsScreen() {
-  const [tab, setTab] = useState<Tab>("capabilities");
+  const [tab, setTab] = useState<Tab>("agent");
   const { language, setLanguage, t } = useI18n();
   return (
     <div className="settings-root">
@@ -155,6 +216,12 @@ export function SettingsScreen() {
           </label>
           <div className="settings-tabs">
             <button
+              className={tab === "agent" ? "tab-on" : ""}
+              onClick={() => setTab("agent")}
+            >
+              {t("settings.agentRouting")}
+            </button>
+            <button
               className={tab === "capabilities" ? "tab-on" : ""}
               onClick={() => setTab("capabilities")}
             >
@@ -169,9 +236,361 @@ export function SettingsScreen() {
           </div>
         </div>
       </header>
-      {tab === "capabilities" ? <CapabilitiesPane /> : <LogsPane />}
+      {tab === "agent" ? (
+        <AgentRoutingPane />
+      ) : tab === "capabilities" ? (
+        <CapabilitiesPane />
+      ) : (
+        <LogsPane />
+      )}
     </div>
   );
+}
+
+function AgentRoutingPane() {
+  const { t } = useI18n();
+  const [payload, setPayload] = useState<SystemSettingsPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [skillQuery, setSkillQuery] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    invoke<SystemSettingsPayload>("system_settings_get")
+      .then((next) => {
+        if (!alive) return;
+        setPayload(next);
+        setError(null);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setError(String(e));
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const disabledSet = useMemo(
+    () => new Set(payload?.settings.disabled_skills ?? []),
+    [payload?.settings.disabled_skills],
+  );
+  const normalizedSkillQuery = skillQuery.trim().toLowerCase();
+  const visibleSkills = useMemo(() => {
+    const skills = payload?.skills ?? [];
+    if (!normalizedSkillQuery) return skills;
+    return skills.filter((skill) =>
+      [skill.name, skill.description, skill.source]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedSkillQuery),
+    );
+  }, [payload?.skills, normalizedSkillQuery]);
+
+  function mutateSettings(update: (settings: SystemSettings) => void) {
+    setPayload((prev) => {
+      if (!prev) return prev;
+      const next: SystemSettings = {
+        ...prev.settings,
+        request_profiles: {
+          complex: { ...prev.settings.request_profiles.complex },
+          fast: { ...prev.settings.request_profiles.fast },
+          instant: { ...prev.settings.request_profiles.instant },
+        },
+        disabled_skills: [...prev.settings.disabled_skills],
+      };
+      update(next);
+      return { ...prev, settings: next };
+    });
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function setProfileModel(profileId: RequestProfileId, model: string) {
+    mutateSettings((settings) => {
+      const profile = settings.request_profiles[profileId];
+      profile.model = model;
+      const levels = reasoningLevelsForModel(payload?.models ?? [], model);
+      const validEfforts = new Set(levels.map((level) => level.effort));
+      if (!profile.reasoning_effort || !validEfforts.has(profile.reasoning_effort)) {
+        profile.reasoning_effort =
+          levels[0]?.effort ?? profile.reasoning_effort ?? "medium";
+      }
+    });
+  }
+
+  function setProfileReasoning(profileId: RequestProfileId, effort: string) {
+    mutateSettings((settings) => {
+      settings.request_profiles[profileId].reasoning_effort = effort;
+    });
+  }
+
+  function toggleSkill(skillName: string) {
+    mutateSettings((settings) => {
+      const next = new Set(settings.disabled_skills);
+      if (next.has(skillName)) {
+        next.delete(skillName);
+      } else {
+        next.add(skillName);
+      }
+      settings.disabled_skills = Array.from(next).sort((a, b) =>
+        a.localeCompare(b),
+      );
+    });
+  }
+
+  async function saveSettings() {
+    if (!payload) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const next = await invoke<SystemSettingsPayload>("system_settings_save", {
+        settings: payload.settings,
+      });
+      setPayload(next);
+      setDirty(false);
+      setSaved(true);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="settings-pane">
+        <div className="rounded-md border border-white/10 bg-white/[0.035] p-5 text-sm text-white/62">
+          {t("settings.agentLoading")}
+        </div>
+      </div>
+    );
+  }
+
+  if (!payload) {
+    return (
+      <div className="settings-pane">
+        <div className="rounded-md border border-red-400/25 bg-red-500/10 p-5 text-sm text-red-100">
+          {error ?? t("settings.agentLoadFailed")}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-pane space-y-4">
+      <section className="rounded-md border border-white/10 bg-white/[0.035] p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="m-0 text-lg font-semibold text-white">
+              {t("settings.agentTitle")}
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/62">
+              {t("settings.agentBody")}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="rounded-md bg-sky-500/80 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-400/90 disabled:cursor-not-allowed disabled:bg-white/8 disabled:text-white/35"
+            disabled={!dirty || saving}
+            onClick={() => void saveSettings()}
+          >
+            {saving
+              ? t("settings.agentSaving")
+              : saved
+                ? t("settings.agentSaved")
+                : t("settings.agentSave")}
+          </button>
+        </div>
+        {error ? (
+          <div className="mt-4 rounded-md border border-red-400/25 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+            {error}
+          </div>
+        ) : null}
+        <div className="mt-4 grid gap-2 text-xs text-white/45 md:grid-cols-2">
+          <div>
+            <span className="font-medium text-white/68">
+              {t("settings.agentCodexHome")}:
+            </span>{" "}
+            <code>{payload.codex_home}</code>
+          </div>
+          <div>
+            <span className="font-medium text-white/68">
+              {t("settings.agentSettingsFile")}:
+            </span>{" "}
+            <code>{payload.settings_path}</code>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-3 xl:grid-cols-3">
+        {REQUEST_PROFILE_IDS.map((profileId) => {
+          const profile = payload.settings.request_profiles[profileId];
+          const model = profile.model ?? payload.codex_model ?? "";
+          const models = modelOptions(payload.models, model);
+          const reasoningLevels = reasoningLevelsForModel(models, model);
+          return (
+            <article
+              className="rounded-md border border-white/10 bg-white/[0.035] p-4 shadow-sm"
+              key={profileId}
+            >
+              <div className="mb-4">
+                <h3 className="m-0 text-base font-semibold text-white">
+                  {t(`settings.profile.${profileId}`)}
+                </h3>
+                <p className="mt-1 text-sm leading-5 text-white/60">
+                  {t(`settings.profile.${profileId}.body`)}
+                </p>
+              </div>
+              <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-white/45">
+                {t("settings.agentModel")}
+                <select
+                  className="mt-1 block w-full rounded-md border border-white/10 bg-black/25 px-3 py-2 text-sm font-medium normal-case tracking-normal text-white outline-none focus:border-sky-400/55 focus:ring-2 focus:ring-sky-400/15"
+                  value={model}
+                  onChange={(e) => setProfileModel(profileId, e.currentTarget.value)}
+                >
+                  {models.map((model) => (
+                    <option key={model.slug} value={model.slug}>
+                      {model.display_name} ({model.slug})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-white/45">
+                {t("settings.agentReasoning")}
+                <select
+                  className="mt-1 block w-full rounded-md border border-white/10 bg-black/25 px-3 py-2 text-sm font-medium normal-case tracking-normal text-white outline-none focus:border-sky-400/55 focus:ring-2 focus:ring-sky-400/15"
+                  value={profile.reasoning_effort ?? reasoningLevels[0]?.effort ?? "medium"}
+                  onChange={(e) =>
+                    setProfileReasoning(profileId, e.currentTarget.value)
+                  }
+                >
+                  {reasoningLevels.map((level) => (
+                    <option key={level.effort} value={level.effort}>
+                      {level.label || level.effort}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="mt-3 text-xs leading-5 text-white/45">
+                {reasoningLevels.find(
+                  (level) => level.effort === profile.reasoning_effort,
+                )?.description ?? t("settings.agentReasoningHint")}
+              </p>
+            </article>
+          );
+        })}
+      </section>
+
+      <section className="rounded-md border border-white/10 bg-white/[0.035] p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="m-0 text-lg font-semibold text-white">
+              {t("settings.skillsTitle")}
+            </h2>
+            <p className="mt-1 text-sm text-white/60">
+              {t("settings.skillsBody")}
+            </p>
+          </div>
+          <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-semibold text-white/60 ring-1 ring-white/10">
+            {t("settings.skillsDisabledCount", {
+              count: payload.settings.disabled_skills.length,
+              total: payload.skills.length,
+            })}
+          </span>
+        </div>
+        <input
+          className="mt-4 w-full rounded-md border border-white/10 bg-black/25 px-3 py-2 text-sm text-white outline-none placeholder:text-white/32 focus:border-sky-400/55 focus:ring-2 focus:ring-sky-400/15"
+          placeholder={t("settings.skillsSearch")}
+          value={skillQuery}
+          onChange={(e) => setSkillQuery(e.currentTarget.value)}
+        />
+        <div className="mt-4 grid max-h-[520px] gap-2 overflow-auto pr-1">
+          {visibleSkills.length === 0 ? (
+            <div className="rounded-md border border-dashed border-white/10 p-5 text-sm text-white/45">
+              {t("settings.noMatches")}
+            </div>
+          ) : (
+            visibleSkills.map((skill) => {
+              const disabled = disabledSet.has(skill.name);
+              return (
+                <article
+                  className={`rounded-md border p-3 transition ${
+                    disabled
+                      ? "border-rose-400/25 bg-rose-500/10"
+                      : "border-white/10 bg-white/[0.025]"
+                  }`}
+                  key={skill.name}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="text-sm font-semibold text-white">
+                          {skill.display_name}
+                        </strong>
+                        <span className="rounded-full bg-white/[0.05] px-2 py-0.5 text-[11px] font-medium text-white/45 ring-1 ring-white/10">
+                          {skill.source}
+                        </span>
+                      </div>
+                      {skill.description ? (
+                        <p className="mt-1 text-sm leading-5 text-white/58">
+                          {skill.description}
+                        </p>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold ${
+                        disabled
+                          ? "bg-rose-500/85 text-white"
+                          : "bg-white/[0.06] text-white/68 ring-1 ring-white/12 hover:bg-white/[0.09] hover:text-white"
+                      }`}
+                      onClick={() => toggleSkill(skill.name)}
+                    >
+                      {disabled
+                        ? t("settings.skillDisabled")
+                        : t("settings.skillEnabled")}
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function reasoningLevelsForModel(
+  models: CodexModel[],
+  modelSlug: string,
+): CodexReasoningLevel[] {
+  const model = models.find((candidate) => candidate.slug === modelSlug);
+  if (model?.supported_reasoning_levels.length) {
+    return model.supported_reasoning_levels;
+  }
+  return FALLBACK_REASONING_LEVELS;
+}
+
+function modelOptions(models: CodexModel[], selectedModel: string): CodexModel[] {
+  if (models.length > 0) return models;
+  if (!selectedModel) return [];
+  return [
+    {
+      slug: selectedModel,
+      display_name: selectedModel,
+      default_reasoning_level: null,
+      supported_reasoning_levels: FALLBACK_REASONING_LEVELS,
+    },
+  ];
 }
 
 function CapabilitiesPane() {

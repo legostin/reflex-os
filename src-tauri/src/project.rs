@@ -28,6 +28,48 @@ pub struct Project {
     pub skills: Vec<String>,
     #[serde(default)]
     pub apps: Vec<String>,
+    #[serde(default)]
+    pub reflection: Option<ProjectReflection>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ProjectReflection {
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub thread_id: Option<String>,
+    #[serde(default)]
+    pub requested_at_ms: u128,
+    #[serde(default)]
+    pub updated_at_ms: u128,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub suggestions: Vec<ProjectReflectionSuggestion>,
+    #[serde(default)]
+    pub memories_to_save: Vec<String>,
+    #[serde(default)]
+    pub memories_to_forget: Vec<String>,
+    #[serde(default)]
+    pub utility_ideas: Vec<String>,
+    #[serde(default)]
+    pub skill_ideas: Vec<String>,
+    #[serde(default)]
+    pub error_patterns: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ProjectReflectionSuggestion {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub action_label: Option<String>,
+    #[serde(default)]
+    pub prompt: String,
+    #[serde(default)]
+    pub confidence: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
@@ -388,6 +430,7 @@ pub fn create_project(
         agent_instructions: None,
         skills: Vec::new(),
         apps: Vec::new(),
+        reflection: None,
     };
     let path = project_dir(root).join(PROJECT_FILE);
     fs::write(path, serde_json::to_string_pretty(&project).map_err(io_err)?)?;
@@ -499,6 +542,7 @@ mod tests {
             agent_instructions: None,
             skills: Vec::new(),
             apps: Vec::new(),
+            reflection: None,
         }
     }
 

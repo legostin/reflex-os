@@ -1,14 +1,14 @@
 use crate::app_bus::{self, AppBusBridge};
-use crate::{app_runtime, app_server};
 use crate::apps;
 use crate::memory::agents::recall::{self, RecallRequest};
 use crate::memory::files;
 use crate::memory::rag;
 use crate::memory::schema::{MemoryKind, MemoryScope, ScopeRoots};
 use crate::memory::store::{self, ListFilter, SaveRequest};
-use crate::{browser, logs, memory, project, secrets, storage};
 use crate::scheduler;
 use crate::QuickContext;
+use crate::{app_runtime, app_server};
+use crate::{browser, logs, memory, project, secrets, storage};
 use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -222,10 +222,7 @@ pub async fn dispatch_app_method(
                 .get("title")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Reflex App");
-            let body = params
-                .get("body")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let body = params.get("body").and_then(|v| v.as_str()).unwrap_or("");
             use tauri_plugin_notification::NotificationExt;
             app.notification()
                 .builder()
@@ -340,9 +337,10 @@ pub async fn dispatch_app_method(
             });
             let picked = rx.await.map_err(|e| e.to_string())?;
             let path_str = picked.as_ref().map(|p| p.to_string());
-            if let (Some(p), Some(content)) =
-                (picked.as_ref(), params.get("content").and_then(|v| v.as_str()))
-            {
+            if let (Some(p), Some(content)) = (
+                picked.as_ref(),
+                params.get("content").and_then(|v| v.as_str()),
+            ) {
                 if let Some(fs_path) = p.as_path() {
                     std::fs::write(fs_path, content).map_err(|e| e.to_string())?;
                 } else {
@@ -365,11 +363,22 @@ pub async fn dispatch_app_method(
             let cwd_target =
                 resolve_agent_cwd_for_app(app, app_id, params.get("cwd").and_then(|v| v.as_str()))?;
             let prompt = build_app_agent_prompt(app_id, &params, prompt, &cwd_target).await;
+            let prompt = crate::system_settings::wrap_disabled_skills_policy(app, &prompt);
 
             let handle = app.state::<app_server::AppServerHandle>();
             let server = handle.wait().await;
+            let request_kind = crate::system_settings::request_kind_from_params(
+                &params,
+                crate::system_settings::RequestKind::Fast,
+            );
+            let overrides = crate::system_settings::thread_overrides(app, request_kind);
             let app_thread_id = server
-                .thread_start(&cwd_target.cwd, &sandbox, cwd_target.mcp_servers.as_ref())
+                .thread_start_with_overrides(
+                    &cwd_target.cwd,
+                    &sandbox,
+                    cwd_target.mcp_servers.as_ref(),
+                    Some(&overrides),
+                )
                 .await
                 .map_err(|e| format!("thread_start: {e}"))?;
 
@@ -432,19 +441,15 @@ pub async fn dispatch_app_method(
             server.unsubscribe_stream(stream_thread);
             Ok(serde_json::json!({ "ok": true }))
         }
-        "agent.task" => {
-            agent_task_for_app(app, app_id, params).await
-        }
+        "agent.task" => agent_task_for_app(app, app_id, params).await,
         "net.fetch" => {
             let url_str = params
                 .get("url")
                 .and_then(|v| v.as_str())
                 .ok_or("missing url")?;
-            let parsed_url = reqwest::Url::parse(url_str).map_err(|e| format!("invalid url: {e}"))?;
-            let host = parsed_url
-                .host_str()
-                .ok_or("url has no host")?
-                .to_string();
+            let parsed_url =
+                reqwest::Url::parse(url_str).map_err(|e| format!("invalid url: {e}"))?;
+            let host = parsed_url.host_str().ok_or("url has no host")?.to_string();
 
             let manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
             let host_allowed = manifest
@@ -532,44 +537,41 @@ pub async fn dispatch_app_method(
         }
         "events.emit" => {
             let topic = required_string_param(&params, "topic", "topic")?;
-            let payload = params.get("payload").cloned().unwrap_or(serde_json::Value::Null);
+            let payload = params
+                .get("payload")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             let bus = app.state::<memory::MemoryState>().bus.clone();
             app_bus::emit_event(&bus, app_id, &topic, payload.clone()).await?;
-            let bridge: AppBusBridge =
-                app.state::<AppBusBridge>().inner().clone();
+            let bridge: AppBusBridge = app.state::<AppBusBridge>().inner().clone();
             let event = bridge.record_event(app_id, &topic, payload);
             Ok(serde_json::json!({ "ok": true, "event": event }))
         }
         "events.subscribe" => {
             let topics = parse_topics(&params)?;
-            let bridge: AppBusBridge =
-                app.state::<AppBusBridge>().inner().clone();
+            let bridge: AppBusBridge = app.state::<AppBusBridge>().inner().clone();
             bridge.subscribe(app_id, &topics);
             Ok(serde_json::json!({ "ok": true, "topics": topics }))
         }
         "events.unsubscribe" => {
             let topics = parse_topics(&params)?;
-            let bridge: AppBusBridge =
-                app.state::<AppBusBridge>().inner().clone();
+            let bridge: AppBusBridge = app.state::<AppBusBridge>().inner().clone();
             bridge.unsubscribe(app_id, &topics);
             Ok(serde_json::json!({ "ok": true }))
         }
         "events.subscriptions" => {
-            let bridge: AppBusBridge =
-                app.state::<AppBusBridge>().inner().clone();
+            let bridge: AppBusBridge = app.state::<AppBusBridge>().inner().clone();
             Ok(serde_json::json!({ "topics": bridge.subscriptions(app_id) }))
         }
         "events.recent" => {
-            let bridge: AppBusBridge =
-                app.state::<AppBusBridge>().inner().clone();
+            let bridge: AppBusBridge = app.state::<AppBusBridge>().inner().clone();
             let topic = string_param(&params, "topic", "topic");
             let limit = bounded_usize_param(&params, "limit", "limit", 50, 200);
             let events = bridge.recent_events(app_id, topic.as_deref(), limit);
             Ok(serde_json::json!({ "events": events }))
         }
         "events.clearSubscriptions" => {
-            let bridge: AppBusBridge =
-                app.state::<AppBusBridge>().inner().clone();
+            let bridge: AppBusBridge = app.state::<AppBusBridge>().inner().clone();
             bridge.clear(app_id);
             Ok(serde_json::json!({ "ok": true }))
         }
@@ -703,9 +705,7 @@ pub async fn dispatch_app_method(
         }
         "browser.fill" => browser_fill_for_app(app, app_id, params).await,
         "browser.scroll" => browser_scroll_for_app(app, app_id, params).await,
-        "browser.waitFor" | "browser.wait_for" => {
-            browser_wait_for_app(app, app_id, params).await
-        }
+        "browser.waitFor" | "browser.wait_for" => browser_wait_for_app(app, app_id, params).await,
         "scheduler.list" => scheduler_list_for_app(app, app_id, params),
         "scheduler.upsert" => scheduler_upsert_for_app(app, app_id, params),
         "scheduler.delete" => scheduler_delete_for_app(app, app_id, params).await,
@@ -792,26 +792,24 @@ fn manifest_update(
 
 fn integration_catalog(params: serde_json::Value) -> Result<serde_json::Value, String> {
     let provider = string_param(&params, "provider", "provider").map(|s| s.to_lowercase());
-    let mut recipes = vec![
-        serde_json::json!({
-            "provider": "generic_web",
-            "display_name": "Generic web app",
-            "external": {
-                "url": "",
-                "open_url": "",
-            },
-            "capabilities": ["visible_session.read", "browser.control", "mcp.optional"],
-            "data_strategy": [
-                "Use runtime=external only when the service can be framed.",
-                "Use the Browser bridge to inspect a visible user session when embedding is blocked.",
-                "Publish normalized manifest.actions for any data the utility exposes to other apps.",
-            ],
-            "mcp": {
-                "recommended": false,
-                "notes": "Add a provider-specific MCP server when durable authenticated data access is required."
-            }
-        }),
-    ];
+    let mut recipes = vec![serde_json::json!({
+        "provider": "generic_web",
+        "display_name": "Generic web app",
+        "external": {
+            "url": "",
+            "open_url": "",
+        },
+        "capabilities": ["visible_session.read", "browser.control", "mcp.optional"],
+        "data_strategy": [
+            "Use runtime=external only when the service can be framed.",
+            "Use the Browser bridge to inspect a visible user session when embedding is blocked.",
+            "Publish normalized manifest.actions for any data the utility exposes to other apps.",
+        ],
+        "mcp": {
+            "recommended": false,
+            "notes": "Add a provider-specific MCP server when durable authenticated data access is required."
+        }
+    })];
     if let Some(provider) = provider {
         recipes.retain(|item| {
             item.get("provider")
@@ -923,12 +921,14 @@ fn integration_update(
 ) -> Result<serde_json::Value, String> {
     let current = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
     let mut value = serde_json::to_value(current).map_err(|e| e.to_string())?;
-    let direct_integration_patch =
-        if params.get("integration").is_none() && params.get("patch").is_none() && params.get("external").is_none() {
-            Some(params.clone())
-        } else {
-            None
-        };
+    let direct_integration_patch = if params.get("integration").is_none()
+        && params.get("patch").is_none()
+        && params.get("external").is_none()
+    {
+        Some(params.clone())
+    } else {
+        None
+    };
 
     if let Some(patch) = params
         .get("integration")
@@ -953,7 +953,11 @@ fn integration_update(
         if !patch.is_object() {
             return Err("external patch must be a JSON object".into());
         }
-        if !value.get("external").map(|v| v.is_object()).unwrap_or(false) {
+        if !value
+            .get("external")
+            .map(|v| v.is_object())
+            .unwrap_or(false)
+        {
             value["external"] = serde_json::json!({});
         }
         merge_json(&mut value["external"], patch.clone());
@@ -983,7 +987,12 @@ async fn integration_learn_visible(
         .unwrap_or_else(|| "generic_web".into());
     let service_url = string_param(&params, "service_url", "serviceUrl")
         .or_else(|| string_param(&params, "url", "url"))
-        .or_else(|| manifest.external.as_ref().map(|external| external.url.clone()))
+        .or_else(|| {
+            manifest
+                .external
+                .as_ref()
+                .map(|external| external.url.clone())
+        })
         .or_else(|| {
             manifest
                 .external
@@ -1087,8 +1096,7 @@ async fn integration_learn_visible(
     }
 
     let visible_text = visible_text.unwrap_or_default();
-    let prompt =
-        build_connected_app_learn_prompt(&provider, &service_url, &visible_text, &outline);
+    let prompt = build_connected_app_learn_prompt(&provider, &service_url, &visible_text, &outline);
     let learned = agent_task_for_app(
         app,
         app_id,
@@ -1206,7 +1214,12 @@ async fn integration_mcp_query(
         .unwrap_or_else(|| "generic_web".into());
     let service_url = string_param(&params, "service_url", "serviceUrl")
         .or_else(|| string_param(&params, "url", "url"))
-        .or_else(|| manifest.external.as_ref().map(|external| external.url.clone()))
+        .or_else(|| {
+            manifest
+                .external
+                .as_ref()
+                .map(|external| external.url.clone())
+        })
         .unwrap_or_default();
     let query = string_param(&params, "query", "query").unwrap_or_else(|| {
         "Inspect available recent data through the configured MCP server for this connected app. \
@@ -1291,8 +1304,7 @@ fn build_connected_app_learn_prompt(
     visible_text: &str,
     outline: &serde_json::Value,
 ) -> String {
-    let outline_json =
-        serde_json::to_string_pretty(outline).unwrap_or_else(|_| "null".to_string());
+    let outline_json = serde_json::to_string_pretty(outline).unwrap_or_else(|_| "null".to_string());
     format!(
         "Build a connected-app adapter profile from the visible web UI below. Use only visible text and outline. Infer data entities, user actions, likely selectors or text anchors, safe automation workflows, data-access boundaries, and MCP bridge opportunities. Do not claim access to hidden data. Return concise JSON with provider, entities, actions, workflows, selectors, data_access, mcp_bridge, risks, and next_steps.\n\nPROVIDER:\n{provider}\n\nSERVICE_URL:\n{service_url}\n\nVISIBLE_TEXT:\n{visible_text}\n\nOUTLINE:\n{outline_json}"
     )
@@ -1416,11 +1428,10 @@ fn permissions_request_for_app(
     app_id: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let mut permissions: Vec<String> =
-        optional_string_list(&params, "permission", "permissions")?
-            .into_iter()
-            .map(|permission| normalize_permission(&permission))
-            .collect::<Result<_, _>>()?;
+    let mut permissions: Vec<String> = optional_string_list(&params, "permission", "permissions")?
+        .into_iter()
+        .map(|permission| normalize_permission(&permission))
+        .collect::<Result<_, _>>()?;
     let mut raw_hosts = optional_string_list(&params, "host", "hosts")?;
     raw_hosts.extend(optional_string_list(
         &params,
@@ -1447,7 +1458,10 @@ fn permissions_request_for_app(
         permissions.push("runtime.server.listen".into());
     }
     if permissions.is_empty() && network_hosts.is_empty() && !server_listen {
-        return Err("permission request must include permissions, network_hosts, host, or serverListen".into());
+        return Err(
+            "permission request must include permissions, network_hosts, host, or serverListen"
+                .into(),
+        );
     }
     let reason = params
         .get("reason")
@@ -1530,7 +1544,9 @@ fn permissions_revoke_for_app(
         .collect::<Result<_, _>>()?;
     let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
     let before = manifest.permissions.len();
-    manifest.permissions.retain(|permission| !revoke.contains(permission));
+    manifest
+        .permissions
+        .retain(|permission| !revoke.contains(permission));
     let removed = before.saturating_sub(manifest.permissions.len());
     write_manifest_and_emit(app, app_id, &manifest)?;
     Ok(serde_json::json!({
@@ -1557,7 +1573,9 @@ fn network_allow_host_for_app(
 ) -> Result<serde_json::Value, String> {
     let hosts = parse_string_list(&params, "host", "hosts")?;
     let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
-    let network = manifest.network.get_or_insert_with(apps::NetworkPolicy::default);
+    let network = manifest
+        .network
+        .get_or_insert_with(apps::NetworkPolicy::default);
     let mut added = Vec::new();
     for host in hosts {
         let host = normalize_allowed_host(&host)?;
@@ -1651,7 +1669,9 @@ fn parse_string_list(
         .map(str::to_string)
         .collect();
     if out.is_empty() {
-        return Err(format!("{list_key} must include at least one non-empty string"));
+        return Err(format!(
+            "{list_key} must include at least one non-empty string"
+        ));
     }
     Ok(out)
 }
@@ -1684,7 +1704,9 @@ fn normalize_permission(permission: &str) -> Result<String, String> {
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | ':' | '*' | '-' | '_'))
     {
-        return Err("permission may contain only ASCII letters, numbers, '.', ':', '*', '-' or '_'".into());
+        return Err(
+            "permission may contain only ASCII letters, numbers, '.', ':', '*', '-' or '_'".into(),
+        );
     }
     Ok(permission.to_string())
 }
@@ -1813,7 +1835,11 @@ fn widgets_delete_for_app(
         .or_else(|| bool_param(&params, "delete_file", "deleteFile"))
         .unwrap_or(false);
     let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
-    let removed = manifest.widgets.iter().find(|widget| widget.id == id).cloned();
+    let removed = manifest
+        .widgets
+        .iter()
+        .find(|widget| widget.id == id)
+        .cloned();
     let Some(removed) = removed else {
         return Ok(serde_json::json!({
             "ok": true,
@@ -2441,7 +2467,11 @@ fn actions_delete_for_app(
         .ok_or_else(|| "missing action_id".to_string())?;
     validate_action_id(&id)?;
     let mut manifest = apps::read_manifest(app, app_id).map_err(|e| e.to_string())?;
-    let removed = manifest.actions.iter().find(|action| action.id == id).cloned();
+    let removed = manifest
+        .actions
+        .iter()
+        .find(|action| action.id == id)
+        .cloned();
     let Some(removed) = removed else {
         return Ok(serde_json::json!({
             "ok": true,
@@ -2461,10 +2491,7 @@ fn actions_delete_for_app(
 }
 
 fn parse_action_upsert(params: serde_json::Value) -> Result<apps::ActionDef, String> {
-    let mut value = params
-        .get("action")
-        .cloned()
-        .unwrap_or(params);
+    let mut value = params.get("action").cloned().unwrap_or(params);
     let obj = value
         .as_object_mut()
         .ok_or_else(|| "action must be a JSON object".to_string())?;
@@ -2533,8 +2560,7 @@ fn validate_action_id(id: &str) -> Result<(), String> {
 fn system_context(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
     let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
     let manifest = apps::read_manifest(app, app_id).ok();
-    let app_project =
-        project::find_project_for(&app_root).map(|project| project_summary(&project));
+    let app_project = project::find_project_for(&app_root).map(|project| project_summary(&project));
     let linked_projects: Vec<serde_json::Value> = linked_projects_for_app(app, app_id)?
         .into_iter()
         .map(|project| project_summary(&project))
@@ -2570,7 +2596,10 @@ fn system_open_panel(
 
     let mut payload = serde_json::Map::new();
     payload.insert("panel".into(), serde_json::Value::String(panel.to_string()));
-    payload.insert("from_app".into(), serde_json::Value::String(app_id.to_string()));
+    payload.insert(
+        "from_app".into(),
+        serde_json::Value::String(app_id.to_string()),
+    );
     if let Some(project_id) = project_id.clone() {
         payload.insert("project_id".into(), serde_json::Value::String(project_id));
     }
@@ -2597,11 +2626,22 @@ fn system_open_panel(
 
 fn normalize_system_panel(raw: &str) -> Result<&'static str, String> {
     match raw.trim().to_ascii_lowercase().as_str() {
-        "apps" | "app" | "utilities" | "utils" | "app-grid" | "apps-grid" | "утилиты"
+        "apps"
+        | "app"
+        | "utilities"
+        | "utils"
+        | "app-grid"
+        | "apps-grid"
+        | "утилиты"
         | "приложения" => Ok("apps"),
         "memory" | "memories" | "rag" | "knowledge" | "память" => Ok("memory"),
-        "automations" | "automation" | "schedules" | "schedule" | "scheduler"
-        | "автоматизации" | "расписания" => Ok("automations"),
+        "automations"
+        | "automation"
+        | "schedules"
+        | "schedule"
+        | "scheduler"
+        | "автоматизации"
+        | "расписания" => Ok("automations"),
         "browser" | "web" | "браузер" => Ok("browser"),
         "settings" | "preferences" | "prefs" | "logs" | "настройки" => Ok("settings"),
         other => Err(format!(
@@ -2811,7 +2851,9 @@ fn clipboard_write_text(
             .map_err(|e| format!("pbcopy write failed: {e}"))?;
     }
 
-    let status = child.wait().map_err(|e| format!("pbcopy wait failed: {e}"))?;
+    let status = child
+        .wait()
+        .map_err(|e| format!("pbcopy wait failed: {e}"))?;
     if !status.success() {
         return Err(format!("pbcopy exited with status {status}"));
     }
@@ -2834,10 +2876,7 @@ fn ensure_clipboard_permission(
     }
 }
 
-fn linked_projects_for_app(
-    app: &AppHandle,
-    app_id: &str,
-) -> Result<Vec<project::Project>, String> {
+fn linked_projects_for_app(app: &AppHandle, app_id: &str) -> Result<Vec<project::Project>, String> {
     let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
     let app_root_canon = app_root.canonicalize().ok();
     let mut out = Vec::new();
@@ -2883,9 +2922,7 @@ fn resolve_agent_cwd_for_app(
     cwd: Option<&str>,
 ) -> Result<AgentCwdTarget, String> {
     let app_root = apps::app_dir(app, app_id).map_err(|e| e.to_string())?;
-    let cwd_path = cwd
-        .map(PathBuf::from)
-        .unwrap_or_else(|| app_root.clone());
+    let cwd_path = cwd.map(PathBuf::from).unwrap_or_else(|| app_root.clone());
 
     if same_path(&cwd_path, &app_root) {
         let project = project::find_project_for(&cwd_path);
@@ -2944,17 +2981,25 @@ async fn agent_task_for_app(
         .and_then(|v| v.as_str())
         .unwrap_or("read-only")
         .to_string();
-    let cwd_target = resolve_agent_cwd_for_app(
-        app,
-        app_id,
-        params.get("cwd").and_then(|v| v.as_str()),
-    )?;
+    let cwd_target =
+        resolve_agent_cwd_for_app(app, app_id, params.get("cwd").and_then(|v| v.as_str()))?;
     let prompt = build_app_agent_prompt(app_id, &params, prompt, &cwd_target).await;
+    let prompt = crate::system_settings::wrap_disabled_skills_policy(app, &prompt);
 
     let handle = app.state::<app_server::AppServerHandle>();
     let server = handle.wait().await;
+    let request_kind = crate::system_settings::request_kind_from_params(
+        &params,
+        crate::system_settings::RequestKind::Fast,
+    );
+    let overrides = crate::system_settings::thread_overrides(app, request_kind);
     let app_thread_id = server
-        .thread_start(&cwd_target.cwd, &sandbox, cwd_target.mcp_servers.as_ref())
+        .thread_start_with_overrides(
+            &cwd_target.cwd,
+            &sandbox,
+            cwd_target.mcp_servers.as_ref(),
+            Some(&overrides),
+        )
         .await
         .map_err(|e| format!("thread_start: {e}"))?;
     let _ = server.turn_start(&app_thread_id, &prompt).await;
@@ -3091,10 +3136,7 @@ fn resolve_memory_target(
                     .into(),
             );
         }
-        return Ok(MemoryTarget {
-            root,
-            thread_id,
-        });
+        return Ok(MemoryTarget { root, thread_id });
     }
 
     if let Some(project) = default_memory_project(app, app_id)? {
@@ -3159,10 +3201,7 @@ fn parse_scope(
     }
 }
 
-fn parse_kind(
-    params: &serde_json::Value,
-    default_kind: MemoryKind,
-) -> Result<MemoryKind, String> {
+fn parse_kind(params: &serde_json::Value, default_kind: MemoryKind) -> Result<MemoryKind, String> {
     match params.get("kind").or_else(|| params.get("type")) {
         Some(v) => serde_json::from_value(v.clone()).map_err(|e| e.to_string()),
         None => Ok(default_kind),
@@ -3386,14 +3425,12 @@ fn parse_memory_rel_path(params: &serde_json::Value) -> Result<PathBuf, String> 
     }
     let path = PathBuf::from(raw);
     if path.is_absolute()
-        || path
-            .components()
-            .any(|component| {
-                matches!(
-                    component,
-                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
-                )
-            })
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
     {
         return Err("rel_path must stay inside the memory scope".into());
     }
@@ -3649,7 +3686,8 @@ async fn invoke_app_action(
         .cloned()
         .ok_or_else(|| format!("action not found: {target_id}::{action_id}"))?;
 
-    let allowed = action.public || caller_has_invoke_permission(app, caller_id, target_id, action_id);
+    let allowed =
+        action.public || caller_has_invoke_permission(app, caller_id, target_id, action_id);
     if !allowed {
         return Err(format!(
             "permission denied: {target_id}::{action_id} is not public and caller '{caller_id}' lacks 'apps.invoke:{target_id}' permission"
@@ -3660,10 +3698,8 @@ async fn invoke_app_action(
             .map_err(|e| format!("invalid action params for {target_id}::{action_id}: {e}"))?;
     }
 
-    let handle: scheduler::SchedulerHandle = app
-        .state::<scheduler::SchedulerHandle>()
-        .inner()
-        .clone();
+    let handle: scheduler::SchedulerHandle =
+        app.state::<scheduler::SchedulerHandle>().inner().clone();
     let fut = scheduler::runner::run_workflow(
         app.clone(),
         handle,
@@ -3684,7 +3720,10 @@ async fn invoke_app_action(
             "result": scheduler::runner::last_step_value(&record),
         }))
     } else {
-        Err(record.error.clone().unwrap_or_else(|| "workflow failed".into()))
+        Err(record
+            .error
+            .clone()
+            .unwrap_or_else(|| "workflow failed".into()))
     }
 }
 
@@ -3816,7 +3855,14 @@ async fn apps_create_for_app(
     } else {
         None
     };
-    crate::create_app(app.clone(), description, template, project_id, source_repo_url).await
+    crate::create_app(
+        app.clone(),
+        description,
+        template,
+        project_id,
+        source_repo_url,
+    )
+    .await
 }
 
 fn apps_export_for_app(
@@ -3928,8 +3974,8 @@ fn apps_delete_for_app(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     ensure_apps_manage_permission(app, caller_app_id)?;
-    let target_id = string_param(&params, "app_id", "appId")
-        .ok_or_else(|| "missing app_id".to_string())?;
+    let target_id =
+        string_param(&params, "app_id", "appId").ok_or_else(|| "missing app_id".to_string())?;
     if target_id == caller_app_id {
         return Err("apps.delete cannot delete the calling app".into());
     }
@@ -4181,9 +4227,7 @@ fn validate_schema_value(
         }
     }
 
-    if let (Some(items_schema), Some(items)) =
-        (schema.get("items"), value.as_array())
-    {
+    if let (Some(items_schema), Some(items)) = (schema.get("items"), value.as_array()) {
         for (idx, item) in items.iter().enumerate() {
             validate_schema_value(items_schema, item, &format!("{path}[{idx}]"))?;
         }
@@ -4302,7 +4346,8 @@ fn project_sandbox_set_for_app(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let mut project = resolve_project_write_target(app, app_id, &params, "projects.write")?;
-    let sandbox = normalize_project_sandbox(&required_string_param(&params, "sandbox", "sandbox")?)?;
+    let sandbox =
+        normalize_project_sandbox(&required_string_param(&params, "sandbox", "sandbox")?)?;
     let changed = project.sandbox != sandbox;
     project.sandbox = sandbox.clone();
     write_project_and_register(app, &project)?;
@@ -4376,7 +4421,10 @@ fn resolve_project_write_target(
         .filter(|project| scoped_permission_allowed(app, app_id, scope, &project.id))
         .collect();
     if targets.len() == 1 {
-        return Ok(targets.into_iter().next().expect("one project write target"));
+        return Ok(targets
+            .into_iter()
+            .next()
+            .expect("one project write target"));
     }
     if targets.is_empty() {
         return Err(format!(
@@ -4460,7 +4508,10 @@ fn topics_list_for_app(
         let threads = match storage::read_all_threads(&root) {
             Ok(threads) => threads,
             Err(e) => {
-                eprintln!("[reflex] app topics.list read_all_threads({}): {e}", project.root);
+                eprintln!(
+                    "[reflex] app topics.list read_all_threads({}): {e}",
+                    project.root
+                );
                 continue;
             }
         };
@@ -4469,14 +4520,8 @@ fn topics_list_for_app(
         }
     }
     out.sort_by(|a, b| {
-        let a_ms = a
-            .get("created_at_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let b_ms = b
-            .get("created_at_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        let a_ms = a.get("created_at_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+        let b_ms = b.get("created_at_ms").and_then(|v| v.as_u64()).unwrap_or(0);
         b_ms.cmp(&a_ms)
     });
     out.truncate(limit);
@@ -4596,8 +4641,10 @@ fn project_skills_revoke_for_app(
 ) -> Result<serde_json::Value, String> {
     let mut project = resolve_project_skill_write_target(app, app_id, &params)?;
     let skills = parse_project_skill_names(&params)?;
-    let lower: std::collections::HashSet<String> =
-        skills.iter().map(|skill| skill.to_ascii_lowercase()).collect();
+    let lower: std::collections::HashSet<String> = skills
+        .iter()
+        .map(|skill| skill.to_ascii_lowercase())
+        .collect();
     let before = project.skills.clone();
     project
         .skills
@@ -4669,7 +4716,10 @@ fn normalize_project_skill_name(raw: &str) -> Result<String, String> {
     if skill.len() > 160 {
         return Err("skill must be 160 characters or fewer".into());
     }
-    if skill.chars().any(|ch| ch.is_control() || ch == ',' || ch == '\n' || ch == '\r') {
+    if skill
+        .chars()
+        .any(|ch| ch.is_control() || ch == ',' || ch == '\n' || ch == '\r')
+    {
         return Err("skill must not contain commas or control characters".into());
     }
     Ok(skill.to_string())
@@ -4953,7 +5003,9 @@ fn normalize_mcp_server_name(raw: &str) -> Result<String, String> {
         .chars()
         .any(|ch| ch.is_control() || ch == ',' || ch == '/' || ch == '\\')
     {
-        return Err("MCP server name must not contain commas, slashes, or control characters".into());
+        return Err(
+            "MCP server name must not contain commas, slashes, or control characters".into(),
+        );
     }
     Ok(name.to_string())
 }
@@ -5080,8 +5132,7 @@ fn project_files_write_for_app(
     app_id: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let project =
-        resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
+    let project = resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
     let rel_path = required_string_param(&params, "path", "path")?;
     let content = params
         .get("content")
@@ -5117,8 +5168,7 @@ fn project_files_mkdir_for_app(
     app_id: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let project =
-        resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
+    let project = resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
     let rel_path = required_string_param(&params, "path", "path")?;
     let recursive = bool_param(&params, "recursive", "recursive").unwrap_or(true);
     let root = canonical_project_root(&project.root)?;
@@ -5147,8 +5197,7 @@ fn project_files_move_for_app(
     app_id: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let project =
-        resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
+    let project = resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
     let from_path = required_project_file_from(&params)?;
     let to_path = required_project_file_to(&params)?;
     let overwrite = bool_param(&params, "overwrite", "overwrite").unwrap_or(false);
@@ -5180,8 +5229,7 @@ fn project_files_copy_for_app(
     app_id: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let project =
-        resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
+    let project = resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
     let from_path = required_project_file_from(&params)?;
     let to_path = required_project_file_to(&params)?;
     let overwrite = bool_param(&params, "overwrite", "overwrite").unwrap_or(false);
@@ -5216,8 +5264,7 @@ fn project_files_delete_for_app(
     app_id: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let project =
-        resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
+    let project = resolve_project_file_target(app, app_id, &params, "project.files.write", false)?;
     let rel_path = required_string_param(&params, "path", "path")?;
     let recursive = bool_param(&params, "recursive", "recursive").unwrap_or(false);
     let root = canonical_project_root(&project.root)?;
@@ -5389,7 +5436,9 @@ fn normalize_project_mutation_rel_path(raw: &str) -> Result<PathBuf, String> {
             Component::Normal(name) => out.push(name),
             Component::CurDir => {}
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                return Err("path must be relative and stay inside the selected project root".into());
+                return Err(
+                    "path must be relative and stay inside the selected project root".into(),
+                );
             }
         }
     }
@@ -5584,7 +5633,10 @@ fn search_project_file_entry(
     let meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     *scanned += 1;
     let rel = project_rel_path(root, path)?;
-    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
     let haystack = format!("{}\n{}", rel.to_lowercase(), name.to_lowercase());
     if haystack.contains(needle) {
         out.push(project_file_match(root, path, &meta, "path", None, None)?);
@@ -5897,10 +5949,7 @@ fn project_summary(project: &project::Project) -> serde_json::Value {
     })
 }
 
-fn topic_summary(
-    project: &project::Project,
-    thread: &storage::StoredThread,
-) -> serde_json::Value {
+fn topic_summary(project: &project::Project, thread: &storage::StoredThread) -> serde_json::Value {
     let meta = &thread.meta;
     serde_json::json!({
         "project_id": project.id,
@@ -5991,12 +6040,7 @@ fn ensure_scoped_permission(
     }
 }
 
-fn scoped_permission_allowed(
-    app: &AppHandle,
-    app_id: &str,
-    scope: &str,
-    target: &str,
-) -> bool {
+fn scoped_permission_allowed(app: &AppHandle, app_id: &str, scope: &str, target: &str) -> bool {
     let manifest = match apps::read_manifest(app, app_id) {
         Ok(manifest) => manifest,
         Err(_) => return false,
@@ -6223,11 +6267,7 @@ fn ensure_browser_project_access(
     }
 }
 
-fn ensure_browser_permission(
-    app: &AppHandle,
-    app_id: &str,
-    operation: &str,
-) -> Result<(), String> {
+fn ensure_browser_permission(app: &AppHandle, app_id: &str, operation: &str) -> Result<(), String> {
     if browser_permission_allowed(app, app_id, operation) {
         Ok(())
     } else {
@@ -6341,10 +6381,7 @@ async fn scheduler_delete_for_app(
 }
 
 fn parse_schedule_def(params: serde_json::Value) -> Result<apps::ScheduleDef, String> {
-    let mut value = params
-        .get("schedule")
-        .cloned()
-        .unwrap_or(params);
+    let mut value = params.get("schedule").cloned().unwrap_or(params);
     let obj = value
         .as_object_mut()
         .ok_or_else(|| "schedule must be a JSON object".to_string())?;
@@ -6854,7 +6891,14 @@ fn secrets_list_for_app(
     ensure_secret_grant(app, app_id, &scope_label, project_id.as_deref(), false)?;
     let scope = secrets_scope_for(&scope_label, project_id.as_deref())?;
     let entries = secrets::list(app, scope)?;
-    secrets_log(app, app_id, "list", &scope_label, project_id.as_deref(), "*");
+    secrets_log(
+        app,
+        app_id,
+        "list",
+        &scope_label,
+        project_id.as_deref(),
+        "*",
+    );
     Ok(serde_json::json!({
         "entries": entries,
     }))
@@ -6876,7 +6920,14 @@ fn secrets_get_for_app(
     let scope = secrets_scope_for(&scope_label, project_id.as_deref())?;
     let entry = secrets::get(app, scope, &key)?
         .ok_or_else(|| format!("secret not found: {scope_label}:{key}"))?;
-    secrets_log(app, app_id, "get", &scope_label, project_id.as_deref(), &key);
+    secrets_log(
+        app,
+        app_id,
+        "get",
+        &scope_label,
+        project_id.as_deref(),
+        &key,
+    );
     Ok(serde_json::json!({
         "key": key,
         "scope": scope_label,
@@ -6947,7 +6998,14 @@ fn secrets_set_for_app(
         .to_string();
     let scope = secrets_scope_for(&scope_label, project_id.as_deref())?;
     let meta = secrets::set(app, scope, &key, &value, app_id)?;
-    secrets_log(app, app_id, "set", &scope_label, project_id.as_deref(), &key);
+    secrets_log(
+        app,
+        app_id,
+        "set",
+        &scope_label,
+        project_id.as_deref(),
+        &key,
+    );
     Ok(serde_json::to_value(meta).unwrap_or(serde_json::Value::Null))
 }
 
@@ -6966,7 +7024,14 @@ fn secrets_delete_for_app(
     let key = parse_secret_key(&params)?;
     let scope = secrets_scope_for(&scope_label, project_id.as_deref())?;
     let removed = secrets::delete(app, scope, &key)?;
-    secrets_log(app, app_id, "delete", &scope_label, project_id.as_deref(), &key);
+    secrets_log(
+        app,
+        app_id,
+        "delete",
+        &scope_label,
+        project_id.as_deref(),
+        &key,
+    );
     Ok(serde_json::json!({
         "ok": true,
         "removed": removed,
@@ -7054,10 +7119,7 @@ fn secrets_resolve_for_app(
     }
 }
 
-fn secrets_scopes_for_app(
-    app: &AppHandle,
-    app_id: &str,
-) -> Result<serde_json::Value, String> {
+fn secrets_scopes_for_app(app: &AppHandle, app_id: &str) -> Result<serde_json::Value, String> {
     let linked = linked_project_ids(app, app_id);
     let projects: Vec<serde_json::Value> = linked
         .into_iter()
@@ -7101,13 +7163,17 @@ mod tests {
             agent_instructions: Some("private instructions".into()),
             skills: vec!["build-web-apps:react-best-practices".into()],
             apps: vec!["app1".into()],
+            reflection: None,
         };
 
         let summary = project_summary(&project);
 
         assert!(summary.get("mcp_servers").is_none());
         assert!(summary.get("agent_instructions").is_none());
-        assert_eq!(summary["mcp_server_names"], serde_json::json!(["private_server"]));
+        assert_eq!(
+            summary["mcp_server_names"],
+            serde_json::json!(["private_server"])
+        );
         assert_eq!(summary["has_agent_instructions"], true);
         assert_eq!(
             summary["skills"],
@@ -7254,7 +7320,8 @@ mod tests {
             .unwrap()
             .as_nanos();
         let root = std::env::temp_dir().join(format!("reflex-project-files-{suffix}"));
-        let outside = std::env::temp_dir().join(format!("reflex-project-files-outside-{suffix}.md"));
+        let outside =
+            std::env::temp_dir().join(format!("reflex-project-files-outside-{suffix}.md"));
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::create_dir_all(root.join(".reflex")).unwrap();
         std::fs::write(root.join("src/readme.md"), "ok").unwrap();
@@ -7282,9 +7349,11 @@ mod tests {
             std::fs::read_to_string(&copy_target).unwrap(),
             "Alpha target line\nsecond"
         );
-        assert!(copy_project_path(&canonical_root, &source, &copy_target, &source_meta, false)
-            .unwrap_err()
-            .contains("target already exists"));
+        assert!(
+            copy_project_path(&canonical_root, &source, &copy_target, &source_meta, false)
+                .unwrap_err()
+                .contains("target already exists")
+        );
         let move_target = canonical_root.join("generated/moved.md");
         let copy_meta = std::fs::symlink_metadata(&copy_target).unwrap();
         ensure_project_transfer_target(&copy_target, &move_target, &copy_meta).unwrap();
@@ -7323,15 +7392,21 @@ mod tests {
                 && entry.get("line_number").and_then(|v| v.as_u64()) == Some(1)
         }));
 
-        assert!(resolve_project_file_path(&canonical_root, ".reflex/project.json")
-            .unwrap_err()
-            .contains(".reflex"));
-        assert!(resolve_project_mutation_path(&canonical_root, ".reflex/new.json", true)
-            .unwrap_err()
-            .contains(".reflex"));
-        assert!(resolve_project_mutation_path(&canonical_root, "../outside.md", true)
-            .unwrap_err()
-            .contains("relative"));
+        assert!(
+            resolve_project_file_path(&canonical_root, ".reflex/project.json")
+                .unwrap_err()
+                .contains(".reflex")
+        );
+        assert!(
+            resolve_project_mutation_path(&canonical_root, ".reflex/new.json", true)
+                .unwrap_err()
+                .contains(".reflex")
+        );
+        assert!(
+            resolve_project_mutation_path(&canonical_root, "../outside.md", true)
+                .unwrap_err()
+                .contains("relative")
+        );
         assert!(resolve_project_file_path(
             &canonical_root,
             &format!("../{}", outside.file_name().unwrap().to_string_lossy())
@@ -7359,6 +7434,7 @@ mod tests {
             agent_instructions: Some("follow project rules".into()),
             skills: vec!["build-web-apps:react-best-practices".into()],
             apps: vec!["helper-app".into()],
+            reflection: None,
         };
         let target = AgentCwdTarget {
             cwd: PathBuf::from(&project.root),
@@ -7390,6 +7466,7 @@ mod tests {
             agent_instructions: Some("private instructions".into()),
             skills: vec!["build-web-apps:react-best-practices".into()],
             apps: Vec::new(),
+            reflection: None,
         };
         let target = AgentCwdTarget {
             cwd: PathBuf::from(&project.root),
@@ -7456,7 +7533,10 @@ mod tests {
             "manifest.json",
             "storage.json",
         ] {
-            assert!(normalize_widget_entry(entry).is_err(), "{entry} should fail");
+            assert!(
+                normalize_widget_entry(entry).is_err(),
+                "{entry} should fail"
+            );
         }
         assert_eq!(
             normalize_widget_entry("/widgets/today.html").unwrap(),
@@ -7512,9 +7592,7 @@ mod tests {
             public: false,
             steps: Vec::new(),
         };
-        assert!(validate_action_def(&action)
-            .unwrap_err()
-            .contains("steps"));
+        assert!(validate_action_def(&action).unwrap_err().contains("steps"));
     }
 
     #[test]
@@ -7611,8 +7689,7 @@ mod tests {
             Some("useful context".into())
         );
         assert_eq!(
-            normalize_optional_project_text(&serde_json::Value::Null, "description", 100)
-                .unwrap(),
+            normalize_optional_project_text(&serde_json::Value::Null, "description", 100).unwrap(),
             None
         );
         assert!(normalize_optional_project_text(

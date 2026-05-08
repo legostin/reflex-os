@@ -49,6 +49,7 @@ interface TopicComposerProps {
 
 type CommandId =
   | "remember"
+  | "dream"
   | "run"
   | "plan"
   | "goal"
@@ -70,6 +71,12 @@ function commands(t: Translate): ComposerCommand[] {
       token: "/remember",
       title: t("topicComposer.commandRemember"),
       description: t("topicComposer.commandRememberHint"),
+    },
+    {
+      id: "dream",
+      token: "/dream",
+      title: t("topicComposer.commandDream"),
+      description: t("topicComposer.commandDreamHint"),
     },
     {
       id: "run",

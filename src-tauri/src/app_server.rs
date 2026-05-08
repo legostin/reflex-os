@@ -54,6 +54,12 @@ pub struct AppServerClient {
     inner: Arc<Inner>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ThreadOverrides {
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
+}
+
 pub struct AppServerHandle {
     inner: tokio::sync::Mutex<Option<AppServerClient>>,
     notify: tokio::sync::Notify,
@@ -175,7 +181,9 @@ impl AppServerClient {
         if let Some(stdin) = guard.as_mut() {
             if let Err(e) = stdin.write_all(line.as_bytes()).await {
                 self.inner.pending.lock().unwrap().remove(&id);
-                return Err(serde_json::json!({"code": -32000, "message": format!("write failed: {e}")}));
+                return Err(
+                    serde_json::json!({"code": -32000, "message": format!("write failed: {e}")}),
+                );
             }
             let _ = stdin.flush().await;
         } else {
@@ -183,8 +191,9 @@ impl AppServerClient {
             return Err(serde_json::json!({"code": -32000, "message": "stdin closed"}));
         }
         drop(guard);
-        rx.await
-            .unwrap_or_else(|_| Err(serde_json::json!({"code": -32000, "message": "client closed"})))
+        rx.await.unwrap_or_else(|_| {
+            Err(serde_json::json!({"code": -32000, "message": "client closed"}))
+        })
     }
 
     pub async fn initialize(&self) -> Result<InitializeResult, Value> {
@@ -199,9 +208,9 @@ impl AppServerClient {
         let result = self
             .request("initialize", serde_json::to_value(&params).unwrap())
             .await?;
-        serde_json::from_value(result).map_err(|e| {
-            serde_json::json!({"code": -32000, "message": format!("decode initialize: {e}")})
-        })
+        serde_json::from_value(result).map_err(
+            |e| serde_json::json!({"code": -32000, "message": format!("decode initialize: {e}")}),
+        )
     }
 
     pub async fn thread_start(
@@ -210,6 +219,17 @@ impl AppServerClient {
         sandbox: &str,
         mcp_servers: Option<&Value>,
     ) -> Result<String, Value> {
+        self.thread_start_with_overrides(cwd, sandbox, mcp_servers, None)
+            .await
+    }
+
+    pub async fn thread_start_with_overrides(
+        &self,
+        cwd: &PathBuf,
+        sandbox: &str,
+        mcp_servers: Option<&Value>,
+        overrides: Option<&ThreadOverrides>,
+    ) -> Result<String, Value> {
         let mut params = serde_json::json!({
             "cwd": cwd.to_string_lossy(),
             "sandbox": sandbox,
@@ -217,8 +237,28 @@ impl AppServerClient {
             "experimentalRawEvents": false,
             "persistExtendedHistory": false,
         });
+        let mut config = serde_json::json!({});
         if let Some(mcp) = mcp_servers {
-            params["config"] = serde_json::json!({"mcp_servers": mcp});
+            config["mcp_servers"] = mcp.clone();
+        }
+        if let Some(overrides) = overrides {
+            if let Some(model) = overrides.model.as_deref().filter(|s| !s.trim().is_empty()) {
+                params["model"] = serde_json::json!(model);
+            }
+            if let Some(effort) = overrides
+                .reasoning_effort
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+            {
+                config["model_reasoning_effort"] = serde_json::json!(effort);
+            }
+        }
+        if config
+            .as_object()
+            .map(|obj| !obj.is_empty())
+            .unwrap_or(false)
+        {
+            params["config"] = config;
         }
         let result = self.request("thread/start", params).await?;
         // Try common shapes: {threadId} or {thread: {id}}
@@ -325,10 +365,7 @@ impl AppServerClient {
 
     /// Subscribe to streaming agent message deltas for the given app_thread_id.
     /// Returns a receiver that yields StreamEvent::Delta and finally StreamEvent::Done.
-    pub fn subscribe_stream(
-        &self,
-        app_thread_id: &str,
-    ) -> mpsc::UnboundedReceiver<StreamEvent> {
+    pub fn subscribe_stream(&self, app_thread_id: &str) -> mpsc::UnboundedReceiver<StreamEvent> {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut listeners = self.inner.stream_listeners.lock().unwrap();
         listeners.insert(app_thread_id.to_string(), tx);
@@ -642,7 +679,8 @@ async fn handle_line(inner: &Arc<Inner>, app: &AppHandle, line: &str) {
             // figure out exit_code: success unless error notif came earlier (we emit 0)
             let exit_code = Some(0);
             let session_id = app_thread_id.clone();
-            let _ = storage::finalize_thread(&rt.project_root, &rt.reflex_id, exit_code, session_id);
+            let _ =
+                storage::finalize_thread(&rt.project_root, &rt.reflex_id, exit_code, session_id);
             crate::codex::notify_thread_done_external(
                 app,
                 &rt.project_root,

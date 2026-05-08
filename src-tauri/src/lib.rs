@@ -1,7 +1,7 @@
 mod app_bus;
 mod app_runtime;
-mod app_server;
 mod app_self_test;
+mod app_server;
 mod app_watcher;
 mod apps;
 mod apps_dispatch;
@@ -18,6 +18,7 @@ mod scheduler;
 mod secrets;
 mod storage;
 mod suggester;
+mod system_settings;
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -130,10 +131,7 @@ fn set_active_project(app: AppHandle, project_id: Option<String>) -> Result<(), 
             {
                 return Err(format!("project not found: {id}"));
             }
-            map.insert(
-                "active_project_id".into(),
-                serde_json::Value::String(id),
-            );
+            map.insert("active_project_id".into(), serde_json::Value::String(id));
         }
         _ => {
             map.remove("active_project_id");
@@ -177,8 +175,8 @@ fn create_app_folder(
     parent_path: Option<String>,
     name: String,
 ) -> Result<apps::AppFolder, String> {
-    let folder = apps::create_app_folder(&app, parent_path.as_deref(), &name)
-        .map_err(|e| e.to_string())?;
+    let folder =
+        apps::create_app_folder(&app, parent_path.as_deref(), &name).map_err(|e| e.to_string())?;
     let _ = app.emit("reflex://apps-changed", &serde_json::json!({}));
     Ok(folder)
 }
@@ -251,11 +249,7 @@ fn app_status(app: AppHandle, app_id: String) -> Result<serde_json::Value, Strin
 }
 
 #[tauri::command]
-fn app_save(
-    app: AppHandle,
-    app_id: String,
-    message: Option<String>,
-) -> Result<(), String> {
+fn app_save(app: AppHandle, app_id: String, message: Option<String>) -> Result<(), String> {
     let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
     let msg = message
         .filter(|s| !s.trim().is_empty())
@@ -327,10 +321,7 @@ async fn app_server_logs(
 }
 
 #[tauri::command]
-async fn app_self_test(
-    app: AppHandle,
-    app_id: String,
-) -> Result<apps::AppSelfTestStatus, String> {
+async fn app_self_test(app: AppHandle, app_id: String) -> Result<apps::AppSelfTestStatus, String> {
     app_self_test::run_for_app_id(app, &app_id).await
 }
 
@@ -360,11 +351,9 @@ fn project_watch_stop(app: AppHandle, project_id: String) -> Result<(), String> 
     Ok(())
 }
 
-
 #[tauri::command]
 fn app_export(app: AppHandle, app_id: String, target_path: String) -> Result<(), String> {
-    apps::export_app(&app, &app_id, std::path::Path::new(&target_path))
-        .map_err(|e| e.to_string())
+    apps::export_app(&app, &app_id, std::path::Path::new(&target_path)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -795,8 +784,9 @@ fn connected_app_spec(
             "recommended": false,
             "notes": "Add a provider-specific MCP server when durable authenticated data access is required."
         }),
-        notes: "Reads only visible browser-session content unless a provider MCP bridge is configured."
-            .into(),
+        notes:
+            "Reads only visible browser-session content unless a provider MCP bridge is configured."
+                .into(),
     })
 }
 
@@ -1774,10 +1764,7 @@ fn create_app_thread(app: AppHandle, app_id: String) -> Result<ProjectThread, St
 }
 
 #[tauri::command]
-async fn pick_directory(
-    app: AppHandle,
-    title: Option<String>,
-) -> Result<Option<String>, String> {
+async fn pick_directory(app: AppHandle, title: Option<String>) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let title = title.unwrap_or_else(|| "Select folder".to_string());
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -1837,10 +1824,7 @@ async fn pick_save_file(
 }
 
 #[tauri::command]
-async fn read_app_thread(
-    app: AppHandle,
-    app_id: String,
-) -> Result<ProjectThread, String> {
+async fn read_app_thread(app: AppHandle, app_id: String) -> Result<ProjectThread, String> {
     let project = ensure_app_project(&app, &app_id)?;
     let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
 
@@ -1869,8 +1853,8 @@ fn app_revise(
         return Err("empty instruction".into());
     }
     let dir = apps::app_dir(&app, &app_id).map_err(|e| e.to_string())?;
-    let project = project::find_project_for(&dir)
-        .ok_or_else(|| "app project not found".to_string())?;
+    let project =
+        project::find_project_for(&dir).ok_or_else(|| "app project not found".to_string())?;
     let threads = storage::read_all_threads(&dir).map_err(|e| e.to_string())?;
     let latest = threads
         .into_iter()
@@ -1990,8 +1974,7 @@ async fn create_app(
             "expected_upstream_dir": "upstream",
             "created_at_ms": now_ms
         });
-        let repo_meta_json =
-            serde_json::to_string_pretty(&repo_meta).map_err(|e| e.to_string())?;
+        let repo_meta_json = serde_json::to_string_pretty(&repo_meta).map_err(|e| e.to_string())?;
         std::fs::write(dir.join("source-repo.json"), repo_meta_json).map_err(|e| e.to_string())?;
     }
     if let Some(target) = &target_project {
@@ -2062,8 +2045,12 @@ async fn create_app(
             .map(|p| p.sandbox.clone())
             .unwrap_or_else(|| "workspace-write".into());
         let mcp = proj_now.as_ref().and_then(|p| p.mcp_servers.clone());
+        let prompt_for_task =
+            system_settings::wrap_disabled_skills_policy(&app_handle, &prompt_for_task);
+        let overrides =
+            system_settings::thread_overrides(&app_handle, system_settings::RequestKind::Complex);
         let app_thread_id = match server
-            .thread_start(&root_for_task, &sandbox, mcp.as_ref())
+            .thread_start_with_overrides(&root_for_task, &sandbox, mcp.as_ref(), Some(&overrides))
             .await
         {
             Ok(id) => id,
@@ -2194,11 +2181,7 @@ fn source_repo_host(repo_url: &str) -> Option<String> {
 
 fn extract_goal_command(input: &str) -> (String, Option<String>) {
     if let Some(rest) = input.strip_prefix("/goal") {
-        let has_command_boundary = rest
-            .chars()
-            .next()
-            .map(char::is_whitespace)
-            .unwrap_or(true);
+        let has_command_boundary = rest.chars().next().map(char::is_whitespace).unwrap_or(true);
         if has_command_boundary {
             let goal = rest.trim().to_string();
             return (
@@ -2257,11 +2240,7 @@ USER FEEDBACK:\n{feedback}"
 
 fn project_agent_profile_preface(project: &project::Project) -> String {
     let description = project.description.as_deref().unwrap_or("").trim();
-    let instructions = project
-        .agent_instructions
-        .as_deref()
-        .unwrap_or("")
-        .trim();
+    let instructions = project.agent_instructions.as_deref().unwrap_or("").trim();
     let skills: Vec<&str> = project
         .skills
         .iter()
@@ -2580,7 +2559,9 @@ fn build_app_creation_prompt(
     p.push_str("  widgets.list() -> {widgets}; widgets.upsert({id, name?, entry?, size?, description?, html?}) or widgets.upsert({widget, html?}) -> {ok, created, widget}; widgets.delete({widgetId, deleteEntry?}) -> {ok, deleted}; legacy app-owned iframe dashboard widgets. Prefer public cached actions for new dashboard data so Reflex can format/cache it in the host UI.\n");
     p.push_str("  actions.list() -> {actions}; actions.upsert({id, name?, description?, public?, params_schema?, steps}) or actions.upsert({action}) -> {ok, created, action}; actions.delete({actionId}) -> {ok, deleted}; publish callable API for apps.invoke without manual manifest merging\n");
     p.push_str("  agent.ask({prompt}) -> {answer}; short one-shot question to the agent\n");
-    p.push_str("  agent.startTopic({prompt, projectId?}) -> {threadId}; create a full Reflex topic\n");
+    p.push_str(
+        "  agent.startTopic({prompt, projectId?}) -> {threadId}; create a full Reflex topic\n",
+    );
     p.push_str("  agent.task({prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}) -> {threadId, result}; isolated sub-agent; sandbox: read-only|workspace-write; waits for turn.completed and returns final text. cwd may be app root or linked project; foreign projects require permission \"agent.project:<project>\" / \"agent.project:*\", arbitrary cwd requires \"agent.cwd:*\". Project cwd automatically receives MCP config, preferred skills, project profile, and memory/RAG context. includeContext=false only for a raw prompt; memoryThreadId attaches topic memory.\n");
     p.push_str("  agent.stream({prompt, sandbox?, cwd?, memoryThreadId?, includeContext?}) -> {streamId, threadId}; token stream. Listen for parent window 'message' with {source:'reflex', type:'stream.token', streamId, token} and 'stream.done' with {streamId, result}. Call agent.streamAbort({threadId}) when unmounting. cwd/context rules match agent.task.\n");
     p.push_str("  storage.get({key}) -> {value}; persisted in storage.json\n");
@@ -2596,7 +2577,9 @@ fn build_app_creation_prompt(
     p.push_str("  dialog.openFile({title?, defaultPath?, filters?, multiple?}) -> {path|null} or {paths:[]}; native file picker. filters: [{name, extensions:[\"txt\",...]}]\n");
     p.push_str("  dialog.saveFile({title?, defaultPath?, filters?, content?}) -> {path|null}; native save dialog. If content is provided as a string, the file is written immediately to the selected path.\n");
     p.push_str("  net.fetch({url, method?, headers?, body?, timeoutMs?}) -> {status, headers, body, encoding}; HTTP request. The host MUST be in manifest.network.allowed_hosts; supports \"*.example.com\". Missing hosts create a pending permission request. Use permissions.request/reflexPermissionsRequest({hosts, reason}) when access should be approved by the user. Body may be a string or JSON, which is auto-serialized. encoding=\"utf8\"|\"base64\".\n\n");
-    p.push_str("PROJECT/TOPIC API: use it for OS dashboards, navigation, and agent work overview.\n");
+    p.push_str(
+        "PROJECT/TOPIC API: use it for OS dashboards, navigation, and agent work overview.\n",
+    );
     p.push_str("  projects.list({includeAll?}) -> ProjectSummary[]; by default returns only linked projects. includeAll requires permission \"projects.read:*\"\n");
     p.push_str("  projects.open({projectId}) -> {ok, project_id}; open a project in the main UI. Access rules match projects.list.\n");
     p.push_str("  project.profile.update({projectId?, description?, agentInstructions?}) -> {ok, changed, project}; updating project description/agent profile requires \"projects.write:<project>\" or \"projects.write:*\". null or empty string clears the field.\n");
@@ -2613,7 +2596,9 @@ fn build_app_creation_prompt(
     p.push_str("  project.skills.ensure({projectId?, skill}) or ensure({projectId?, skills}) -> {ok, added, skills}; project.skills.revoke(...) -> {ok, removed, skills}; updating project preferred skills requires \"skills.write:<project>\" or \"skills.write:*\"\n");
     p.push_str("  mcp.servers({projectId?, includeAll?, includeConfig?}) -> [{project_id, project_name, server_names, servers}]; names are available for linked projects. includeConfig requires \"mcp.read:<project>\" or \"mcp.read:*\"\n");
     p.push_str("  project.mcp.upsert({projectId?, name, config}) -> {ok, name, replaced, server_names}; project.mcp.delete({projectId?, name|names}) -> {ok, removed, server_names}; adding/removing project MCP servers requires \"mcp.write:<project>\" or \"mcp.write:*\"\n\n");
-    p.push_str("BROWSER API: built-in Playwright/browser sidecar for research, QA, and web workflows.\n");
+    p.push_str(
+        "BROWSER API: built-in Playwright/browser sidecar for research, QA, and web workflows.\n",
+    );
     p.push_str("  browser.init({headless?, projectId?}); project.browser.setEnabled({projectId?, enabled}) -> {ok, enabled, server_names}; browser.tabs.list(); browser.open({url?}); browser.close({tabId}); browser.setActive({tabId}); browser.navigate({tabId, url}); browser.back({tabId}); browser.forward({tabId}); browser.reload({tabId})\n");
     p.push_str("  browser.currentUrl({tabId}); browser.readText({tabId}); browser.readOutline({tabId}); browser.screenshot({tabId, fullPage?})\n");
     p.push_str("  browser.clickText({tabId, text, exact?}); browser.clickSelector({tabId, selector}); browser.fill({tabId, selector, value}); browser.scroll({tabId, dx?, dy?}); browser.waitFor({tabId, selector, timeoutMs?})\n");
@@ -2643,7 +2628,9 @@ fn build_app_creation_prompt(
     p.push_str("  secrets.get({scope, key, projectId?}) -> {key, scope, project_id?, value, updated_at_ms, source_app_id}; requires secrets.read:<id> for project scope or secrets.global.read for global\n");
     p.push_str("  secrets.has({scope, key, projectId?}) -> {exists}; non-revealing existence check; linked-project lookups don't require an explicit grant\n");
     p.push_str("  secrets.set({scope, key, value, projectId?}) -> {key, scope, ...}; requires secrets.write:<id> or secrets.global.write\n");
-    p.push_str("  secrets.delete({scope, key, projectId?}) -> {ok, removed}; same write grant as set\n");
+    p.push_str(
+        "  secrets.delete({scope, key, projectId?}) -> {ok, removed}; same write grant as set\n",
+    );
     p.push_str("  secrets.resolve({key, projectId?}) -> first match in cascade explicit projectId -> linked projects -> global; linked hits don't require an explicit grant; global fallback requires secrets.global.read\n");
     p.push_str("  secrets.scopes() -> {scopes: [{scope: \"global\"}, {scope: \"project\", projects: [{id, name}]}]}; render scope pickers without listing projects manually\n");
     p.push_str("- scope defaults to \"project\". If the app is linked to exactly one project, project scope targets that project memory; otherwise it targets the app's own memory.\n");
@@ -2654,7 +2641,9 @@ fn build_app_creation_prompt(
     p.push_str("  Memory helpers: reflexMemorySave(params), reflexMemoryRead(relPathOrParams), reflexMemoryUpdate(relPathOrParams, patch?), reflexMemoryList(params), reflexMemoryDelete(relPathOrParams), reflexMemorySearch(queryOrParams), reflexMemoryRecall(queryOrParams), reflexMemoryStats(params), reflexMemoryReindex(params), reflexMemoryIndexPath(pathOrParams), reflexMemoryPathStatus(pathOrParams), reflexMemoryPathStatusBatch(pathsOrParams), reflexMemoryForgetPath(pathOrParams).\n");
     p.push_str("  Secrets helpers: reflexSecretsList(params), reflexSecretsGet(params), reflexSecretsHas(params), reflexSecretsSet(params), reflexSecretsDelete(params), reflexSecretsResolve(keyOrParams, projectId?), reflexSecretsScopes(). Project secrets default to a linked project; for explicit scope pass {scope:\"global\"|\"project\", projectId?}. Resolution cascade: explicit projectId → linked projects → global. Manifest grants: secrets.read:<id>, secrets.write:<id>, secrets.global.read, secrets.global.write, wildcards secrets.read:*/secrets.write:*/secrets:*.\n\n");
     p.push_str("MANIFEST.network for net.fetch:\n");
-    p.push_str("  { \"network\": { \"allowed_hosts\": [\"api.example.com\", \"*.foo.com\"] } }\n\n");
+    p.push_str(
+        "  { \"network\": { \"allowed_hosts\": [\"api.example.com\", \"*.foo.com\"] } }\n\n",
+    );
     p.push_str("- For user-approved host access, call await reflexPermissionsRequest({hosts:[\"api.example.com\"], reason:\"Fetch API data\"}) and show a setup-required state until approved. net.fetch also creates a pending permission request when a host is missing. Use reflexNetworkAllowHost only when the utility is intentionally updating its manifest.\n\n");
     p.push_str("MANIFEST.schedules: recurring tasks. Reflex runs them while it is alive, even when the app window is closed.\n");
     p.push_str("  {\n");
@@ -2663,7 +2652,9 @@ fn build_app_creation_prompt(
     p.push_str("      \"name\": \"Morning digest\",\n");
     p.push_str("      \"cron\": \"0 0 8 * * *\",          // 6 fields: sec min hour dom month dow (UTC). \"0 */5 * * * *\" = every 5 minutes\n");
     p.push_str("      \"enabled\": true,\n");
-    p.push_str("      \"catch_up\": \"once\",              // if Reflex was off, run ONCE at startup\n");
+    p.push_str(
+        "      \"catch_up\": \"once\",              // if Reflex was off, run ONCE at startup\n",
+    );
     p.push_str("      \"steps\": [\n");
     p.push_str("        { \"method\": \"net.fetch\",  \"params\": {\"url\":\"...\"},                          \"save_as\": \"page\"    },\n");
     p.push_str("        { \"method\": \"agent.task\", \"params\": {\"prompt\":\"Summarize this content: {{steps.page.body}}\"}, \"save_as\": \"summary\" },\n");
@@ -2737,7 +2728,9 @@ fn build_app_creation_prompt(
     p.push_str("  window.reflexEventRecent(topicOrParams?, limit?)\n");
     p.push_str("  window.reflexEventSubscriptions()\n");
     p.push_str("  window.reflexEventClearSubscriptions()\n");
-    p.push_str("  window.reflexInvoke(method, params)                      // generic bridge call\n");
+    p.push_str(
+        "  window.reflexInvoke(method, params)                      // generic bridge call\n",
+    );
     p.push_str("  window.reflexBridgeCatalog()                             // methods/helpers/permission hints/current grants\n");
     p.push_str("  window.reflexSystemContext()\n");
     p.push_str("  window.reflexSystemOpenPanel(panelOrParams, projectId?, threadId?)\n");
@@ -2748,7 +2741,9 @@ fn build_app_creation_prompt(
     p.push_str("  window.reflexStorageGet(keyOrParams), reflexStorageSet(keyOrParams, value?), reflexStorageList(params), reflexStorageDelete(keyOrParams)\n");
     p.push_str("  window.reflexFsRead(pathOrParams), reflexFsList(pathOrParams, recursive?), reflexFsWrite(pathOrParams, content?), reflexFsDelete(pathOrParams, recursive?)\n");
     p.push_str("  window.reflexClipboardReadText(), reflexClipboardWriteText(textOrParams)\n");
-    p.push_str("  window.reflexNetFetch(urlOrParams, options?), reflexNotifyShow(titleOrParams, body?)\n");
+    p.push_str(
+        "  window.reflexNetFetch(urlOrParams, options?), reflexNotifyShow(titleOrParams, body?)\n",
+    );
     p.push_str("  window.reflexDialogOpenDirectory(params), reflexDialogOpenFile(params), reflexDialogSaveFile(params)\n");
     p.push_str("  window.reflexProjectsList(params), reflexProjectsOpen(projectIdOrParams), reflexProjectProfileUpdate(patch), reflexProjectSandboxSet(sandboxOrParams), reflexProjectAppsLink(appIdOrParams?), reflexProjectAppsUnlink(appIdOrParams?), reflexTopicsList(params), reflexTopicsOpen(threadIdOrParams, projectId?), reflexSkillsList(params), reflexProjectSkillsEnsure(skillOrParams), reflexProjectSkillsRevoke(skillOrParams), reflexMcpServers(params), reflexProjectMcpUpsert(nameOrParams, config?), reflexProjectMcpDelete(nameOrParams), reflexProjectFilesList(pathOrParams, recursive?), reflexProjectFilesRead(pathOrParams), reflexProjectFilesSearch(queryOrParams, includeContent?), reflexProjectFilesWrite(pathOrParams, content?), reflexProjectFilesMkdir(pathOrParams), reflexProjectFilesMove(fromOrParams, to?), reflexProjectFilesCopy(fromOrParams, to?), reflexProjectFilesDelete(pathOrParams, recursive?)\n");
     p.push_str("  window.reflexBrowserInit(params), reflexProjectBrowserSetEnabled(projectIdOrParams, enabled?), reflexBrowserTabs(), reflexBrowserOpen(url), reflexBrowserClose(tabIdOrParams), reflexBrowserSetActive(tabIdOrParams), reflexBrowserNavigate(tabId, url)\n");
@@ -2875,8 +2870,7 @@ fn rename_project_folder(
 
 #[tauri::command]
 fn delete_project_folder(app: AppHandle, path: String) -> Result<(), String> {
-    project::delete_project_folder_registered(&app, &PathBuf::from(path))
-        .map_err(|e| e.to_string())
+    project::delete_project_folder_registered(&app, &PathBuf::from(path)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2901,6 +2895,47 @@ fn update_project_description(
     p.description = description
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+    project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
+    project::register(&app, &p).map_err(|e| e.to_string())?;
+    Ok(p)
+}
+
+#[tauri::command]
+fn update_project_reflection(
+    app: AppHandle,
+    project_id: String,
+    reflection: Option<project::ProjectReflection>,
+) -> Result<project::Project, String> {
+    let mut p = project::get_by_id(&app, &project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("project not found: {project_id}"))?;
+    p.reflection = reflection.map(|mut r| {
+        r.status = r.status.trim().to_string();
+        if r.status.is_empty() {
+            r.status = "ready".into();
+        }
+        r.summary = r.summary.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        r.suggestions = r
+            .suggestions
+            .into_iter()
+            .filter(|s| !s.title.trim().is_empty() && !s.prompt.trim().is_empty())
+            .map(|mut s| {
+                s.title = s.title.trim().to_string();
+                s.reason = s.reason.trim().to_string();
+                s.action_label = s
+                    .action_label
+                    .map(|label| label.trim().to_string())
+                    .filter(|label| !label.is_empty());
+                s.prompt = s.prompt.trim().to_string();
+                s.confidence = s
+                    .confidence
+                    .map(|confidence| confidence.trim().to_string())
+                    .filter(|confidence| !confidence.is_empty());
+                s
+            })
+            .collect();
+        r
+    });
     project::write_project(&PathBuf::from(&p.root), &p).map_err(|e| e.to_string())?;
     project::register(&app, &p).map_err(|e| e.to_string())?;
     Ok(p)
@@ -3013,10 +3048,8 @@ fn update_project_browser(
         .unwrap_or_else(|| serde_json::json!({}));
     if let Some(obj) = servers.as_object_mut() {
         if enabled {
-            let bridge = browser::mcp_bridge_path(&app)
-                .map_err(|e| format!("bridge path: {e}"))?;
-            let node = browser::resolve_node()
-                .unwrap_or_else(|_| "node".to_string());
+            let bridge = browser::mcp_bridge_path(&app).map_err(|e| format!("bridge path: {e}"))?;
+            let node = browser::resolve_node().unwrap_or_else(|_| "node".to_string());
             obj.insert(
                 "reflex_browser".to_string(),
                 serde_json::json!({
@@ -3030,11 +3063,7 @@ fn update_project_browser(
             obj.remove("playwright");
         }
     }
-    p.mcp_servers = if servers
-        .as_object()
-        .map(|o| o.is_empty())
-        .unwrap_or(true)
-    {
+    p.mcp_servers = if servers.as_object().map(|o| o.is_empty()).unwrap_or(true) {
         None
     } else {
         Some(servers)
@@ -3509,9 +3538,7 @@ pub(crate) fn submit_quick_impl(
         .unwrap_or_else(|| "quick".into());
     let browser_tabs = browser_tabs.unwrap_or_default();
     let image_paths = validate_local_image_paths(image_paths)?;
-    let goal = goal
-        .map(|g| g.trim().to_string())
-        .filter(|g| !g.is_empty());
+    let goal = goal.map(|g| g.trim().to_string()).filter(|g| !g.is_empty());
     eprintln!(
         "[reflex] submit_quick: prompt_len={} project_id={:?} source={} tabs={} ctx={:?}/{:?}",
         prompt.len(),
@@ -3596,7 +3623,8 @@ pub(crate) fn submit_quick_impl(
     }
 
     let prompt_with_browser = if source == "browser" && !browser_tabs.is_empty() {
-        let mut buf = String::from("Context from the built-in browser, open tabs at launch time:\n");
+        let mut buf =
+            String::from("Context from the built-in browser, open tabs at launch time:\n");
         for (i, tab) in browser_tabs.iter().enumerate() {
             let title = if tab.title.trim().is_empty() {
                 "(untitled)"
@@ -3643,6 +3671,7 @@ pub(crate) fn submit_quick_impl(
             }
         };
         let codex_prompt = wrap_with_project_agent_profile(&profile, &codex_prompt);
+        let codex_prompt = system_settings::wrap_disabled_skills_policy(&app_handle, &codex_prompt);
         let handle = app_handle.state::<app_server::AppServerHandle>();
         let server = handle.wait().await;
         let sandbox = project_now
@@ -3650,8 +3679,15 @@ pub(crate) fn submit_quick_impl(
             .map(|p| p.sandbox.clone())
             .unwrap_or_else(|| "workspace-write".into());
         let mcp_servers = project_now.as_ref().and_then(|p| p.mcp_servers.clone());
+        let request_kind = system_settings::request_kind_for_thread(plan_mode, &source);
+        let overrides = system_settings::thread_overrides(&app_handle, request_kind);
         let app_thread_id = match server
-            .thread_start(&root_for_task, &sandbox, mcp_servers.as_ref())
+            .thread_start_with_overrides(
+                &root_for_task,
+                &sandbox,
+                mcp_servers.as_ref(),
+                Some(&overrides),
+            )
             .await
         {
             Ok(id) => id,
@@ -3690,6 +3726,33 @@ pub(crate) fn submit_quick_impl(
             .await
         {
             eprintln!("[reflex] turn_start failed: {e}");
+            let raw = format!("[reflex] turn_start failed: {e}");
+            let ts_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0);
+            let stored = storage::StoredEvent {
+                seq: 1,
+                stream: "error".to_string(),
+                ts_ms,
+                raw: raw.clone(),
+            };
+            let _ = storage::append_event_oneshot(&root_for_task, &reflex_id, &stored);
+            let _ = app_handle.emit(
+                "reflex://codex-event",
+                &serde_json::json!({
+                    "thread_id": reflex_id,
+                    "seq": 1,
+                    "raw": raw,
+                    "stream": "error",
+                }),
+            );
+            let _ =
+                storage::finalize_thread(&root_for_task, &reflex_id, Some(-1), Some(app_thread_id));
+            let _ = app_handle.emit(
+                "reflex://codex-end",
+                &serde_json::json!({"thread_id": reflex_id, "exit_code": -1}),
+            );
         }
     });
 
@@ -3739,9 +3802,7 @@ fn set_thread_goal(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("project not found: {project_id}"))?;
     let project_root = PathBuf::from(&project.root);
-    let normalized = goal
-        .map(|g| g.trim().to_string())
-        .filter(|g| !g.is_empty());
+    let normalized = goal.map(|g| g.trim().to_string()).filter(|g| !g.is_empty());
     let mut meta = storage::read_meta(&project_root, &thread_id).map_err(|e| e.to_string())?;
     meta.goal = normalized.clone();
     storage::write_meta(&project_root, &meta).map_err(|e| e.to_string())?;
@@ -3833,8 +3894,7 @@ fn continue_thread(
         .map_err(|e| e.to_string())?
         .as_millis();
 
-    let last_seq =
-        storage::count_events(&project_root, &thread_id).map_err(|e| e.to_string())?;
+    let last_seq = storage::count_events(&project_root, &thread_id).map_err(|e| e.to_string())?;
     let user_seq = last_seq + 1;
     let user_raw = serde_json::to_string(&serde_json::json!({
         "type": "user_message",
@@ -3907,6 +3967,7 @@ fn continue_thread(
             }
         };
         let prompt_owned = wrap_with_project_agent_profile(&profile, &prompt_owned);
+        let prompt_owned = system_settings::wrap_disabled_skills_policy(&app_handle, &prompt_owned);
         let handle = app_handle.state::<app_server::AppServerHandle>();
         let server = handle.wait().await;
         let initial_seq = storage::count_events(&root_for_task, &id_for_task).unwrap_or(0);
@@ -3916,12 +3977,19 @@ fn continue_thread(
             .map(|p| p.sandbox.clone())
             .unwrap_or_else(|| "workspace-write".into());
         let mcp = proj_now.as_ref().and_then(|p| p.mcp_servers.clone());
+        let request_kind = system_settings::request_kind_for_thread(meta.plan_mode, &meta.source);
+        let overrides = system_settings::thread_overrides(&app_handle, request_kind);
 
         // Ensure we have an app-server session — start one lazily if needed.
         let mut sid: String = match app_thread_id_opt {
             Some(s) => s,
             None => match server
-                .thread_start(&root_for_task, &sandbox, mcp.as_ref())
+                .thread_start_with_overrides(
+                    &root_for_task,
+                    &sandbox,
+                    mcp.as_ref(),
+                    Some(&overrides),
+                )
                 .await
             {
                 Ok(s) => {
@@ -3968,7 +4036,12 @@ fn continue_thread(
         if lost {
             eprintln!("[reflex] turn_start said thread not found — starting fresh session");
             match server
-                .thread_start(&root_for_task, &sandbox, mcp.as_ref())
+                .thread_start_with_overrides(
+                    &root_for_task,
+                    &sandbox,
+                    mcp.as_ref(),
+                    Some(&overrides),
+                )
                 .await
             {
                 Ok(new_sid) => {
@@ -3984,11 +4057,7 @@ fn continue_thread(
                     );
                     sid = new_sid;
                     turn_result = server
-                        .turn_start_with_local_images(
-                            &sid,
-                            &prompt_owned,
-                            &image_paths_for_task,
-                        )
+                        .turn_start_with_local_images(&sid, &prompt_owned, &image_paths_for_task)
                         .await;
                 }
                 Err(e) => {
@@ -4035,9 +4104,7 @@ async fn show_quick_panel(app: &AppHandle) {
     } else {
         Vec::new()
     };
-    let candidate_root_str = candidate
-        .as_ref()
-        .map(|p| p.to_string_lossy().into_owned());
+    let candidate_root_str = candidate.as_ref().map(|p| p.to_string_lossy().into_owned());
 
     let payload = QuickOpenPayload {
         ctx,
@@ -4075,7 +4142,8 @@ fn main_window_activation_from_run_event(event: &tauri::RunEvent) -> MainWindowA
         tauri::RunEvent::Ready => MainWindowActivation::Ready,
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen {
-            has_visible_windows, ..
+            has_visible_windows,
+            ..
         } => MainWindowActivation::Reopen {
             has_visible_windows: *has_visible_windows,
         },
@@ -4187,8 +4255,7 @@ async fn resume_interrupted_threads(app: AppHandle, server: app_server::AppServe
                 eprintln!(
                     "[reflex] cannot resume {reflex_id}: no session_id; finalizing as failed"
                 );
-                let _ =
-                    storage::finalize_thread(&root, &reflex_id, Some(-2), None);
+                let _ = storage::finalize_thread(&root, &reflex_id, Some(-2), None);
                 let _ = app.emit(
                     "reflex://codex-end",
                     &serde_json::json!({
@@ -4202,19 +4269,16 @@ async fn resume_interrupted_threads(app: AppHandle, server: app_server::AppServe
             eprintln!("[reflex] auto-resume thread={reflex_id} session={session_id}");
 
             memory_kick_topic(&app, &root, &reflex_id);
-            let resume_prompt = match crate::memory::injection::build_preface(
-                &root,
-                &reflex_id,
-                RESUME_PROMPT,
-            )
-            .await
-            {
-                Ok(r) => crate::memory::injection::wrap_user_prompt(&r.preface, RESUME_PROMPT),
-                Err(e) => {
-                    eprintln!("[reflex] memory inject failed (resume): {e}");
-                    RESUME_PROMPT.to_string()
-                }
-            };
+            let resume_prompt =
+                match crate::memory::injection::build_preface(&root, &reflex_id, RESUME_PROMPT)
+                    .await
+                {
+                    Ok(r) => crate::memory::injection::wrap_user_prompt(&r.preface, RESUME_PROMPT),
+                    Err(e) => {
+                        eprintln!("[reflex] memory inject failed (resume): {e}");
+                        RESUME_PROMPT.to_string()
+                    }
+                };
             let profile = project_agent_profile_preface(&p);
             let resume_prompt = wrap_with_project_agent_profile(&profile, &resume_prompt);
 
@@ -4336,81 +4400,90 @@ pub fn run() {
     }));
 
     let builder = tauri::Builder::default()
-        .register_uri_scheme_protocol("reflexapp", |ctx, request| -> tauri::http::Response<std::borrow::Cow<'static, [u8]>> {
-            let app = ctx.app_handle();
-            let uri = request.uri();
-            let path = uri.path().trim_start_matches('/').to_string();
-            let mut parts = path.splitn(2, '/');
-            let id = parts.next().unwrap_or("");
-            let rel = parts.next().unwrap_or("index.html");
-            eprintln!("[reflexapp] uri={uri} host={:?} path={path} id={id} rel={rel}", uri.host());
-            if id.is_empty() {
-                return tauri::http::Response::builder()
-                    .status(400)
-                    .body(std::borrow::Cow::Owned(Vec::new()))
-                    .unwrap();
-            }
-            match apps::read_app_file(app, id, rel) {
-                Ok(bytes) => {
-                    eprintln!("[reflexapp] OK {id}/{rel} ({} bytes)", bytes.len());
-                    let mime = apps::guess_mime(rel);
-                    let final_bytes = if mime.starts_with("text/html") {
-                        apps::inject_overlay_into_html(&bytes)
-                    } else {
-                        bytes
-                    };
-                    tauri::http::Response::builder()
-                        .header("content-type", mime)
-                        .body(std::borrow::Cow::Owned(final_bytes))
-                        .unwrap()
-                }
-                Err(e) => {
-                    eprintln!("[reflexapp] ERR {id}/{rel}: {e}");
-                    tauri::http::Response::builder()
-                        .status(404)
+        .register_uri_scheme_protocol(
+            "reflexapp",
+            |ctx, request| -> tauri::http::Response<std::borrow::Cow<'static, [u8]>> {
+                let app = ctx.app_handle();
+                let uri = request.uri();
+                let path = uri.path().trim_start_matches('/').to_string();
+                let mut parts = path.splitn(2, '/');
+                let id = parts.next().unwrap_or("");
+                let rel = parts.next().unwrap_or("index.html");
+                eprintln!(
+                    "[reflexapp] uri={uri} host={:?} path={path} id={id} rel={rel}",
+                    uri.host()
+                );
+                if id.is_empty() {
+                    return tauri::http::Response::builder()
+                        .status(400)
                         .body(std::borrow::Cow::Owned(Vec::new()))
-                        .unwrap()
+                        .unwrap();
                 }
-            }
-        })
-        .register_uri_scheme_protocol("reflexserver", |ctx, request| -> tauri::http::Response<std::borrow::Cow<'static, [u8]>> {
-            let app = ctx.app_handle();
-            let uri = request.uri();
-            let id = uri.host().unwrap_or("");
-            if id.is_empty() {
-                return tauri::http::Response::builder()
-                    .status(400)
-                    .body(std::borrow::Cow::Owned(Vec::new()))
-                    .unwrap();
-            }
-            let port = tauri::async_runtime::block_on(async {
-                let runtimes = app.state::<app_runtime::AppRuntimes>();
-                app_runtime::running_port(runtimes.inner(), id).await
-            });
-            let Some(port) = port else {
-                return tauri::http::Response::builder()
-                    .status(503)
-                    .header("content-type", "text/plain; charset=utf-8")
-                    .body(std::borrow::Cow::Owned(b"server runtime is not running".to_vec()))
-                    .unwrap();
-            };
-            match apps::proxy_server_runtime_request(port, &request) {
-                Ok(proxied) => {
-                    let mut builder = tauri::http::Response::builder().status(proxied.status);
-                    for (name, value) in proxied.headers {
-                        builder = builder.header(name, value);
+                match apps::read_app_file(app, id, rel) {
+                    Ok(bytes) => {
+                        eprintln!("[reflexapp] OK {id}/{rel} ({} bytes)", bytes.len());
+                        let mime = apps::guess_mime(rel);
+                        let final_bytes = if mime.starts_with("text/html") {
+                            apps::inject_overlay_into_html(&bytes)
+                        } else {
+                            bytes
+                        };
+                        tauri::http::Response::builder()
+                            .header("content-type", mime)
+                            .body(std::borrow::Cow::Owned(final_bytes))
+                            .unwrap()
                     }
-                    builder
-                        .body(std::borrow::Cow::Owned(proxied.body))
-                        .unwrap()
+                    Err(e) => {
+                        eprintln!("[reflexapp] ERR {id}/{rel}: {e}");
+                        tauri::http::Response::builder()
+                            .status(404)
+                            .body(std::borrow::Cow::Owned(Vec::new()))
+                            .unwrap()
+                    }
                 }
-                Err(e) => tauri::http::Response::builder()
-                    .status(502)
-                    .header("content-type", "text/plain; charset=utf-8")
-                    .body(std::borrow::Cow::Owned(e.into_bytes()))
-                    .unwrap(),
-            }
-        })
+            },
+        )
+        .register_uri_scheme_protocol(
+            "reflexserver",
+            |ctx, request| -> tauri::http::Response<std::borrow::Cow<'static, [u8]>> {
+                let app = ctx.app_handle();
+                let uri = request.uri();
+                let id = uri.host().unwrap_or("");
+                if id.is_empty() {
+                    return tauri::http::Response::builder()
+                        .status(400)
+                        .body(std::borrow::Cow::Owned(Vec::new()))
+                        .unwrap();
+                }
+                let port = tauri::async_runtime::block_on(async {
+                    let runtimes = app.state::<app_runtime::AppRuntimes>();
+                    app_runtime::running_port(runtimes.inner(), id).await
+                });
+                let Some(port) = port else {
+                    return tauri::http::Response::builder()
+                        .status(503)
+                        .header("content-type", "text/plain; charset=utf-8")
+                        .body(std::borrow::Cow::Owned(
+                            b"server runtime is not running".to_vec(),
+                        ))
+                        .unwrap();
+                };
+                match apps::proxy_server_runtime_request(port, &request) {
+                    Ok(proxied) => {
+                        let mut builder = tauri::http::Response::builder().status(proxied.status);
+                        for (name, value) in proxied.headers {
+                            builder = builder.header(name, value);
+                        }
+                        builder.body(std::borrow::Cow::Owned(proxied.body)).unwrap()
+                    }
+                    Err(e) => tauri::http::Response::builder()
+                        .status(502)
+                        .header("content-type", "text/plain; charset=utf-8")
+                        .body(std::borrow::Cow::Owned(e.into_bytes()))
+                        .unwrap(),
+                }
+            },
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_server::AppServerHandle::default())
@@ -4497,10 +4570,8 @@ pub fn run() {
             });
 
             let app_for_bus = app.handle().clone();
-            let bridge: app_bus::AppBusBridge = app_for_bus
-                .state::<app_bus::AppBusBridge>()
-                .inner()
-                .clone();
+            let bridge: app_bus::AppBusBridge =
+                app_for_bus.state::<app_bus::AppBusBridge>().inner().clone();
             let bus = app_for_bus.state::<memory::MemoryState>().bus.clone();
             bus_log::start(bus.clone(), app_for_bus.clone());
             app_bus::start(bridge, bus, app_for_bus);
@@ -4521,6 +4592,7 @@ pub fn run() {
             delete_project_folder,
             move_project_to_folder,
             update_project_description,
+            update_project_reflection,
             update_project_agent_profile,
             link_app_to_project,
             unlink_app_from_project,
@@ -4624,6 +4696,8 @@ pub fn run() {
             browser::browser_mouse_wheel,
             browser::browser_keyboard_type,
             browser::browser_keyboard_press,
+            system_settings::system_settings_get,
+            system_settings::system_settings_save,
             logs::logs_get,
             logs::log_push,
         ])
@@ -4661,16 +4735,20 @@ mod connected_app_tests {
 
     #[test]
     fn reopen_without_visible_windows_shows_main_window() {
-        assert!(should_show_main_for_activation(MainWindowActivation::Reopen {
-            has_visible_windows: false,
-        }));
+        assert!(should_show_main_for_activation(
+            MainWindowActivation::Reopen {
+                has_visible_windows: false,
+            }
+        ));
     }
 
     #[test]
     fn reopen_with_visible_main_window_does_not_force_show() {
-        assert!(!should_show_main_for_activation(MainWindowActivation::Reopen {
-            has_visible_windows: true,
-        }));
+        assert!(!should_show_main_for_activation(
+            MainWindowActivation::Reopen {
+                has_visible_windows: true,
+            }
+        ));
     }
 
     #[test]
@@ -4706,8 +4784,7 @@ mod connected_app_tests {
         );
         assert_eq!(approve_session["decision"], "acceptForSession");
 
-        let approve_once =
-            build_response("item/fileChange/requestApproval", "approved", None);
+        let approve_once = build_response("item/fileChange/requestApproval", "approved", None);
         assert_eq!(approve_once["decision"], "accept");
 
         let denied = build_response("item/permissions/requestApproval", "denied", None);
@@ -4716,8 +4793,7 @@ mod connected_app_tests {
 
     #[test]
     fn legacy_approval_responses_keep_review_decisions() {
-        let approve_session =
-            build_response("execCommandApproval", "approved_for_session", None);
+        let approve_session = build_response("execCommandApproval", "approved_for_session", None);
         assert_eq!(approve_session["decision"], "approved_for_session");
 
         let denied = build_response("applyPatchApproval", "denied", None);
@@ -4736,8 +4812,8 @@ mod connected_app_tests {
 
     #[test]
     fn repo_wrapper_prompt_and_integration_capture_source_repo() {
-        let url = normalize_source_repo_url(" https://github.com/example/tool ")
-            .expect("valid repo url");
+        let url =
+            normalize_source_repo_url(" https://github.com/example/tool ").expect("valid repo url");
         assert_eq!(url, "https://github.com/example/tool");
         assert!(normalize_source_repo_url("ftp://example.com/repo").is_err());
 

@@ -5,9 +5,9 @@ use std::env;
 use std::path::PathBuf;
 use std::process::{Command as StdCommand, Stdio};
 use std::sync::OnceLock;
-use tauri::{AppHandle, Emitter};
 #[cfg(target_os = "macos")]
 use tauri::Manager;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 use tokio::process::Command as TokioCommand;
 
@@ -45,7 +45,10 @@ fn resolve_codex_binary() -> String {
             &mut candidates,
             PathBuf::from(&home).join(".npm-global/bin/codex"),
         );
-        push_candidate(&mut candidates, PathBuf::from(&home).join(".local/bin/codex"));
+        push_candidate(
+            &mut candidates,
+            PathBuf::from(&home).join(".local/bin/codex"),
+        );
         push_candidate(&mut candidates, PathBuf::from(&home).join(".bun/bin/codex"));
     }
     push_candidate(&mut candidates, PathBuf::from("/opt/homebrew/bin/codex"));
@@ -54,8 +57,7 @@ fn resolve_codex_binary() -> String {
     let selected = candidates
         .iter()
         .filter_map(|candidate| {
-            codex_version(candidate)
-                .map(|version| (candidate.clone(), version))
+            codex_version(candidate).map(|version| (candidate.clone(), version))
         })
         .max_by(|(_, left), (_, right)| left.cmp(right));
 
@@ -197,23 +199,13 @@ pub fn notify_thread_done_external(
         return;
     }
 
-    if let Err(e) = app
-        .notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show()
-    {
+    if let Err(e) = app.notification().builder().title(title).body(body).show() {
         eprintln!("[reflex] notification failed: {e}");
     }
 }
 
 #[cfg(target_os = "macos")]
-fn open_thread_from_notification(
-    app: &AppHandle,
-    project_id: Option<String>,
-    thread_id: String,
-) {
+fn open_thread_from_notification(app: &AppHandle, project_id: Option<String>, thread_id: String) {
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.show();
         let _ = main.unminimize();
@@ -295,20 +287,27 @@ pub async fn generate_topic_meta(
     let cwd_str = project_root.to_string_lossy().into_owned();
     let out_str = out_path.to_string_lossy().into_owned();
 
+    let overrides = crate::system_settings::thread_overrides(
+        &app,
+        crate::system_settings::RequestKind::Instant,
+    );
+    let mut args = vec![
+        "exec".to_string(),
+        "--json".to_string(),
+        "--skip-git-repo-check".to_string(),
+        "-s".to_string(),
+        "read-only".to_string(),
+        "--output-last-message".to_string(),
+        out_str,
+        "-C".to_string(),
+        cwd_str,
+    ];
+    append_cli_overrides(&mut args, &overrides);
+    args.push("--".to_string());
+    args.push(meta_prompt);
+
     let result = command()
-        .args([
-            "exec",
-            "--json",
-            "--skip-git-repo-check",
-            "-s",
-            "read-only",
-            "--output-last-message",
-            &out_str,
-            "-C",
-            &cwd_str,
-            "--",
-            &meta_prompt,
-        ])
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -366,6 +365,25 @@ pub async fn generate_topic_meta(
     );
 
     let _ = std::fs::remove_file(&out_path);
+}
+
+pub(crate) fn append_cli_overrides(
+    args: &mut Vec<String>,
+    overrides: &crate::app_server::ThreadOverrides,
+) {
+    if let Some(model) = overrides.model.as_deref().filter(|s| !s.trim().is_empty()) {
+        args.push("-m".into());
+        args.push(model.to_string());
+    }
+    if let Some(effort) = overrides
+        .reasoning_effort
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    {
+        args.push("-c".into());
+        let value = serde_json::to_string(effort).unwrap_or_else(|_| format!("\"{effort}\""));
+        args.push(format!("model_reasoning_effort={value}"));
+    }
 }
 
 fn extract_meta_json(s: &str) -> Option<GeneratedMeta> {
